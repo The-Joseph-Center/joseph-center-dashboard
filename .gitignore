@@ -13,3 +13,8 @@ dist/
 # on an exFAT external drive) and should never be committed.
 ._*
 .DS_Store
+
+# This project uses pnpm (see packageManager in package.json). A stray
+# package-lock.json from an accidental `npm install` silently desyncs the pnpm
+# lockfile, and Netlify installs with --frozen-lockfile, so the build fails.
+package-lock.json
