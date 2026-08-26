@@ -15,6 +15,19 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
 
   const res = await fetch(input, { ...init, headers });
 
+  // Vite's dev server answers unknown paths with index.html and a 200, so a
+  // Function call under `npm run dev:vite` looks successful and then explodes
+  // on res.json(). Name that failure instead of letting it surface as a vague
+  // "could not load" — run `npm run dev` (netlify dev) to serve the Functions.
+  if (input.startsWith('/.netlify/functions/')) {
+    const type = res.headers.get('content-type') ?? '';
+    if (res.ok && !type.includes('application/json')) {
+      throw new Error(
+        'Netlify Functions are not running — start the dashboard with `npm run dev` (netlify dev), not plain vite.'
+      );
+    }
+  }
+
   // An expired session mid-visit should send the user back to sign in rather
   // than surface as an unexplained failure inside a widget.
   if (res.status === 401 && !(await oktaAuth.isAuthenticated())) {

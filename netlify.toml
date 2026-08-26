@@ -9,3 +9,12 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# `npm run dev` runs `netlify dev`, so its framework autodetect would otherwise
+# recurse into this same script. Point it explicitly at the raw Vite server.
+[dev]
+  command = "npm run dev:vite"
+  targetPort = 5173
+  port = 8888
+  framework = "#custom"
+  autoLaunch = false

@@ -19,7 +19,8 @@ const loadError = ref('');
 
 const quote = ref('');
 const saving = ref(false);
-const saved = ref(false);
+const submitted = ref(false);
+const unchanged = ref(false);
 const saveError = ref('');
 
 const DEPT_LABELS: Record<string, string> = {
@@ -46,20 +47,22 @@ onMounted(async () => {
   }
 });
 
-async function save() {
-  saving.value = true; saved.value = false; saveError.value = '';
+async function submit() {
+  saving.value = true; submitted.value = false; unchanged.value = false; saveError.value = '';
   try {
-    const res = await apiFetch('/.netlify/functions/update-my-quote', {
+    const res = await apiFetch('/.netlify/functions/request-quote-change', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ quote: quote.value }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || String(res.status));
-    saved.value = true;
-    if (card.value) card.value.quote = quote.value;
+    // The card is NOT updated locally: nothing has changed on the site yet, and
+    // showing it as though it had would set exactly the wrong expectation.
+    if (data.submitted) submitted.value = true;
+    else unchanged.value = true;
   } catch (err) {
-    saveError.value = err instanceof Error ? err.message : 'Could not save your quote.';
+    saveError.value = err instanceof Error ? err.message : 'Could not submit your request.';
   } finally {
     saving.value = false;
   }
@@ -92,6 +95,8 @@ async function save() {
             <dt>Department</dt>
             <dd>{{ card.departments?.length ? card.departments.map(label).join(', ') : '—' }}</dd>
             <dt>Contact email</dt><dd>{{ card.email || '—' }}</dd>
+            <dt>Current quote</dt>
+            <dd>{{ card.quote || '— none yet —' }}</dd>
           </dl>
           <p class="details__note">
             These are how you appear on the website. To correct anything here,
@@ -105,17 +110,23 @@ async function save() {
 
       <section class="quote">
         <h2>My favourite quote</h2>
-        <p class="quote__hint">Shown on your card. Leave it blank if you'd rather not have one.</p>
+        <p class="quote__hint">
+          Quotes are reviewed before they appear. Submitting sends your choice to
+          the team — your card won't change until it's approved, and you'll see
+          your current quote here until then. Submit an empty box to ask for
+          yours to be removed.
+        </p>
         <textarea v-model="quote" rows="3" maxlength="400" class="quote__input" placeholder="Pick one below, or write your own"></textarea>
         <div class="quote__row">
-          <button type="button" class="quote__save" :disabled="saving" @click="save">
-            {{ saving ? 'Saving…' : 'Save quote' }}
+          <button type="button" class="quote__save" :disabled="saving" @click="submit">
+            {{ saving ? 'Sending…' : 'Submit for review' }}
           </button>
-          <span v-if="saved" class="quote__ok">Saved</span>
+          <span v-if="submitted" class="quote__ok">Sent for review — your card is unchanged for now.</span>
+          <span v-if="unchanged" class="quote__ok">That's already your current quote.</span>
           <span v-if="saveError" class="quote__err" role="alert">{{ saveError }}</span>
         </div>
 
-        <QuotePicker @use="(q) => { quote = `${q.text} — ${q.attribution}`; saved = false; }" />
+        <QuotePicker @use="(q) => { quote = `${q.text} — ${q.attribution}`; submitted = false; unchanged = false; }" />
       </section>
     </template>
   </main>

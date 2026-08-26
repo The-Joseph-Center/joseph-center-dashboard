@@ -4,7 +4,6 @@ import { oktaAuth, isAdminFromClaims } from '@/lib/okta';
 
 const DashboardHome = () => import('@/pages/DashboardHome.vue');
 const AnalyticsPage = () => import('@/pages/AnalyticsPage.vue');
-const ContentKitPage = () => import('@/pages/ContentKitPage.vue');
 const SupportPage = () => import('@/pages/SupportPage.vue');
 const MyCardPage = () => import('@/pages/MyCardPage.vue');
 const BillingPage = () => import('@/pages/BillingPage.vue');
@@ -15,7 +14,6 @@ const NotFound = () => import('@/pages/NotFound.vue');
 const routes = [
   { path: '/', name: 'Dashboard', component: DashboardHome },
   { path: '/analytics', name: 'Analytics', component: AnalyticsPage },
-  { path: '/content-kit', name: 'ContentKit', component: ContentKitPage },
   // Every signed-in staff member has one; no group needed.
   { path: '/my-card', name: 'MyCard', component: MyCardPage },
   { path: '/support', name: 'Support', component: SupportPage },
