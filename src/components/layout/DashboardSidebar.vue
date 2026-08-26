@@ -43,7 +43,7 @@ interface NavItem { to: string; label: string; icon: unknown; capability: Capabi
 const ALL_NAV: NavItem[] = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, capability: 'myCard' },
   { to: '/analytics', label: 'Analytics', icon: BarChart3, capability: 'analytics' },
-  { to: '/support', label: 'Contact & Support', icon: MessageSquare, capability: 'support' },
+  { to: '/support', label: 'Support', icon: MessageSquare, capability: 'support' },
   { to: '/billing', label: 'Billing', icon: CreditCard, capability: 'billing' },
 ];
 

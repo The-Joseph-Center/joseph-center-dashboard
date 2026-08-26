@@ -70,7 +70,7 @@ async function submit() {
 </script>
 
 <template>
-  <DashboardLayout page-title="Contact & Support">
+  <DashboardLayout page-title="Support">
     <div class="support">
       <!-- Success state -->
       <div v-if="sent" class="support__success">

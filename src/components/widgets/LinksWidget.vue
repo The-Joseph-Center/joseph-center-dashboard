@@ -80,12 +80,17 @@ const cards = computed(() => visible.value.filter(l => !!l.description));
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.4rem 0.85rem;
+  padding: 0.5rem 1rem;
   border-radius: 999px;
   background-color: var(--color-primary-strong);
-  color: var(--color-text-inverse, #fff);
-  font-size: 0.8125rem;
-  font-weight: 500;
+  /* Measured 7.92:1 after the colour fix, so the ratio was never the problem.
+     Light text on a dark saturated fill at 13px/500 still reads thin — WCAG
+     measures luminance, not perceived weight. Heavier and slightly larger is
+     what actually makes it legible. */
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   text-decoration: none;
   transition: opacity 0.15s ease;
 }
