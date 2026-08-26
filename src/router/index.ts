@@ -1,12 +1,14 @@
-import { watch } from 'vue';
 import { createRouter, createWebHistory } from 'vue-router';
-import { useAuth0 } from '@auth0/auth0-vue';
+import { LoginCallback } from '@okta/okta-vue';
+import { oktaAuth, isAdminFromClaims } from '@/lib/okta';
 
 const DashboardHome = () => import('@/pages/DashboardHome.vue');
 const AnalyticsPage = () => import('@/pages/AnalyticsPage.vue');
 const ContentKitPage = () => import('@/pages/ContentKitPage.vue');
 const SupportPage = () => import('@/pages/SupportPage.vue');
 const BillingPage = () => import('@/pages/BillingPage.vue');
+const LoginPage = () => import('@/pages/LoginPage.vue');
+const ForbiddenPage = () => import('@/pages/ForbiddenPage.vue');
 const NotFound = () => import('@/pages/NotFound.vue');
 
 const routes = [
@@ -14,9 +16,27 @@ const routes = [
   { path: '/analytics', name: 'Analytics', component: AnalyticsPage },
   { path: '/content-kit', name: 'ContentKit', component: ContentKitPage },
   { path: '/support', name: 'Support', component: SupportPage },
-  { path: '/billing', name: 'Billing', component: BillingPage },
-  { path: '/:pathMatch(.*)*', name: 'NotFound', component: NotFound },
+  // Admin-only. The guard below hides it; the billing Functions verify the same
+  // group server-side, which is what actually protects it.
+  { path: '/billing', name: 'Billing', component: BillingPage, meta: { requiresAdmin: true } },
+
+  // Public — no auth required.
+  { path: '/login', name: 'Login', component: LoginPage, meta: { public: true } },
+  { path: '/login/callback', component: LoginCallback, meta: { public: true } },
+  { path: '/forbidden', name: 'Forbidden', component: ForbiddenPage, meta: { public: true } },
+  { path: '/:pathMatch(.*)*', name: 'NotFound', component: NotFound, meta: { public: true } },
 ];
+
+// Development-only identity view. Token Preview is unavailable on this Okta
+// tenant, so this is how the groups claim gets verified at first login. Tree
+// shaken out of the production bundle by the import.meta.env.DEV guard.
+if (import.meta.env.DEV) {
+  routes.splice(routes.length - 1, 0, {
+    path: '/whoami',
+    name: 'WhoAmI',
+    component: () => import('@/pages/WhoAmIPage.vue'),
+  } as (typeof routes)[number]);
+}
 
 const router = createRouter({
   history: createWebHistory(),
@@ -24,25 +44,22 @@ const router = createRouter({
 });
 
 router.beforeEach(async (to) => {
-  const { isAuthenticated, isLoading, loginWithRedirect } = useAuth0();
+  if (to.meta.public) return true;
 
-  if (isLoading.value) {
-    await new Promise<void>((resolve) => {
-      const stop = watch(isLoading, (loading) => {
-        if (!loading) {
-          stop();
-          resolve();
-        }
-      });
-    });
+  if (!(await oktaAuth.isAuthenticated())) {
+    // Remember where they were headed so the callback can return them there.
+    sessionStorage.setItem('postLoginUri', to.fullPath);
+    return { path: '/login' };
   }
 
-  if (!isAuthenticated.value && to.name !== 'NotFound') {
-    await loginWithRedirect({
-      appState: { targetUrl: to.fullPath },
-    });
-    return false;
+  if (to.meta.requiresAdmin) {
+    const claims = await oktaAuth.getUser().catch(() => undefined);
+    if (!isAdminFromClaims(claims as Record<string, unknown> | undefined)) {
+      return { path: '/forbidden' };
+    }
   }
+
+  return true;
 });
 
 export default router;

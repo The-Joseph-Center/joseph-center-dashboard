@@ -9,6 +9,7 @@
  * Env: TURSO_DATABASE_URL, TURSO_AUTH_TOKEN
  */
 import { createClient } from '@libsql/client';
+import { verifyRequest, denial } from './_lib/verify-okta';
 
 /** Map section IDs to their DB column names */
 const SECTION_COLUMNS: Record<string, string[]> = {
@@ -105,10 +106,8 @@ export async function handler(event: {
     return { statusCode: 204, headers: corsHeaders, body: '' };
   }
 
-  const authHeader = event.headers['authorization'] || event.headers['Authorization'];
-  if (!authHeader?.startsWith('Bearer ')) {
-    return { statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized' }) };
-  }
+  const auth = await verifyRequest(event.headers);
+  if (!auth.ok) return denial(auth, corsHeaders);
 
   const dbUrl = process.env.TURSO_DATABASE_URL;
   const dbToken = process.env.TURSO_AUTH_TOKEN;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from '@/lib/api';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import { Users, Eye, Clock, TrendingUp, TrendingDown, Minus, ExternalLink, RefreshCw } from 'lucide-vue-next';
@@ -82,8 +83,8 @@ async function fetchAnalytics() {
     const { start, end, prevStart, prevEnd } = getDateRange(period.value);
 
     const [currentRes, previousRes] = await Promise.all([
-      fetch(`/.netlify/functions/analytics-proxy?hostname=${hostname}&start=${start}&end=${end}`),
-      fetch(`/.netlify/functions/analytics-proxy?hostname=${hostname}&start=${prevStart}&end=${prevEnd}`),
+      apiFetch(`/.netlify/functions/analytics-proxy?hostname=${hostname}&start=${start}&end=${end}`),
+      apiFetch(`/.netlify/functions/analytics-proxy?hostname=${hostname}&start=${prevStart}&end=${prevEnd}`),
     ]);
 
     if (!currentRes.ok) throw new Error(`Analytics request failed: ${currentRes.status}`);

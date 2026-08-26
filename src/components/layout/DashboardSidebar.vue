@@ -3,9 +3,9 @@
      build-tools/src/views/PreviewDashboardView.vue
      Do not edit the copy in pws-dashboard-template — it will be overwritten at scaffold time -->
 <script setup lang="ts">
+import { useAuthStore } from '@/stores/useAuthStore';
 import { ref } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
-import { useAuth0 } from '@auth0/auth0-vue';
 import {
   LayoutDashboard,
   BarChart3,
@@ -25,12 +25,12 @@ defineProps<{ mobileOpen: boolean }>();
 const emit = defineEmits<{ (e: 'toggle-mobile'): void }>();
 
 const route = useRoute();
-const { user, logout } = useAuth0();
+const auth = useAuthStore();
 const collapsed = ref(false);
 const darkMode = ref(false);
 
 function doLogout() {
-  logout({ logoutParams: { returnTo: window.location.origin } });
+  auth.signOut();
 }
 
 function toggleDarkMode() {
@@ -96,7 +96,7 @@ const navItems: NavItem[] = [
           <UserCircle :size="20" />
         </div>
         <div v-if="!collapsed" class="sidebar__user-info">
-          <p class="sidebar__user-name">{{ user?.name || 'User' }}</p>
+          <p class="sidebar__user-name">{{ auth.displayName }}</p>
           <p class="sidebar__user-sub">{{ config.clientName }}</p>
         </div>
       </div>

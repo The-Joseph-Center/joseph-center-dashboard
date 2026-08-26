@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { apiFetch } from '@/lib/api';
 import { ref, onMounted } from 'vue';
-import { useAuth0 } from '@auth0/auth0-vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import {
   CreditCard,
@@ -15,7 +15,6 @@ import {
 } from 'lucide-vue-next';
 import config from '@/config/dashboard';
 
-const { getAccessTokenSilently } = useAuth0();
 
 const billing = config.billing;
 const loading = ref(true);
@@ -84,10 +83,8 @@ async function fetchBillingSummary() {
   error.value = null;
 
   try {
-    const token = await getAccessTokenSilently();
-    const res = await fetch(
-      `/.netlify/functions/stripe-get-billing-summary?customerId=${billing.stripeCustomerId}`,
-      { headers: { Authorization: `Bearer ${token}` } }
+    const res = await apiFetch(
+      `/.netlify/functions/stripe-get-billing-summary?customerId=${billing.stripeCustomerId}`
     );
 
     if (!res.ok) throw new Error('Failed to load billing data');
@@ -111,11 +108,9 @@ async function openPortal() {
 
   portalLoading.value = true;
   try {
-    const token = await getAccessTokenSilently();
-    const res = await fetch('/.netlify/functions/stripe-create-portal-session', {
+    const res = await apiFetch('/.netlify/functions/stripe-create-portal-session', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

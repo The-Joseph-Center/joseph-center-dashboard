@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { requireAdmin, denial } from './_lib/verify-okta';
 
 interface BillingSummary {
   subscription: {
@@ -41,10 +42,8 @@ interface BillingSummary {
 }
 
 export async function handler(event: { queryStringParameters: Record<string, string> | null; headers: Record<string, string> }) {
-  const authHeader = event.headers['authorization'] || event.headers['Authorization'];
-  if (!authHeader) {
-    return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
-  }
+  const auth = await requireAdmin(event.headers);
+  if (!auth.ok) return denial(auth);
 
   const customerId = event.queryStringParameters?.customerId;
   if (!customerId) {

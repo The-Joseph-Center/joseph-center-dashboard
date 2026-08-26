@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { requireAdmin, denial } from './_lib/verify-okta';
 
 interface RequestBody {
   customerId: string;
@@ -6,11 +7,10 @@ interface RequestBody {
 }
 
 export async function handler(event: { body: string | null; headers: Record<string, string> }) {
-  // Auth check — require Authorization header
-  const authHeader = event.headers['authorization'] || event.headers['Authorization'];
-  if (!authHeader) {
-    return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
-  }
+  // Billing is administrators only, enforced here rather than only in the UI —
+  // hiding a nav item protects nothing.
+  const auth = await requireAdmin(event.headers);
+  if (!auth.ok) return denial(auth);
 
   if (event.body === null) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Missing request body' }) };

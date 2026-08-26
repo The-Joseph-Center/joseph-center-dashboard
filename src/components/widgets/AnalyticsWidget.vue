@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from '@/lib/api';
 import { ref, onMounted } from 'vue';
 import { RouterLink } from 'vue-router';
 import { BarChart3, TrendingUp, TrendingDown, Minus, Loader2 } from 'lucide-vue-next';
@@ -41,8 +42,8 @@ async function fetchStats() {
     const prevEnd = new Date(start); prevEnd.setDate(start.getDate() - 1);
 
     const [curRes, prevRes] = await Promise.all([
-      fetch(`/.netlify/functions/analytics-proxy?hostname=${hostname}&start=${fmt(start)}&end=${fmt(now)}`),
-      fetch(`/.netlify/functions/analytics-proxy?hostname=${hostname}&start=${fmt(prevStart)}&end=${fmt(prevEnd)}`),
+      apiFetch(`/.netlify/functions/analytics-proxy?hostname=${hostname}&start=${fmt(start)}&end=${fmt(now)}`),
+      apiFetch(`/.netlify/functions/analytics-proxy?hostname=${hostname}&start=${fmt(prevStart)}&end=${fmt(prevEnd)}`),
     ]);
 
     if (curRes.ok) {

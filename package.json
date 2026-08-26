@@ -9,14 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@auth0/auth0-vue": "^2.3.3",
+    "@libsql/client": "^0.14.0",
+    "@okta/okta-auth-js": "^8.0.1",
+    "@okta/okta-vue": "^5.9.0",
     "@sanity/client": "^7.3.0",
     "@unhead/vue": "^1.11.20",
     "@vueuse/core": "^12.7.0",
     "chart.js": "^4.5.1",
+    "jose": "^6.2.10",
     "lucide-vue-next": "^0.474.0",
     "pinia": "^2.3.0",
-    "@libsql/client": "^0.14.0",
     "stripe": "^20.2.0",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"

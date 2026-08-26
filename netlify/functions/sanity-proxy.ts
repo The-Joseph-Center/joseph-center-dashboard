@@ -1,4 +1,5 @@
 import { createClient } from '@sanity/client';
+import { verifyRequest, denial } from './_lib/verify-okta';
 
 const client = createClient({
   projectId: process.env.NETLIFY_SANITY_PROJECT_ID!,
@@ -7,7 +8,11 @@ const client = createClient({
   useCdn: true,
 });
 
-export async function handler(event: { body: string | null }) {
+export async function handler(event: { body: string | null; headers: Record<string, string> }) {
+  // Previously unauthenticated, and it executes whatever GROQ it is handed.
+  const auth = await verifyRequest(event.headers);
+  if (!auth.ok) return denial(auth);
+
   if (!event.body) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Missing request body' }) };
   }

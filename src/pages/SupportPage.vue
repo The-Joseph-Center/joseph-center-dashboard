@@ -1,15 +1,15 @@
 <script setup lang="ts">
+import { useAuthStore } from '@/stores/useAuthStore';
 import { ref } from 'vue';
-import { useAuth0 } from '@auth0/auth0-vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import { Send, CheckCircle } from 'lucide-vue-next';
 import config from '@/config/dashboard';
 
-const { user } = useAuth0();
+const auth = useAuthStore();
 
 const form = ref({
-  name: user.value?.name || '',
-  email: user.value?.email || config.clientEmail || '',
+  name: auth.displayName,
+  email: auth.email || config.clientEmail || '',
   subject: '',
   category: 'question',
   message: '',

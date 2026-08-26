@@ -1,5 +1,5 @@
+import { apiFetch } from '@/lib/api';
 import { ref, reactive } from 'vue';
-import { useAuth0 } from '@auth0/auth0-vue';
 import config from '@/config/dashboard';
 
 // ─── Section form shapes ────────────────────────────────────────────────────
@@ -88,7 +88,6 @@ function createEmptyFormState(): ContentKitFormState {
 }
 
 export function useContentKit() {
-  const { getAccessTokenSilently } = useAuth0();
 
   const formState = reactive<ContentKitFormState>(createEmptyFormState());
   const completedSections = ref<Set<string>>(new Set());
@@ -106,10 +105,8 @@ export function useContentKit() {
     error.value = null;
 
     try {
-      const token = await getAccessTokenSilently();
-      const res = await fetch(
-        `${PROXY_URL}?clientId=${encodeURIComponent(config.clientId)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+      const res = await apiFetch(
+        `${PROXY_URL}?clientId=${encodeURIComponent(config.clientId)}`
       );
 
       if (!res.ok) throw new Error('Failed to load content kit');
@@ -154,11 +151,9 @@ export function useContentKit() {
     error.value = null;
 
     try {
-      const token = await getAccessTokenSilently();
-      const res = await fetch(PROXY_URL, {
+      const res = await apiFetch(PROXY_URL, {
         method: 'PUT',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

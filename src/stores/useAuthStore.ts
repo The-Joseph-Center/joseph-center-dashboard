@@ -1,21 +1,40 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import { oktaAuth, groupsFromClaims, ADMIN_GROUP } from '@/lib/okta';
 
 export const useAuthStore = defineStore('auth', () => {
-  const user = ref<{ name?: string; email?: string; picture?: string } | null>(null);
+  const claims = ref<Record<string, unknown> | null>(null);
   const isAuthenticated = ref(false);
+  const ready = ref(false);
 
-  const displayName = computed(() => user.value?.name || user.value?.email || 'User');
+  const displayName = computed(
+    () => (claims.value?.name as string) || (claims.value?.email as string) || 'User'
+  );
+  const email = computed(() => (claims.value?.email as string) || '');
+  const groups = computed(() => groupsFromClaims(claims.value ?? undefined));
+  // Mirrors the server-side check in netlify/functions/_lib/verify-okta.ts.
+  // This one only decides what to render; the Functions decide what is allowed.
+  const isAdmin = computed(() => groups.value.includes(ADMIN_GROUP));
 
-  function setUser(authUser: typeof user.value) {
-    user.value = authUser;
-    isAuthenticated.value = !!authUser;
+  async function refresh() {
+    try {
+      isAuthenticated.value = await oktaAuth.isAuthenticated();
+      claims.value = isAuthenticated.value
+        ? ((await oktaAuth.getUser()) as unknown as Record<string, unknown>)
+        : null;
+    } catch {
+      isAuthenticated.value = false;
+      claims.value = null;
+    } finally {
+      ready.value = true;
+    }
   }
 
-  function clearUser() {
-    user.value = null;
+  async function signOut() {
+    await oktaAuth.signOut();
+    claims.value = null;
     isAuthenticated.value = false;
   }
 
-  return { user, isAuthenticated, displayName, setUser, clearUser };
+  return { claims, isAuthenticated, ready, displayName, email, groups, isAdmin, refresh, signOut };
 });
