@@ -38,3 +38,9 @@ Same `##PLACEHOLDER##` pattern as pws-foundation-template. Theme variables, clie
 - Run this template directly — it requires Auth0 and Sanity credentials
 - Add client-specific widget config here — it goes in `project-config.json`
 - Prefix `NETLIFY_SANITY_PROJECT_ID` with `VITE_` — it must stay server-side
+
+## Project context
+
+See [HANDOFF.md](HANDOFF.md) for the full build, state and setup across all
+three Joseph Center repositories — architecture, Okta configuration, the
+identity mapping, and the constraints that shaped them.
