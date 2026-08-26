@@ -14,6 +14,13 @@
  * Anything ambiguous is left unmatched and reported rather than guessed at. A
  * wrong link here hands someone edit rights over a colleague's record.
  *
+ * The matching rules live in netlify/functions/_lib/staff-directory.ts, shared
+ * with the daily reconcile-staff job — getting a link wrong hands someone edit
+ * rights over a colleague's record, so it is not implemented twice.
+ *
+ * Day to day the scheduled job keeps this current; this script exists for
+ * running it on demand.
+ *
  * Dry run by default:
  *   npx tsx scripts/sync-staff-identity.ts
  *   APPLY=yes npx tsx scripts/sync-staff-identity.ts

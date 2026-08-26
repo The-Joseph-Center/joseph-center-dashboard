@@ -12,6 +12,12 @@
 
 # `npm run dev` runs `netlify dev`, so its framework autodetect would otherwise
 # recurse into this same script. Point it explicitly at the raw Vite server.
+[functions."reconcile-staff"]
+  # 07:15 UTC daily. Offboarding does not need to be instant — Okta app
+  # assignment already revokes dashboard access the moment someone is
+  # deactivated; this only governs how quickly their card leaves the website.
+  schedule = "15 7 * * *"
+
 [dev]
   command = "npm run dev:vite"
   targetPort = 5173
