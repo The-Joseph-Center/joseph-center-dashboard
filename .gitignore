@@ -8,3 +8,8 @@ dist/
 
 # Local Netlify folder
 .netlify
+
+# macOS resource forks — these get created on non-APFS volumes (this repo lives
+# on an exFAT external drive) and should never be committed.
+._*
+.DS_Store
