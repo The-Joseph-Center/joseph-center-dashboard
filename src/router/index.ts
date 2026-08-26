@@ -6,6 +6,7 @@ const DashboardHome = () => import('@/pages/DashboardHome.vue');
 const AnalyticsPage = () => import('@/pages/AnalyticsPage.vue');
 const ContentKitPage = () => import('@/pages/ContentKitPage.vue');
 const SupportPage = () => import('@/pages/SupportPage.vue');
+const MyCardPage = () => import('@/pages/MyCardPage.vue');
 const BillingPage = () => import('@/pages/BillingPage.vue');
 const LoginPage = () => import('@/pages/LoginPage.vue');
 const ForbiddenPage = () => import('@/pages/ForbiddenPage.vue');
@@ -15,6 +16,8 @@ const routes = [
   { path: '/', name: 'Dashboard', component: DashboardHome },
   { path: '/analytics', name: 'Analytics', component: AnalyticsPage },
   { path: '/content-kit', name: 'ContentKit', component: ContentKitPage },
+  // Every signed-in staff member has one; no group needed.
+  { path: '/my-card', name: 'MyCard', component: MyCardPage },
   { path: '/support', name: 'Support', component: SupportPage },
   // Admin-only. The guard below hides it; the billing Functions verify the same
   // group server-side, which is what actually protects it.
