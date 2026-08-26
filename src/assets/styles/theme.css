@@ -2,6 +2,11 @@
 
 :root {
   --color-primary: #60B567;
+  /* #60B567 is the brand green, but it is a FILL colour, not a text colour:
+     white on it measures 2.53:1 and it measures 2.36:1 on --color-surface,
+     against a 4.5:1 requirement. This is JC's deep green, which reaches 7.45:1
+     and 6.96:1 respectively. Use it for anything carrying words. */
+  --color-primary-strong: #1D5F55;
   --color-secondary: #6B7C3A;
   --color-accent: #CAA230;
   --color-bg: #ffffff;
@@ -21,6 +26,8 @@
 
 [data-theme="dark"] {
   --color-primary: #83c588;
+  /* Dark mode inverts the problem — here the light green IS the readable one. */
+  --color-primary-strong: #a8dcae;
   --color-secondary: #899f4a;
   --color-accent: #d7b556;
   --color-bg: #131d29;

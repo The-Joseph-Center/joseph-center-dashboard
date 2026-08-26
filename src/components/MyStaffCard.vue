@@ -182,12 +182,17 @@ async function submit() {
 .who__hidden { font-size: 0.75rem; color: #8a5a1f; margin: 0.25rem 0 0; }
 
 .note {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--color-text-secondary);
   margin: 0.85rem 0 0;
-  opacity: 0.8;
 }
-.note__link { color: var(--color-primary); font-weight: 500; }
+.note__link {
+  color: var(--color-primary-strong);
+  font-weight: 600;
+  /* Was 0.75rem inside an 0.8-opacity paragraph — small and washed out. */
+  font-size: 0.8125rem;
+  text-decoration: underline;
+}
 
 /* Quote */
 .quote {
@@ -219,14 +224,14 @@ async function submit() {
   margin-top: 0.5rem; flex-wrap: wrap;
 }
 .quote__submit {
-  background: var(--color-primary);
+  background: var(--color-primary-strong);
   color: var(--color-text-inverse, #fff);
   border: 0; padding: 0.4rem 0.9rem;
   border-radius: var(--border-radius);
   font-size: 0.8125rem; font-weight: 600; cursor: pointer;
 }
 .quote__submit:disabled { opacity: 0.6; cursor: not-allowed; }
-.quote__msg { font-size: 0.75rem; color: var(--color-primary); }
+.quote__msg { font-size: 0.75rem; color: var(--color-primary-strong); }
 .quote__msg--muted { color: var(--color-text-secondary); opacity: 0.8; }
 .quote__msg--err { color: #8a1f1f; }
 
@@ -235,8 +240,8 @@ async function submit() {
 .help__summary {
   cursor: pointer;
   font-size: 0.8125rem;
-  color: var(--color-primary);
-  font-weight: 500;
+  color: var(--color-primary-strong);
+  font-weight: 600;
 }
 .help__summary::marker { color: var(--color-text-secondary); }
 </style>

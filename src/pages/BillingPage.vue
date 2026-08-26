@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { apiFetch } from '@/lib/api';
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import {
   CreditCard,
@@ -54,6 +54,17 @@ interface PaymentMethod {
 const subscription = ref<Subscription | null>(null);
 const pendingCharges = ref<Invoice[]>([]);
 const recentPayments = ref<Invoice[]>([]);
+
+// Ten rows of history buries the thing people came for — the last payment.
+// Show three, and let anyone who wants the rest ask for it.
+const VISIBLE_PAYMENTS = 3;
+const showAllPayments = ref(false);
+const visiblePayments = computed(() =>
+  showAllPayments.value ? recentPayments.value : recentPayments.value.slice(0, VISIBLE_PAYMENTS)
+);
+const hiddenPaymentCount = computed(() =>
+  Math.max(0, recentPayments.value.length - VISIBLE_PAYMENTS)
+);
 const paymentMethod = ref<PaymentMethod | null>(null);
 const portalLoading = ref(false);
 
@@ -251,7 +262,7 @@ onMounted(fetchBillingSummary);
         </div>
 
         <div v-if="recentPayments.length > 0" class="billing-card__body">
-          <div v-for="payment in recentPayments" :key="payment.id" class="billing-invoice-row">
+          <div v-for="payment in visiblePayments" :key="payment.id" class="billing-invoice-row">
             <div class="billing-invoice-row__info">
               <span class="billing-invoice-row__amount">{{ formatCurrency(payment.amount, payment.currency) }}</span>
               <span class="billing-invoice-row__desc">{{ payment.description || payment.number || 'Payment' }}</span>
@@ -273,6 +284,14 @@ onMounted(fetchBillingSummary);
               </a>
             </div>
           </div>
+          <button
+            v-if="hiddenPaymentCount > 0"
+            type="button"
+            class="billing-more"
+            @click="showAllPayments = !showAllPayments"
+          >
+            {{ showAllPayments ? 'Show fewer' : `Show ${hiddenPaymentCount} more` }}
+          </button>
 
           <button class="billing-btn billing-btn--secondary billing-btn--full" @click="openPortal">
             <ExternalLink :size="16" />
@@ -635,5 +654,17 @@ onMounted(fetchBillingSummary);
   background-color: rgba(239, 68, 68, 0.08);
   color: #dc2626;
   font-size: 0.875rem;
+}
+
+.billing-more {
+  margin-top: 0.5rem;
+  background: none;
+  border: 0;
+  padding: 0.35rem 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-primary-strong);
+  cursor: pointer;
+  text-decoration: underline;
 }
 </style>

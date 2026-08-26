@@ -17,8 +17,7 @@ interface BillingSummary {
     amount: number; currency: string; interval: string;
     method: string; lastInvoiced: number | null; lastPaidAt: number | null;
   } | null;
-  // Drafts — created but never sent, so nobody has been asked to pay them.
-  unsentInvoices: Array<{ id: string; amount: number; currency: string; created: number }>;
+
   pendingCharges: Array<{
     id: string;
     number: string | null;
@@ -162,39 +161,31 @@ export async function handler(event: { queryStringParameters: Record<string, str
       method: string; lastInvoiced: number | null; lastPaidAt: number | null;
     } | null = null;
 
-    if (!subscription && paidInvoices.data.length) {
-      const recent = paidInvoices.data.filter((i) => i.amount_paid > 0).slice(0, 6);
-      const amounts = recent.map((i) => i.amount_paid);
-      // Only claim a recurring amount when the recent invoices agree on one.
-      const consistent = amounts.length >= 2 && new Set(amounts.slice(0, 3)).size === 1;
-      if (consistent) {
-        const newest = recent[0];
+    // Anchored on the Price the client is actually on, not inferred from
+    // invoice history. Older accounts accumulate one-off and abandoned invoices,
+    // and guessing a cadence from them is how a stale figure ends up on a page
+    // presented as current.
+    const BILLING_PRICE_ID = process.env.BILLING_PRICE_ID;
+    if (!subscription && BILLING_PRICE_ID) {
+      try {
+        const price = await stripe.prices.retrieve(BILLING_PRICE_ID);
+        // Invoices generated from this price tell us when it was last billed.
+        const fromPrice = paidInvoices.data.find((inv) =>
+          inv.lines?.data?.some((l) => (l as { price?: { id?: string } }).price?.id === BILLING_PRICE_ID)
+        );
         arrangement = {
-          amount: newest.amount_paid,
-          currency: newest.currency,
-          interval: 'month',
-          method: newest.collection_method === 'send_invoice' ? 'invoice' : 'card',
-          lastInvoiced: newest.created,
-          lastPaidAt: newest.status_transitions?.paid_at ?? null,
+          amount: price.unit_amount ?? 0,
+          currency: price.currency,
+          interval: price.recurring?.interval ?? 'month',
+          method: 'invoice',
+          lastInvoiced: fromPrice?.created ?? paidInvoices.data[0]?.created ?? null,
+          lastPaidAt: fromPrice?.status_transitions?.paid_at ?? paidInvoices.data[0]?.status_transitions?.paid_at ?? null,
         };
+      } catch (err) {
+        console.warn('billing: BILLING_PRICE_ID could not be read:', err);
       }
     }
 
-    // Draft invoices have never been sent to the client. They are not overdue —
-    // nobody has been asked to pay them — which is exactly why they are easy to
-    // lose track of, so they are reported separately rather than folded in with
-    // open invoices.
-    const draftInvoices = await stripe.invoices.list({
-      customer: customerId,
-      status: 'draft',
-      limit: 10,
-    });
-    const unsentInvoices = draftInvoices.data.map((inv) => ({
-      id: inv.id,
-      amount: inv.amount_due,
-      currency: inv.currency,
-      created: inv.created,
-    }));
 
     // Default payment method
     let paymentMethod: BillingSummary['paymentMethod'] = null;
@@ -211,7 +202,6 @@ export async function handler(event: { queryStringParameters: Record<string, str
     const summary: BillingSummary = {
       subscription,
       arrangement,
-      unsentInvoices,
       pendingCharges,
       recentPayments,
       paymentMethod,

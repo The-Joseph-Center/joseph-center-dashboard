@@ -60,10 +60,11 @@ const navItems = computed(() => ALL_NAV.filter((i) => auth.can(i.capability)));
   >
     <!-- Brand header -->
     <div class="sidebar__brand" :class="collapsed ? 'sidebar__brand--collapsed' : ''">
-      <div
-        class="sidebar__avatar"
-        :style="{ backgroundColor: 'var(--color-sidebar-active, var(--color-primary))' }"
-      >{{ config.clientName.charAt(0) }}</div>
+      <!-- The logo sits on a light chip: its lettering is mid-green, which would
+           disappear against the dark sidebar on its own. -->
+      <div class="sidebar__avatar">
+        <img src="/logo.png" :alt="config.clientName" class="sidebar__logo" />
+      </div>
       <div v-if="!collapsed" class="sidebar__brand-text">
         <p class="sidebar__client-name">{{ config.clientName }}</p>
         <p class="sidebar__label">Dashboard</p>
@@ -185,16 +186,22 @@ const navItems = computed(() => ALL_NAV.filter((i) => auth.can(i.capability)));
 }
 
 .sidebar__avatar {
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: 0.5rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  font-size: 0.875rem;
-  font-weight: 700;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.sidebar__logo {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  display: block;
 }
 
 .sidebar__brand-text {

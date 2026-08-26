@@ -106,6 +106,6 @@ load();
 .picker__attr { margin: .4rem 0 .65rem; font-size: .8rem; opacity: .7; }
 .picker__actions { display: flex; gap: .5rem; }
 .picker__use, .picker__copy { border-radius: .35rem; padding: .35rem .8rem; font-size: .8rem; cursor: pointer; border: 1px solid rgba(0,0,0,.15); background: transparent; color: inherit; }
-.picker__use { background: var(--accent, #1D5F55); color: #fff; border-color: transparent; font-weight: 600; }
+.picker__use { background: var(--color-primary-strong); color: #fff; border-color: transparent; font-weight: 600; }
 .picker__error { font-size: .85rem; color: #8a1f1f; }
 </style>

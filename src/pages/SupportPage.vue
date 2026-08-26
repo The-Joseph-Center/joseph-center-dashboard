@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { ref } from 'vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
@@ -41,7 +42,7 @@ async function submit() {
 
   try {
     // Primary: Netlify function
-    const res = await fetch('/.netlify/functions/receive-support-request', {
+    const res = await apiFetch('/.netlify/functions/receive-support-request', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

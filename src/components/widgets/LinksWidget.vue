@@ -82,7 +82,7 @@ const cards = computed(() => visible.value.filter(l => !!l.description));
   gap: 0.4rem;
   padding: 0.4rem 0.85rem;
   border-radius: 999px;
-  background-color: var(--color-primary);
+  background-color: var(--color-primary-strong);
   color: var(--color-text-inverse, #fff);
   font-size: 0.8125rem;
   font-weight: 500;
@@ -117,7 +117,7 @@ const cards = computed(() => visible.value.filter(l => !!l.description));
 }
 
 .widget__card:hover {
-  border-color: var(--color-primary);
+  border-color: var(--color-primary-strong);
 }
 
 .widget__card-emoji {
@@ -135,7 +135,7 @@ const cards = computed(() => visible.value.filter(l => !!l.description));
 .widget__card-label {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-primary-strong);
 }
 
 .widget__card-desc {
