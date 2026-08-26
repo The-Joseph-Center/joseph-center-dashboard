@@ -256,6 +256,10 @@ SIMPLE_ANALYTICS_API_KEY
   carry both lockfiles — same trap, not yet sprung.
 - **Simple Analytics hostname** is `josephcentergj.com`, *not* the `sa.` script
   subdomain. The latter 404s "View not found".
+- **Okta's `/api/v1/users` omits DEPROVISIONED accounts** unless you pass an
+  explicit status filter. Departure is exactly what the reconciliation looks
+  for, so the filter is mandatory — without it a deactivated person is invisible
+  to the job.
 - **Vue `v-else` binds to the nearest preceding conditional.** Inserting a
   `v-if` between `v-else-if` and its `v-else` silently re-points it — this
   rendered every staff card twice.

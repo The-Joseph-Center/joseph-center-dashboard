@@ -55,7 +55,10 @@ interface Card {
 }
 
 async function oktaUsers(): Promise<OktaUser[]> {
-  const res = await fetch(`${OKTA_ORG}/api/v1/users?limit=200`, {
+  // Same caveat as the scheduled job: an unfiltered list omits DEPROVISIONED.
+  const statuses = ['ACTIVE','DEPROVISIONED','SUSPENDED','PROVISIONED','STAGED','LOCKED_OUT','RECOVERY','PASSWORD_EXPIRED'];
+  const filter = encodeURIComponent(statuses.map((s) => `status eq "${s}"`).join(' or '));
+  const res = await fetch(`${OKTA_ORG}/api/v1/users?limit=200&filter=${filter}`, {
     headers: { Authorization: `SSWS ${OKTA_TOKEN}`, Accept: 'application/json' },
   });
   if (!res.ok) throw new Error(`Okta users: ${res.status}`);

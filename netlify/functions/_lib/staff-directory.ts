@@ -28,8 +28,25 @@ export const oktaLogin = (u: OktaUser) => (u.profile.login || u.profile.email ||
  */
 export const DEPARTED_STATUSES = new Set(['DEPROVISIONED', 'SUSPENDED']);
 
+/**
+ * Every user, including the departed ones.
+ *
+ * /api/v1/users WITHOUT a filter silently omits DEPROVISIONED accounts — this
+ * org has two that the plain call never returns. Since departure is precisely
+ * what this job exists to detect, the filter is not optional: without it a
+ * deactivated person is invisible rather than reported, and only gets caught
+ * incidentally by the "no longer present in Okta" fallback, with a misleading
+ * reason attached.
+ */
+const ALL_STATUSES = [
+  'ACTIVE', 'DEPROVISIONED', 'SUSPENDED', 'PROVISIONED',
+  'STAGED', 'LOCKED_OUT', 'RECOVERY', 'PASSWORD_EXPIRED',
+];
+
 export async function fetchOktaUsers(org: string, token: string): Promise<OktaUser[]> {
-  const res = await fetch(`${org.replace(/\/$/, '')}/api/v1/users?limit=200`, {
+  const filter = ALL_STATUSES.map((s) => `status eq "${s}"`).join(' or ');
+  const url = `${org.replace(/\/$/, '')}/api/v1/users?limit=200&filter=${encodeURIComponent(filter)}`;
+  const res = await fetch(url, {
     headers: { Authorization: `SSWS ${token}`, Accept: 'application/json' },
   });
   if (!res.ok) throw new Error(`Okta users: ${res.status}`);
