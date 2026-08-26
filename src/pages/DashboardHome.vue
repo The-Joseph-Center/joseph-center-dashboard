@@ -4,6 +4,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import AnalyticsWidget from '@/components/widgets/AnalyticsWidget.vue';
 import TutorialsWidget from '@/components/widgets/TutorialsWidget.vue';
 import LinksWidget from '@/components/widgets/LinksWidget.vue';
+import MyStaffCard from '@/components/MyStaffCard.vue';
 import config from '@/config/dashboard';
 
 const widgetMap: Record<string, unknown> = {
@@ -21,6 +22,10 @@ const activeWidgets = computed(() =>
 
 <template>
   <DashboardLayout page-title="Dashboard">
+    <!-- The thing a staff member actually came to do sits above the widgets.
+         Hidden entirely for anyone with no linked card. -->
+    <MyStaffCard class="dashboard-card" hide-when-unlinked heading="My staff card" />
+
     <div class="dashboard-grid">
       <component
         v-for="widget in activeWidgets"
@@ -32,6 +37,12 @@ const activeWidgets = computed(() =>
 </template>
 
 <style scoped>
+.dashboard-card {
+  margin-bottom: 2rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
