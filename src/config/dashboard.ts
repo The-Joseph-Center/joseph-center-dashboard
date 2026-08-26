@@ -35,7 +35,9 @@ const config: DashboardConfig = {
   },
   "analytics": {
     "provider": "simple-analytics",
-    "simpleAnalyticsId": "sa.josephcentergj.com",
+    // The hostname Simple Analytics tracks, NOT the sa.* subdomain that serves
+    // the script. Querying sa.josephcentergj.com returns "View not found".
+    "simpleAnalyticsId": "josephcentergj.com",
     "internalRoutes": [
       "/analytics",
       "/billing",
