@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { requireAdmin, denial } from './_lib/verify-okta';
+import { requireCapability, denial } from './_lib/verify-okta';
 
 interface RequestBody {
   customerId: string;
@@ -9,7 +9,7 @@ interface RequestBody {
 export async function handler(event: { body: string | null; headers: Record<string, string> }) {
   // Billing is administrators only, enforced here rather than only in the UI —
   // hiding a nav item protects nothing.
-  const auth = await requireAdmin(event.headers);
+  const auth = await requireCapability(event.headers, 'billing');
   if (!auth.ok) return denial(auth);
 
   if (event.body === null) {

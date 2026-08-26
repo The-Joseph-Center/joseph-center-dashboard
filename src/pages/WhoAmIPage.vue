@@ -27,6 +27,8 @@ onMounted(auth.refresh);
       </dd>
       <dt>Admin ({{ ADMIN_GROUP }})</dt>
       <dd><strong>{{ auth.isAdmin }}</strong></dd>
+      <dt>Capabilities</dt>
+      <dd>{{ auth.capabilities.join(', ') || '—' }}</dd>
     </dl>
 
     <h2>Raw claims</h2>

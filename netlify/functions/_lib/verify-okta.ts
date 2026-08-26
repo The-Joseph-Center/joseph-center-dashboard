@@ -1,4 +1,7 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+// The same table the SPA renders its nav from, so the menu and the API cannot
+// disagree about who may do what.
+import { hasCapability, isAdmin as groupsAreAdmin, type Capability } from '../../../src/lib/capabilities';
 
 /**
  * Verifies the Okta token presented by the dashboard.
@@ -22,8 +25,6 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 
 const ISSUER = process.env.OKTA_ISSUER || '';
 const AUDIENCE = process.env.OKTA_CLIENT_ID || '';
-const ADMIN_GROUP = process.env.OKTA_ADMIN_GROUP || 'jc-dashboard-admins';
-
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 function keyStore() {
   if (!jwks) jwks = createRemoteJWKSet(new URL(`${ISSUER}/oauth2/v1/keys`));
@@ -79,7 +80,7 @@ export async function verifyRequest(
       status: 200,
       claims: payload,
       groups,
-      isAdmin: groups.includes(ADMIN_GROUP),
+      isAdmin: groupsAreAdmin(groups),
       email: typeof payload.email === 'string' ? payload.email : undefined,
     };
   } catch (err) {
@@ -90,16 +91,30 @@ export async function verifyRequest(
   }
 }
 
-/** Verify, and additionally require membership of the admin group. */
-export async function requireAdmin(
-  headers: Record<string, string | undefined>
+/**
+ * Verify, and additionally require a capability.
+ *
+ * This is the enforcement half of the feature map. The SPA hides what a user
+ * cannot do; this is what makes hiding it mean something, because a hidden nav
+ * item in front of an endpoint that still answers is decoration.
+ */
+export async function requireCapability(
+  headers: Record<string, string | undefined>,
+  capability: Capability
 ): Promise<AuthResult> {
   const result = await verifyRequest(headers);
   if (!result.ok) return result;
-  if (!result.isAdmin) {
-    return { ...result, ok: false, status: 403, error: 'Administrator access required' };
+  if (!hasCapability(result.groups, capability)) {
+    return { ...result, ok: false, status: 403, error: 'Your account does not have access to this' };
   }
   return result;
+}
+
+/** Convenience for the admin-only case. */
+export async function requireAdmin(
+  headers: Record<string, string | undefined>
+): Promise<AuthResult> {
+  return requireCapability(headers, 'billing');
 }
 
 export function denial(result: AuthResult, cors: Record<string, string> = {}) {

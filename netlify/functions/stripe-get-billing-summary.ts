@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { requireAdmin, denial } from './_lib/verify-okta';
+import { requireCapability, denial } from './_lib/verify-okta';
 
 interface BillingSummary {
   subscription: {
@@ -42,7 +42,7 @@ interface BillingSummary {
 }
 
 export async function handler(event: { queryStringParameters: Record<string, string> | null; headers: Record<string, string> }) {
-  const auth = await requireAdmin(event.headers);
+  const auth = await requireCapability(event.headers, 'billing');
   if (!auth.ok) return denial(auth);
 
   const customerId = event.queryStringParameters?.customerId;

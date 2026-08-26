@@ -1,10 +1,10 @@
-<!-- CANONICAL SOURCE — matches Build Tools dashboard preview
-     To update: edit this file AND the corresponding section in
-     build-tools/src/views/PreviewDashboardView.vue
-     Do not edit the copy in pws-dashboard-template — it will be overwritten at scaffold time -->
+<!-- This dashboard is no longer synced from pws-dashboard-template — it was
+     forked for The Joseph Center. Edits here do not need mirroring anywhere,
+     and nothing will overwrite them at scaffold time. -->
 <script setup lang="ts">
 import { useAuthStore } from '@/stores/useAuthStore';
-import { ref } from 'vue';
+import type { Capability } from '@/lib/capabilities';
+import { ref, computed } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import {
   LayoutDashboard,
@@ -37,14 +37,19 @@ function toggleDarkMode() {
   document.documentElement.setAttribute('data-theme', darkMode.value ? 'dark' : 'light');
 }
 
-interface NavItem { to: string; label: string; icon: unknown }
+interface NavItem { to: string; label: string; icon: unknown; capability: Capability }
 
-const navItems: NavItem[] = [
-    { to: '/', label: 'Overview', icon: LayoutDashboard },
-  { to: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { to: '/support', label: 'Contact & Support', icon: MessageSquare },
-  { to: '/billing', label: 'Billing', icon: CreditCard },
+// Every item declares what it needs. The matching Function enforces the same
+// capability, so hiding an item is a courtesy rather than the control.
+const ALL_NAV: NavItem[] = [
+  { to: '/', label: 'Overview', icon: LayoutDashboard, capability: 'myCard' },
+  { to: '/my-card', label: 'My Staff Card', icon: UserCircle, capability: 'myCard' },
+  { to: '/analytics', label: 'Analytics', icon: BarChart3, capability: 'analytics' },
+  { to: '/support', label: 'Contact & Support', icon: MessageSquare, capability: 'support' },
+  { to: '/billing', label: 'Billing', icon: CreditCard, capability: 'billing' },
 ];
+
+const navItems = computed(() => ALL_NAV.filter((i) => auth.can(i.capability)));
 </script>
 
 <template>

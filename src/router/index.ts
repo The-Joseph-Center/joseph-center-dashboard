@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { LoginCallback } from '@okta/okta-vue';
-import { oktaAuth, isAdminFromClaims } from '@/lib/okta';
+import { oktaAuth, groupsFromClaims } from '@/lib/okta';
+import { hasCapability, type Capability } from '@/lib/capabilities';
 
 const DashboardHome = () => import('@/pages/DashboardHome.vue');
 const AnalyticsPage = () => import('@/pages/AnalyticsPage.vue');
@@ -13,13 +14,13 @@ const NotFound = () => import('@/pages/NotFound.vue');
 
 const routes = [
   { path: '/', name: 'Dashboard', component: DashboardHome },
-  { path: '/analytics', name: 'Analytics', component: AnalyticsPage },
+  { path: '/analytics', name: 'Analytics', component: AnalyticsPage, meta: { capability: 'analytics' } },
   // Every signed-in staff member has one; no group needed.
   { path: '/my-card', name: 'MyCard', component: MyCardPage },
   { path: '/support', name: 'Support', component: SupportPage },
   // Admin-only. The guard below hides it; the billing Functions verify the same
   // group server-side, which is what actually protects it.
-  { path: '/billing', name: 'Billing', component: BillingPage, meta: { requiresAdmin: true } },
+  { path: '/billing', name: 'Billing', component: BillingPage, meta: { capability: 'billing' } },
 
   // Public — no auth required.
   { path: '/login', name: 'Login', component: LoginPage, meta: { public: true } },
@@ -53,11 +54,11 @@ router.beforeEach(async (to) => {
     return { path: '/login' };
   }
 
-  if (to.meta.requiresAdmin) {
+  const needed = to.meta.capability as Capability | undefined;
+  if (needed) {
     const claims = await oktaAuth.getUser().catch(() => undefined);
-    if (!isAdminFromClaims(claims as Record<string, unknown> | undefined)) {
-      return { path: '/forbidden' };
-    }
+    const groups = groupsFromClaims(claims as Record<string, unknown> | undefined);
+    if (!hasCapability(groups, needed)) return { path: '/forbidden' };
   }
 
   return true;

@@ -1,4 +1,4 @@
-import { verifyRequest, denial } from './_lib/verify-okta';
+import { requireCapability, denial } from './_lib/verify-okta';
 /**
  * Analytics Proxy — fetches from Simple Analytics API on behalf of the dashboard.
  * Keeps the SA API key server-side so it's never exposed to the client.
@@ -11,8 +11,8 @@ export async function handler(event: {
   headers: Record<string, string>;
 }) {
   // Previously unauthenticated: anyone who found the URL could read the site's
-  // analytics.
-  const auth = await verifyRequest(event.headers);
+  // analytics. Now limited to the people who act on it.
+  const auth = await requireCapability(event.headers, 'analytics');
   if (!auth.ok) return denial(auth);
 
   const { hostname, start, end } = event.queryStringParameters || {};

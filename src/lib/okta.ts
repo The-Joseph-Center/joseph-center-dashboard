@@ -1,4 +1,5 @@
 import { OktaAuth } from '@okta/okta-auth-js';
+import { isAdmin } from '@/lib/capabilities';
 
 // Okta OIDC against The Joseph Center's own directory, so staff sign in with
 // the account they already have and access is governed by Okta app assignment
@@ -13,9 +14,8 @@ import { OktaAuth } from '@okta/okta-auth-js';
 export const OKTA_ISSUER = import.meta.env.VITE_OKTA_ISSUER as string;
 export const OKTA_CLIENT_ID = import.meta.env.VITE_OKTA_CLIENT_ID as string;
 
-/** Group that unlocks admin-only areas. Must match the server-side check. */
-export const ADMIN_GROUP =
-  (import.meta.env.VITE_OKTA_ADMIN_GROUP as string) || 'jc-dashboard-admins';
+// Capability rules live in @/lib/capabilities, shared with the Functions.
+export { ADMIN_GROUP } from '@/lib/capabilities';
 
 export const oktaAuth = new OktaAuth({
   issuer: OKTA_ISSUER,
@@ -40,7 +40,7 @@ export function groupsFromClaims(claims: Record<string, unknown> | undefined): s
 }
 
 export function isAdminFromClaims(claims: Record<string, unknown> | undefined): boolean {
-  return groupsFromClaims(claims).includes(ADMIN_GROUP);
+  return isAdmin(groupsFromClaims(claims));
 }
 
 /**

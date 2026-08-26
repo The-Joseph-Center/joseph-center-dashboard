@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { oktaAuth, groupsFromClaims, ADMIN_GROUP } from '@/lib/okta';
+import { oktaAuth, groupsFromClaims } from '@/lib/okta';
+import { hasCapability, isAdmin as groupsAreAdmin, capabilitiesFor, type Capability } from '@/lib/capabilities';
 
 export const useAuthStore = defineStore('auth', () => {
   const claims = ref<Record<string, unknown> | null>(null);
@@ -12,9 +13,11 @@ export const useAuthStore = defineStore('auth', () => {
   );
   const email = computed(() => (claims.value?.email as string) || '');
   const groups = computed(() => groupsFromClaims(claims.value ?? undefined));
-  // Mirrors the server-side check in netlify/functions/_lib/verify-okta.ts.
-  // This one only decides what to render; the Functions decide what is allowed.
-  const isAdmin = computed(() => groups.value.includes(ADMIN_GROUP));
+  // Reads the same capability table the Functions enforce. This decides what to
+  // render; the Functions decide what is permitted.
+  const isAdmin = computed(() => groupsAreAdmin(groups.value));
+  const capabilities = computed(() => capabilitiesFor(groups.value));
+  const can = (c: Capability) => hasCapability(groups.value, c);
 
   async function refresh() {
     try {
@@ -36,5 +39,5 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated.value = false;
   }
 
-  return { claims, isAuthenticated, ready, displayName, email, groups, isAdmin, refresh, signOut };
+  return { claims, isAuthenticated, ready, displayName, email, groups, isAdmin, capabilities, can, refresh, signOut };
 });
