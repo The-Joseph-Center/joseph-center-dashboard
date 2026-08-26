@@ -20,7 +20,9 @@ async function load(next: 'famous' | 'scripture' = source.value) {
   loading.value = true;
   error.value = '';
   try {
-    const res = await apiFetch(`/.netlify/functions/quotes-proxy?source=${next}&count=8`);
+    // Six rather than eight: at two or three columns that is two rows, which
+    // keeps the disclosure from dominating the card when it opens.
+    const res = await apiFetch(`/.netlify/functions/quotes-proxy?source=${next}&count=6`);
     if (!res.ok) throw new Error(String(res.status));
     quotes.value = (await res.json()).quotes ?? [];
     if (!quotes.value.length) error.value = 'No quotes came back — try again in a moment.';
@@ -89,7 +91,16 @@ load();
 .picker__tab--on { background: var(--surface, #fff); opacity: 1; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .picker__more { border: 1px solid rgba(0,0,0,.15); background: transparent; padding: .4rem .9rem; border-radius: .4rem; font-size: .8rem; cursor: pointer; color: inherit; }
 .picker__more:disabled { opacity: .5; cursor: not-allowed; }
-.picker__list { list-style: none; margin: 0; padding: 0; display: grid; gap: .75rem; }
+.picker__list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: .75rem;
+  /* Flows to two or three columns wherever there is room, so opening the
+     disclosure costs a couple of rows rather than a screenful. Falls back to a
+     single column on narrow screens, where vertical space is the cheap axis. */
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+.picker__item { display: flex; flex-direction: column; }
+.picker__actions { margin-top: auto; }
 .picker__item { border: 1px solid rgba(0,0,0,.1); border-radius: .5rem; padding: .9rem 1rem; }
 .picker__text { margin: 0; font-size: .95rem; line-height: 1.55; }
 .picker__attr { margin: .4rem 0 .65rem; font-size: .8rem; opacity: .7; }

@@ -38,9 +38,10 @@ const activeWidgets = computed(() =>
 
 <style scoped>
 .dashboard-card {
-  /* The card draws its own border, so it just needs the grid's gap. */
+  /* The card draws its own border, so it just needs the grid's gap.
+     No width cap: the quote picker needs somewhere horizontal to go, and
+     capping this was what forced eight quotes into a single tall column. */
   margin-bottom: 1.25rem;
-  max-width: 34rem;
 }
 
 .dashboard-grid {

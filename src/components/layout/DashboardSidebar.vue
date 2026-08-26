@@ -11,7 +11,6 @@ import {
   BarChart3,
   MessageSquare,
   CreditCard,
-  UserCircle,
   LogOut,
   Sun,
   Moon,
@@ -43,7 +42,6 @@ interface NavItem { to: string; label: string; icon: unknown; capability: Capabi
 // capability, so hiding an item is a courtesy rather than the control.
 const ALL_NAV: NavItem[] = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, capability: 'myCard' },
-  { to: '/my-card', label: 'My Staff Card', icon: UserCircle, capability: 'myCard' },
   { to: '/analytics', label: 'Analytics', icon: BarChart3, capability: 'analytics' },
   { to: '/support', label: 'Contact & Support', icon: MessageSquare, capability: 'support' },
   { to: '/billing', label: 'Billing', icon: CreditCard, capability: 'billing' },

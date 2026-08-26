@@ -6,7 +6,6 @@ import { hasCapability, type Capability } from '@/lib/capabilities';
 const DashboardHome = () => import('@/pages/DashboardHome.vue');
 const AnalyticsPage = () => import('@/pages/AnalyticsPage.vue');
 const SupportPage = () => import('@/pages/SupportPage.vue');
-const MyCardPage = () => import('@/pages/MyCardPage.vue');
 const BillingPage = () => import('@/pages/BillingPage.vue');
 const LoginPage = () => import('@/pages/LoginPage.vue');
 const ForbiddenPage = () => import('@/pages/ForbiddenPage.vue');
@@ -15,8 +14,6 @@ const NotFound = () => import('@/pages/NotFound.vue');
 const routes = [
   { path: '/', name: 'Dashboard', component: DashboardHome },
   { path: '/analytics', name: 'Analytics', component: AnalyticsPage, meta: { capability: 'analytics' } },
-  // Every signed-in staff member has one; no group needed.
-  { path: '/my-card', name: 'MyCard', component: MyCardPage },
   { path: '/support', name: 'Support', component: SupportPage },
   // Admin-only. The guard below hides it; the billing Functions verify the same
   // group server-side, which is what actually protects it.
