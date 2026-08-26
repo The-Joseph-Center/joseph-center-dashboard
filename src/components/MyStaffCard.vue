@@ -3,21 +3,22 @@ import { ref, onMounted } from 'vue';
 import { apiFetch } from '@/lib/api';
 import QuotePicker from '@/components/QuotePicker.vue';
 
-// A staff member's own card. Name, title, department and email are shown but
-// not editable — those are the organisation's record of the role, and admins
-// change them. The quote is the one field the person owns.
+// The signed-in user's own staff card, styled as a dashboard widget so it sits
+// alongside Links and Analytics rather than looking like a page that wandered in.
+//
+// Name, title, department and contact email are read-only: they are the
+// organisation's record of a role, and admins change them. The quote is the one
+// field the person owns, and even that is a request rather than a save.
 
 interface Card {
   _id: string; name?: string; title?: string; email?: string;
   quote?: string; departments?: string[]; hidden?: boolean; imageUrl?: string | null;
 }
 
-// The overview renders this too. Someone with no linked card should not be met
-// by an apology every time they sign in, so the home page hides it entirely
-// while the dedicated page still explains what is going on.
-const props = withDefaults(defineProps<{ hideWhenUnlinked?: boolean; heading?: string }>(), {
+// The overview hides this entirely for anyone with no linked card — being met
+// by an apology at every sign-in is worse than the card simply not being there.
+const props = withDefaults(defineProps<{ hideWhenUnlinked?: boolean }>(), {
   hideWhenUnlinked: false,
-  heading: 'My staff card',
 });
 
 const card = ref<Card | null>(null);
@@ -65,8 +66,8 @@ async function submit() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || String(res.status));
-    // The card is NOT updated locally: nothing has changed on the site yet, and
-    // showing it as though it had would set exactly the wrong expectation.
+    // The card is deliberately NOT updated locally. Nothing has changed on the
+    // website yet, and showing it as though it had sets the wrong expectation.
     if (data.submitted) submitted.value = true;
     else unchanged.value = true;
   } catch (err) {
@@ -78,90 +79,159 @@ async function submit() {
 </script>
 
 <template>
-  <section v-if="!(props.hideWhenUnlinked && !loading && (!linked || !card))" class="mycard">
-    <h1>{{ props.heading }}</h1>
+  <div
+    v-if="!(props.hideWhenUnlinked && !loading && (!linked || !card))"
+    class="widget"
+  >
+    <p v-if="loading" class="widget__state">Loading…</p>
+    <p v-else-if="loadError" class="widget__state widget__state--err">{{ loadError }}</p>
 
-    <p v-if="loading" class="state">Loading…</p>
-    <p v-else-if="loadError" class="state state--err">{{ loadError }}</p>
-
-    <!-- Legitimate state: staff without a card, and cards without an account. -->
-    <div v-else-if="!linked || !card" class="state state--empty">
+    <div v-else-if="!linked || !card" class="widget__state">
       <p><strong>No staff card is linked to your account yet.</strong></p>
-      <p>
-        Once your details are on the website, your card will appear here
-        automatically. Nothing for you to do.
-      </p>
+      <p>It will appear here automatically once your details are on the website.</p>
     </div>
 
     <template v-else>
-      <section class="details">
-        <img v-if="card.imageUrl" :src="`${card.imageUrl}?w=200&h=200&fit=crop&auto=format`" :alt="card.name || 'Staff photo'" class="details__photo" />
-        <div class="details__fields">
-          <dl>
-            <dt>Name</dt><dd>{{ card.name || '—' }}</dd>
-            <dt>Title</dt><dd>{{ card.title || '—' }}</dd>
-            <dt>Department</dt>
-            <dd>{{ card.departments?.length ? card.departments.map(label).join(', ') : '—' }}</dd>
-            <dt>Contact email</dt><dd>{{ card.email || '—' }}</dd>
-            <dt>Current quote</dt>
-            <dd>{{ card.quote || '— none yet —' }}</dd>
-          </dl>
-          <p class="details__note">
-            These are how you appear on the website. To correct anything here,
-            ask an administrator — you can change your quote below yourself.
+      <!-- Identity. The person's name is the heading; a separate title above it
+           would only repeat what the card already shows. -->
+      <div class="who">
+        <img
+          v-if="card.imageUrl"
+          :src="`${card.imageUrl}?w=160&h=160&fit=crop&auto=format`"
+          :alt="card.name || 'Staff photo'"
+          class="who__photo"
+        />
+        <div class="who__text">
+          <p class="who__name">{{ card.name || '—' }}</p>
+          <p class="who__meta">
+            {{ card.title || 'No title set' }}
+            <template v-if="card.departments?.length">
+              · {{ card.departments.map(label).join(', ') }}
+            </template>
           </p>
-          <p v-if="card.hidden" class="details__hidden">
-            Your card is currently hidden from the website.
-          </p>
+          <p v-if="card.email" class="who__email">{{ card.email }}</p>
+          <p v-if="card.hidden" class="who__hidden">Hidden from the website</p>
         </div>
-      </section>
+      </div>
 
-      <section class="quote">
-        <h2>My favourite quote</h2>
-        <p class="quote__hint">
-          Quotes are reviewed before they appear. Submitting sends your choice to
-          the team — your card won't change until it's approved, and you'll see
-          your current quote here until then. Submit an empty box to ask for
-          yours to be removed.
-        </p>
-        <textarea v-model="quote" rows="3" maxlength="400" class="quote__input" placeholder="Pick one below, or write your own"></textarea>
+      <p class="note">Ask an administrator to correct any of the above.</p>
+
+      <!-- Quote -->
+      <div class="quote">
+        <label class="quote__label" for="my-quote">My quote</label>
+        <p v-if="card.quote" class="quote__current">Currently live: “{{ card.quote }}”</p>
+        <textarea
+          id="my-quote" v-model="quote" rows="2" maxlength="400"
+          class="quote__input" placeholder="Add a quote, or leave blank for none"
+        ></textarea>
+
         <div class="quote__row">
-          <button type="button" class="quote__save" :disabled="saving" @click="submit">
+          <button type="button" class="quote__submit" :disabled="saving" @click="submit">
             {{ saving ? 'Sending…' : 'Submit for review' }}
           </button>
-          <span v-if="submitted" class="quote__ok">Sent for review — your card is unchanged for now.</span>
-          <span v-if="unchanged" class="quote__ok">That's already your current quote.</span>
-          <span v-if="saveError" class="quote__err" role="alert">{{ saveError }}</span>
+          <span v-if="submitted" class="quote__msg">Sent — your card is unchanged until it's approved.</span>
+          <span v-else-if="unchanged" class="quote__msg">That's already your quote.</span>
+          <span v-else-if="saveError" class="quote__msg quote__msg--err" role="alert">{{ saveError }}</span>
+          <span v-else class="quote__msg quote__msg--muted">Reviewed before it appears.</span>
         </div>
 
-        <QuotePicker @use="(q) => { quote = `${q.text} — ${q.attribution}`; submitted = false; unchanged = false; }" />
-      </section>
+        <!-- Collapsed by default. Most people arrive knowing what they want; the
+             picker is for the ones who do not. -->
+        <details class="help">
+          <summary class="help__summary">Need help choosing?</summary>
+          <QuotePicker
+            @use="(q) => { quote = `${q.text} — ${q.attribution}`; submitted = false; unchanged = false; }"
+          />
+        </details>
+      </div>
     </template>
-  </section>
+  </div>
 </template>
 
 <style scoped>
-.mycard { max-width: 44rem; }
-h1 { font-size: 1.35rem; margin: 0 0 1.5rem; }
-h2 { font-size: 1rem; margin: 0 0 .25rem; }
-.state { opacity: .75; }
-.state--err { color: #8a1f1f; }
-.state--empty { border: 1px solid rgba(0,0,0,.12); border-radius: .5rem; padding: 1.25rem; }
-.state--empty p { margin: 0 0 .5rem; }
-.details { display: flex; gap: 1.5rem; align-items: flex-start; flex-wrap: wrap; }
-.details__photo { width: 110px; height: 110px; object-fit: cover; border-radius: .5rem; }
-.details__fields { flex: 1; min-width: 16rem; }
-dl { display: grid; grid-template-columns: 9rem 1fr; gap: .4rem 1rem; margin: 0; }
-dt { font-weight: 600; opacity: .75; font-size: .85rem; }
-dd { margin: 0; font-size: .9rem; }
-.details__note { margin: 1rem 0 0; font-size: .8rem; opacity: .7; line-height: 1.5; }
-.details__hidden { margin: .5rem 0 0; font-size: .8rem; color: #8a5a1f; }
-.quote { margin-top: 2.5rem; border-top: 1px solid rgba(0,0,0,.1); padding-top: 1.5rem; }
-.quote__hint { margin: 0 0 .75rem; font-size: .85rem; opacity: .7; }
-.quote__input { width: 100%; padding: .6rem .75rem; font: inherit; font-size: .9rem; border: 1px solid rgba(0,0,0,.18); border-radius: .4rem; resize: vertical; }
-.quote__row { display: flex; align-items: center; gap: .75rem; margin-top: .6rem; }
-.quote__save { background: var(--accent, #1D5F55); color: #fff; border: 0; padding: .5rem 1.1rem; border-radius: .4rem; font-weight: 600; cursor: pointer; }
-.quote__save:disabled { opacity: .6; cursor: not-allowed; }
-.quote__ok { font-size: .85rem; color: #1D5F55; }
-.quote__err { font-size: .85rem; color: #8a1f1f; }
+.widget {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  padding: 1.25rem;
+}
+
+.widget__state { font-size: 0.875rem; color: var(--color-text-secondary); }
+.widget__state--err { color: #8a1f1f; }
+.widget__state p { margin: 0 0 0.35rem; }
+
+/* Identity */
+.who { display: flex; gap: 0.9rem; align-items: center; }
+.who__photo {
+  width: 56px; height: 56px; border-radius: 50%;
+  object-fit: cover; flex-shrink: 0;
+  border: 1px solid var(--color-border);
+}
+.who__text { min-width: 0; }
+.who__name {
+  font-family: var(--font-heading);
+  font-size: 1rem; font-weight: 600;
+  color: var(--color-text); margin: 0;
+}
+.who__meta { font-size: 0.8125rem; color: var(--color-text-secondary); margin: 0.1rem 0 0; }
+.who__email { font-size: 0.75rem; color: var(--color-text-secondary); margin: 0.15rem 0 0; opacity: 0.85; }
+.who__hidden { font-size: 0.75rem; color: #8a5a1f; margin: 0.25rem 0 0; }
+
+.note {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  margin: 0.85rem 0 0;
+  opacity: 0.8;
+}
+
+/* Quote */
+.quote {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+.quote__label {
+  display: block;
+  font-family: var(--font-heading);
+  font-size: 0.8125rem; font-weight: 600;
+  color: var(--color-text); margin-bottom: 0.35rem;
+}
+.quote__current {
+  font-size: 0.75rem; color: var(--color-text-secondary);
+  margin: 0 0 0.4rem; font-style: italic;
+}
+.quote__input {
+  width: 100%; padding: 0.5rem 0.6rem;
+  font: inherit; font-size: 0.8125rem;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  resize: vertical;
+}
+.quote__row {
+  display: flex; align-items: center; gap: 0.6rem;
+  margin-top: 0.5rem; flex-wrap: wrap;
+}
+.quote__submit {
+  background: var(--color-primary);
+  color: var(--color-text-inverse, #fff);
+  border: 0; padding: 0.4rem 0.9rem;
+  border-radius: var(--border-radius);
+  font-size: 0.8125rem; font-weight: 600; cursor: pointer;
+}
+.quote__submit:disabled { opacity: 0.6; cursor: not-allowed; }
+.quote__msg { font-size: 0.75rem; color: var(--color-primary); }
+.quote__msg--muted { color: var(--color-text-secondary); opacity: 0.8; }
+.quote__msg--err { color: #8a1f1f; }
+
+/* Picker, collapsed */
+.help { margin-top: 0.85rem; }
+.help__summary {
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--color-primary);
+  font-weight: 500;
+}
+.help__summary::marker { color: var(--color-text-secondary); }
 </style>

@@ -24,7 +24,7 @@ const activeWidgets = computed(() =>
   <DashboardLayout page-title="Dashboard">
     <!-- The thing a staff member actually came to do sits above the widgets.
          Hidden entirely for anyone with no linked card. -->
-    <MyStaffCard class="dashboard-card" hide-when-unlinked heading="My staff card" />
+    <MyStaffCard class="dashboard-card" hide-when-unlinked />
 
     <div class="dashboard-grid">
       <component
@@ -38,9 +38,9 @@ const activeWidgets = computed(() =>
 
 <style scoped>
 .dashboard-card {
-  margin-bottom: 2rem;
-  padding-bottom: 2rem;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  /* The card draws its own border, so it just needs the grid's gap. */
+  margin-bottom: 1.25rem;
+  max-width: 34rem;
 }
 
 .dashboard-grid {
