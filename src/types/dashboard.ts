@@ -17,6 +17,8 @@ export interface TutorialVideo {
  * (the former Helpful Link).
  */
 export interface DashboardLink {
+  /** Optional capability gate. Omitted means every signed-in staff member. */
+  capability?: string;
   label: string;
   url: string;
   emoji?: string;

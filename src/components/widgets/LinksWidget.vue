@@ -2,14 +2,23 @@
 import { computed } from 'vue';
 import { ExternalLink } from 'lucide-vue-next';
 import config from '@/config/dashboard';
+import { useAuthStore } from '@/stores/useAuthStore';
+import type { Capability } from '@/lib/capabilities';
+
+const auth = useAuthStore();
+// A link with no capability is for everyone; one that declares a capability is
+// only shown to people who actually have it.
+const visible = computed(() =>
+  config.links.filter((l) => !('capability' in l) || auth.can((l as { capability: Capability }).capability))
+);
 
 // Pills (no description) render compact; cards (with description) render expanded.
-const pills = computed(() => config.links.filter(l => !l.description));
-const cards = computed(() => config.links.filter(l => !!l.description));
+const pills = computed(() => visible.value.filter(l => !l.description));
+const cards = computed(() => visible.value.filter(l => !!l.description));
 </script>
 
 <template>
-  <div class="widget" v-if="config.links.length">
+  <div class="widget" v-if="visible.length">
     <h2 class="widget__title"><ExternalLink :size="18" /> Links</h2>
 
     <!-- Compact pills (no description) -->

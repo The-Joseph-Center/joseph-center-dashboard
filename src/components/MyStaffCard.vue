@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { RouterLink } from 'vue-router';
 import { apiFetch } from '@/lib/api';
 import QuotePicker from '@/components/QuotePicker.vue';
 
@@ -114,7 +115,10 @@ async function submit() {
         </div>
       </div>
 
-      <p class="note">Ask an administrator to correct any of the above.</p>
+      <p class="note">
+        Something wrong above?
+        <RouterLink to="/support" class="note__link">Ask an administrator</RouterLink>.
+      </p>
 
       <!-- Quote -->
       <div class="quote">
@@ -183,6 +187,7 @@ async function submit() {
   margin: 0.85rem 0 0;
   opacity: 0.8;
 }
+.note__link { color: var(--color-primary); font-weight: 500; }
 
 /* Quote */
 .quote {

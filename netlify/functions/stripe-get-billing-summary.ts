@@ -12,6 +12,13 @@ interface BillingSummary {
     nextBillingDate: number | null;
     cancelAtPeriodEnd: boolean;
   } | null;
+  // How the client is actually billed when there is no card subscription.
+  arrangement: {
+    amount: number; currency: string; interval: string;
+    method: string; lastInvoiced: number | null; lastPaidAt: number | null;
+  } | null;
+  // Drafts — created but never sent, so nobody has been asked to pay them.
+  unsentInvoices: Array<{ id: string; amount: number; currency: string; created: number }>;
   pendingCharges: Array<{
     id: string;
     number: string | null;
@@ -68,17 +75,22 @@ export async function handler(event: { queryStringParameters: Record<string, str
       return { statusCode: 404, body: JSON.stringify({ error: 'Customer not found' }) };
     }
 
-    // Fetch active subscriptions (expand limited to 3 levels)
+    // Only genuinely current subscriptions. Listing status:'all' and taking
+    // data[0] surfaced a subscription cancelled in 2022 as though it were the
+    // live arrangement — this client is billed by invoice, not by card.
     const subscriptions = await stripe.subscriptions.list({
       customer: customerId,
       status: 'all',
-      limit: 1,
+      limit: 20,
       expand: ['data.default_payment_method'],
     });
+    const current = subscriptions.data.filter((s) =>
+      ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status)
+    );
 
     let subscription: BillingSummary['subscription'] = null;
-    if (subscriptions.data.length > 0) {
-      const sub = subscriptions.data[0];
+    if (current.length > 0) {
+      const sub = current[0];
       const item = sub.items.data[0];
       // Fetch product name separately to avoid deep expand
       let productName = 'Subscription';
@@ -139,6 +151,51 @@ export async function handler(event: { queryStringParameters: Record<string, str
       invoicePdf: inv.invoice_pdf ?? null,
     }));
 
+    // ── Invoice-based arrangement ──
+    // Some clients are invoiced and pay by cheque rather than carrying a card
+    // subscription. Where that is the case there is no Stripe subscription to
+    // report, but there IS a real recurring arrangement — derive it from the
+    // paid invoice history so the page reflects how the client is actually
+    // billed instead of showing nothing.
+    let arrangement: {
+      amount: number; currency: string; interval: string;
+      method: string; lastInvoiced: number | null; lastPaidAt: number | null;
+    } | null = null;
+
+    if (!subscription && paidInvoices.data.length) {
+      const recent = paidInvoices.data.filter((i) => i.amount_paid > 0).slice(0, 6);
+      const amounts = recent.map((i) => i.amount_paid);
+      // Only claim a recurring amount when the recent invoices agree on one.
+      const consistent = amounts.length >= 2 && new Set(amounts.slice(0, 3)).size === 1;
+      if (consistent) {
+        const newest = recent[0];
+        arrangement = {
+          amount: newest.amount_paid,
+          currency: newest.currency,
+          interval: 'month',
+          method: newest.collection_method === 'send_invoice' ? 'invoice' : 'card',
+          lastInvoiced: newest.created,
+          lastPaidAt: newest.status_transitions?.paid_at ?? null,
+        };
+      }
+    }
+
+    // Draft invoices have never been sent to the client. They are not overdue —
+    // nobody has been asked to pay them — which is exactly why they are easy to
+    // lose track of, so they are reported separately rather than folded in with
+    // open invoices.
+    const draftInvoices = await stripe.invoices.list({
+      customer: customerId,
+      status: 'draft',
+      limit: 10,
+    });
+    const unsentInvoices = draftInvoices.data.map((inv) => ({
+      id: inv.id,
+      amount: inv.amount_due,
+      currency: inv.currency,
+      created: inv.created,
+    }));
+
     // Default payment method
     let paymentMethod: BillingSummary['paymentMethod'] = null;
     const defaultPM = customer.invoice_settings?.default_payment_method;
@@ -153,6 +210,8 @@ export async function handler(event: { queryStringParameters: Record<string, str
 
     const summary: BillingSummary = {
       subscription,
+      arrangement,
+      unsentInvoices,
       pendingCharges,
       recentPayments,
       paymentMethod,

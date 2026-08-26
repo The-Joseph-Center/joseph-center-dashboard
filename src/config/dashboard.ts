@@ -25,7 +25,10 @@ const config: DashboardConfig = {
       "label": "Sanity Studio",
       "url": "https://studio.josephcentergj.com",
       "emoji": "✏️",
-      "description": "Edit your content"
+      "description": "Edit your content",
+      // Studio needs a Sanity login that only administrators have. Showing it to
+      // everyone advertises a door they cannot open.
+      "capability": "billing"
     }
   ],
   "billing": {
