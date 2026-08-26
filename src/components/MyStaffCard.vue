@@ -87,15 +87,22 @@ async function submit() {
     <p v-if="loading" class="widget__state">Loading…</p>
     <p v-else-if="loadError" class="widget__state widget__state--err">{{ loadError }}</p>
 
-    <div v-else-if="!linked || !card" class="widget__state">
-      <p><strong>No staff card is linked to your account yet.</strong></p>
-      <p>It will appear here automatically once your details are on the website.</p>
-    </div>
-
     <template v-else>
+      <!-- No card yet: still offer the quote form. Six staff can sign in
+           without a card, and placeholder cards are waiting to be identified —
+           capturing a quote now saves asking again once a card exists. -->
+      <div v-if="!linked || !card" class="nocard">
+        <p class="nocard__head"><strong>Your staff card isn't set up yet.</strong></p>
+        <p class="nocard__body">
+          Your name, photo and title will appear here once you're added to the
+          website. You can still choose a quote now — it'll be applied when your
+          card is created.
+        </p>
+      </div>
+
+      <div v-else class="who">
       <!-- Identity. The person's name is the heading; a separate title above it
            would only repeat what the card already shows. -->
-      <div class="who">
         <img
           v-if="card.imageUrl"
           :src="`${card.imageUrl}?w=160&h=160&fit=crop&auto=format`"
@@ -115,7 +122,7 @@ async function submit() {
         </div>
       </div>
 
-      <p class="note">
+      <p v-if="card" class="note">
         Something wrong above?
         <RouterLink to="/support" class="note__link">Ask an administrator</RouterLink>.
       </p>
@@ -123,7 +130,7 @@ async function submit() {
       <!-- Quote -->
       <div class="quote">
         <label class="quote__label" for="my-quote">My quote</label>
-        <p v-if="card.quote" class="quote__current">Currently live: “{{ card.quote }}”</p>
+        <p v-if="card?.quote" class="quote__current">Currently live: “{{ card?.quote }}”</p>
         <textarea
           id="my-quote" v-model="quote" rows="2" maxlength="400"
           class="quote__input" placeholder="Add a quote, or leave blank for none"
@@ -161,6 +168,8 @@ async function submit() {
 }
 
 .widget__state { font-size: 0.875rem; color: var(--color-text-secondary); }
+.nocard__head { margin: 0 0 0.25rem; font-size: 0.9375rem; }
+.nocard__body { margin: 0; font-size: 0.8125rem; color: var(--color-text-secondary); line-height: 1.55; }
 .widget__state--err { color: #8a1f1f; }
 .widget__state p { margin: 0 0 0.35rem; }
 

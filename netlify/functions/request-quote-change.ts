@@ -42,25 +42,28 @@ export async function handler(event: {
   try {
     // Identity comes from the token, so a request cannot be made on someone
     // else's behalf.
+    // A missing card is not a reason to refuse. Six staff can sign in but have
+    // no card yet, and several placeholder cards are waiting to be identified —
+    // their quote is worth capturing now so it is on hand when the card is
+    // created or linked, rather than asking them again later.
     const staffId = await staffIdForLogin(auth.email);
-    if (!staffId) {
-      return { statusCode: 404, headers: JSON_HEADERS, body: JSON.stringify({ error: 'No staff card is linked to your account' }) };
-    }
-    const card = await fetchCard(staffId);
-    if (!card) {
-      return { statusCode: 404, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Your staff card could not be found' }) };
-    }
-    if ((card.quote ?? '').trim() === proposed) {
+    const card = staffId ? await fetchCard(staffId) : null;
+
+    if (card && (card.quote ?? '').trim() === proposed) {
       return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ submitted: false, reason: 'unchanged' }) };
+    }
+    if (!card && !proposed) {
+      return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Add a quote before submitting.' }) };
     }
 
     const rendered = quoteRequestEmail({
-      staffName: card.name || auth.email,
-      staffTitle: card.title,
+      staffName: card?.name || auth.email,
+      staffTitle: card?.title,
       requesterEmail: auth.email,
-      currentQuote: card.quote,
+      currentQuote: card?.quote,
       proposedQuote: proposed,
-      staffId,
+      staffId: staffId ?? '',
+      unlinked: !card,
     });
 
     const to = process.env.QUOTE_REVIEW_TO_EMAIL || 'ephifer@josephcentergj.com';
