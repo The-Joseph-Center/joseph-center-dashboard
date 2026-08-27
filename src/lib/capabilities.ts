@@ -23,6 +23,7 @@ export type Capability =
   | 'content'    // blog, newsletter and post-building tools (in progress)
   | 'staffAdmin'  // edit anyone's public staff details, create cards
   | 'submissions' // the form inbox — which forms is decided per form, below
+  | 'formsAdmin'  // open, close and edit the seasonal forms
   | 'billing';    // invoices, admin only
 
 export const ADMIN_GROUP = 'jc-dashboard-admins';
@@ -93,6 +94,10 @@ const RULES: Record<Capability, string[] | '*'> = {
   // reach the page, and the page then shows only the forms they may read. A
   // separately written union here would drift the first time a form is added.
   submissions: [...new Set(Object.values(FORM_ACCESS).flat())],
+  // Editing a form is a bigger action than reading its submissions — it changes
+  // what the public sees — so it is not simply "whoever can read `seasonal`".
+  // The Event Coordinator runs Angel Tree and needs to open and close it.
+  formsAdmin: [DEV, ADMIN_GROUP, 'Operational Director', 'Event Coordinator'],
   billing: [ADMIN_GROUP],
 };
 
