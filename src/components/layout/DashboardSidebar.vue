@@ -3,8 +3,10 @@
      and nothing will overwrite them at scaffold time. -->
 <script setup lang="ts">
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useMyCardStore } from '@/stores/useMyCardStore';
+import { sillyAvatar } from '@/lib/avatar';
 import type { Capability } from '@/lib/capabilities';
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import {
   LayoutDashboard,
@@ -25,6 +27,17 @@ const emit = defineEmits<{ (e: 'toggle-mobile'): void }>();
 
 const route = useRoute();
 const auth = useAuthStore();
+
+// The staff photo already uploaded on the Staff page, reused here so the person
+// signed in sees themselves rather than a grey silhouette. Falls back to a
+// drawn character keyed to their login — see lib/avatar.
+const myCard = useMyCardStore();
+onMounted(() => myCard.load());
+const avatarSrc = computed(() =>
+  myCard.card?.imageUrl
+    ? `${myCard.card.imageUrl}?w=96&h=96&fit=crop&crop=focalpoint&auto=format`
+    : sillyAvatar(auth.email || auth.displayName)
+);
 const collapsed = ref(false);
 const darkMode = ref(false);
 
@@ -97,7 +110,7 @@ const navItems = computed(() => ALL_NAV.filter((i) => auth.can(i.capability)));
       <!-- User info -->
       <div class="sidebar__user" :class="collapsed ? 'sidebar__user--collapsed' : ''">
         <div class="sidebar__user-avatar">
-          <UserCircle :size="20" />
+          <img :src="avatarSrc" :alt="auth.displayName" class="sidebar__user-img" />
         </div>
         <div v-if="!collapsed" class="sidebar__user-info">
           <p class="sidebar__user-name">{{ auth.displayName }}</p>
@@ -301,11 +314,15 @@ const navItems = computed(() => ALL_NAV.filter((i) => auth.can(i.capability)));
   height: 2rem;
   border-radius: 50%;
   background-color: color-mix(in srgb, var(--color-sidebar-text, #9ca3af) 15%, transparent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #9ca3af;
+  overflow: hidden;
   flex-shrink: 0;
+}
+
+.sidebar__user-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .sidebar__user-info {

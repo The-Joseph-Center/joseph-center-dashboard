@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { RouterLink } from 'vue-router';
 import { apiFetch } from '@/lib/api';
+import { useMyCardStore } from '@/stores/useMyCardStore';
 import QuotePicker from '@/components/QuotePicker.vue';
 
 // The signed-in user's own staff card, styled as a dashboard widget so it sits
@@ -22,10 +23,12 @@ const props = withDefaults(defineProps<{ hideWhenUnlinked?: boolean }>(), {
   hideWhenUnlinked: false,
 });
 
-const card = ref<Card | null>(null);
-const linked = ref(true);
-const loading = ref(true);
-const loadError = ref('');
+// Shared with the sidebar avatar, so the card is fetched once per session.
+const my = useMyCardStore();
+const card = computed(() => my.card as Card | null);
+const linked = computed(() => my.linked);
+const loading = computed(() => my.loading);
+const loadError = computed(() => my.error);
 
 const quote = ref('');
 const saving = ref(false);
@@ -43,18 +46,8 @@ const DEPT_LABELS: Record<string, string> = {
 const label = (d: string) => DEPT_LABELS[d] ?? d;
 
 onMounted(async () => {
-  try {
-    const res = await apiFetch('/.netlify/functions/get-my-staff-card');
-    if (!res.ok) throw new Error(String(res.status));
-    const data = await res.json();
-    linked.value = data.linked;
-    card.value = data.card;
-    quote.value = data.card?.quote ?? '';
-  } catch {
-    loadError.value = 'Could not load your staff card.';
-  } finally {
-    loading.value = false;
-  }
+  await my.load();
+  quote.value = my.card?.quote ?? '';
 });
 
 async function submit() {

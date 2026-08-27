@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, nextTick } from 'vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import { apiFetch } from '@/lib/api';
 
@@ -142,6 +142,22 @@ const when = (secs: number) =>
   new Date(secs * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
 const creating = ref<string | null>(null);
+// The card just created, so the page can take you to it. Without this the
+// roster reloads at the top of the page and the new card is somewhere below the
+// fold — it reads as nothing having happened, and the button gets pressed again.
+const justCreated = ref<string | null>(null);
+
+async function revealCard(id: string) {
+  await nextTick();
+  const el = document.getElementById(`card-${id}`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  justCreated.value = id;
+  // Focus the title, since that is the field the directory could not fill in.
+  el.querySelector<HTMLInputElement>('[data-field="title"]')?.focus({ preventScroll: true });
+  window.setTimeout(() => { if (justCreated.value === id) justCreated.value = null; }, 4000);
+}
+
 async function createFor(u: NeedsCard) {
   creating.value = u.login; error.value = '';
   try {
@@ -150,6 +166,9 @@ async function createFor(u: NeedsCard) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'create',
+        // The login links the new card to the Okta account straight away, so the
+        // row leaves the queue on this click rather than at the next nightly run.
+        login: u.login,
         // Pre-filled from Okta. Title is usually blank there — it is public copy,
         // written here rather than pulled from the directory.
         name: u.firstName || u.login,
@@ -159,11 +178,38 @@ async function createFor(u: NeedsCard) {
       }),
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
+    const { id, alreadyLinked } = await res.json();
+    // Drop the row before the reload lands, so it cannot be clicked twice.
+    needsCard.value = needsCard.value.filter((n) => n.login !== u.login);
+    if (alreadyLinked) error.value = `${u.firstName || u.login} already has a card — taking you to it.`;
     await load();
+    if (id) await revealCard(id);
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not create the card.';
   } finally {
     creating.value = null;
+  }
+}
+
+// ── Removing a card ──
+// Two clicks, because it cannot be undone. Hiding is the right tool for someone
+// who has left; this is for a card that should never have existed.
+const confirmingDelete = ref<string | null>(null);
+async function removeCard(card: Card) {
+  savingId.value = card._id; error.value = '';
+  try {
+    const res = await apiFetch('/.netlify/functions/admin-staff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', _id: card._id }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
+    confirmingDelete.value = null;
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not remove the card.';
+  } finally {
+    savingId.value = null;
   }
 }
 </script>
@@ -235,9 +281,11 @@ async function createFor(u: NeedsCard) {
       </section>
 
       <!-- Marked as never needing a card -->
-      <section v-if="notStaff.length || serviceAccounts.length" class="widget block">
-        <h2 class="block__title">Not staff cards ({{ notStaff.length + serviceAccounts.length }})</h2>
-        <p class="block__hint">
+      <details v-if="notStaff.length || serviceAccounts.length" class="widget block fold">
+        <summary class="fold__summary">
+          Not staff cards ({{ notStaff.length + serviceAccounts.length }})
+        </summary>
+        <p class="block__hint fold__hint">
           Left out of the queue above and out of the daily reconciliation email. Nothing here is deleted from Okta.
         </p>
         <ul class="queue">
@@ -261,13 +309,19 @@ async function createFor(u: NeedsCard) {
             </span>
           </li>
         </ul>
-      </section>
+      </details>
 
       <!-- The roster -->
       <section class="widget block">
         <h2 class="block__title">Staff cards ({{ cards.length }})</h2>
         <div class="roster">
-          <article v-for="card in cards" :key="card._id" class="row">
+          <article
+            v-for="card in cards"
+            :key="card._id"
+            :id="`card-${card._id}`"
+            class="row"
+            :class="{ 'row--new': justCreated === card._id }"
+          >
             <div class="row__photo">
               <img v-if="card.imageUrl" :src="`${card.imageUrl}?w=120&h=120&fit=crop&auto=format`" :alt="card.name || ''" />
               <div v-else class="row__nophoto">No photo</div>
@@ -282,7 +336,7 @@ async function createFor(u: NeedsCard) {
                 <label class="f"><span>Name</span><input v-model="card.name" type="text" /></label>
                 <label class="f"><span>Public email</span><input v-model="card.email" type="email" placeholder="optional" /></label>
               </div>
-              <label class="f"><span>Title</span><input v-model="card.title" type="text" /></label>
+              <label class="f"><span>Title</span><input v-model="card.title" type="text" data-field="title" /></label>
               <fieldset class="f f--depts">
                 <legend>Departments</legend>
                 <label v-for="d in departments" :key="d" class="chk">
@@ -299,6 +353,19 @@ async function createFor(u: NeedsCard) {
                   {{ savingId === card._id ? 'Saving…' : 'Save' }}
                 </button>
                 <span v-if="savedId === card._id" class="ok">Saved</span>
+
+                <span class="row__remove">
+                  <template v-if="confirmingDelete === card._id">
+                    <span class="row__warn">Delete permanently?</span>
+                    <button type="button" class="btn btn--danger btn--sm" :disabled="savingId === card._id" @click="removeCard(card)">
+                      {{ savingId === card._id ? 'Removing…' : 'Yes, remove' }}
+                    </button>
+                    <button type="button" class="btn btn--ghost btn--sm" @click="confirmingDelete = null">Cancel</button>
+                  </template>
+                  <button v-else type="button" class="btn btn--ghost btn--sm" @click="confirmingDelete = card._id">
+                    Remove card
+                  </button>
+                </span>
               </div>
             </div>
           </article>
@@ -331,6 +398,15 @@ async function createFor(u: NeedsCard) {
 .dismiss__actions { grid-column: 1 / -1; display: flex; gap: .5rem; }
 @media (max-width: 640px) { .dismiss { grid-template-columns: 1fr; } }
 .btn--ghost { background: none; color: var(--color-text-secondary); border: 1px solid var(--color-border); }
+.btn--danger { background: #8a1f1f; }
+.row--new { outline: 2px solid var(--color-primary-strong); outline-offset: 2px; transition: outline-color 1s ease; }
+.row__remove { margin-left: auto; display: flex; align-items: center; gap: .5rem; }
+.row__warn { font-size: .75rem; color: #8a1f1f; font-weight: 600; }
+.fold { padding: 0; }
+.fold__summary { cursor: pointer; padding: 1rem 1.25rem; font-family: var(--font-heading); font-size: 1rem; list-style-position: inside; }
+.fold[open] .fold__summary { padding-bottom: .35rem; }
+.fold__hint { padding: 0 1.25rem; }
+.fold .queue { padding: 0 1.25rem 1.25rem; }
 .queue__row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .6rem .75rem; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--border-radius); }
 .queue__who { display: flex; flex-direction: column; }
 .queue__login { font-size: .75rem; color: var(--color-text-secondary); }

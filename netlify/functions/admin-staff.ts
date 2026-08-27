@@ -1,7 +1,7 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import {
   fetchOktaUsers, fetchServiceAccountLogins, fetchNoCard, ensureNoCardTable,
-  oktaLogin, DEPARTED_STATUSES, turso, type OktaUser,
+  ensureIdentityTable, oktaLogin, DEPARTED_STATUSES, turso, type OktaUser,
 } from './_lib/staff-directory';
 
 /**
@@ -253,11 +253,66 @@ export async function handler(event: {
       if (!name) {
         return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'A name is required.' }) };
       }
+      const login = clean(body.login, 200).toLowerCase();
+      const db = turso();
+      await ensureIdentityTable(db);
+
+      // A second click must not make a second card. The queue row disappearing
+      // depends on the link existing, so the link is written here rather than
+      // waiting for the nightly reconciliation to notice the new document —
+      // which is what left the row sitting there looking unclicked.
+      if (login) {
+        const already = await db.execute({
+          sql: 'SELECT sanity_staff_id FROM staff_identity WHERE okta_login = ? LIMIT 1',
+          args: [login],
+        });
+        if (already.rows[0]) {
+          return {
+            statusCode: 200,
+            headers: JSON_HEADERS,
+            body: JSON.stringify({ created: false, id: String(already.rows[0].sanity_staff_id), alreadyLinked: true }),
+          };
+        }
+      }
+
       const created = await sanityMutate([
         { create: { _type: 'staff', name, title, email, departments, hidden: false, ...imageField } },
       ]) as { results?: { id: string }[] };
       const newId = created.results?.[0]?.id ?? null;
+
+      if (login && newId) {
+        const user = (await fetchOktaUsers(process.env.OKTA_ISSUER!, process.env.OKTA_API_TOKEN!))
+          .find((u) => oktaLogin(u) === login);
+        if (user) {
+          await db.execute({
+            sql: `INSERT INTO staff_identity (sanity_staff_id, okta_login, okta_user_id, matched_by, updated_at)
+                  VALUES (?, ?, ?, 'dashboard', unixepoch())
+                  ON CONFLICT(sanity_staff_id) DO UPDATE SET
+                    okta_login=excluded.okta_login, okta_user_id=excluded.okta_user_id,
+                    matched_by='dashboard', updated_at=unixepoch()`,
+            args: [newId, login, user.id],
+          });
+        }
+      }
       return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ created: true, id: newId }) };
+    }
+
+    // ── Delete a card ──
+    // For a card that should not exist — a duplicate, a mistake. Someone who has
+    // left is hidden, not deleted: hiding is reversible and keeps the quote and
+    // photo. The UI confirms before calling this; the link is dropped alongside
+    // the document so the person returns to the onboarding queue rather than
+    // pointing at an id that is gone.
+    if (action === 'delete') {
+      const id = clean(body._id, 120);
+      if (!id) {
+        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Missing staff id' }) };
+      }
+      await sanityMutate([{ delete: { id } }]);
+      const db = turso();
+      await ensureIdentityTable(db);
+      await db.execute({ sql: 'DELETE FROM staff_identity WHERE sanity_staff_id = ?', args: [id] });
+      return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ deleted: true }) };
     }
 
     const id = clean(body._id, 120);
