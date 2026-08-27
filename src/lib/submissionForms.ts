@@ -1,4 +1,4 @@
-import type { FormId } from '/Volumes/WD_BLACK/Codebase/joseph-center/dashboard/src/lib/capabilities.ts';
+import type { FormId } from '@/lib/capabilities';
 
 /**
  * The shape of each form's stored submissions.
