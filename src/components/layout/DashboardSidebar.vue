@@ -13,6 +13,7 @@ import {
   BarChart3,
   Users,
   MessageSquare,
+  Inbox,
   CreditCard,
   LogOut,
   Sun,
@@ -58,6 +59,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, capability: 'myCard' },
   { to: '/analytics', label: 'Analytics', icon: BarChart3, capability: 'analytics' },
   { to: '/staff', label: 'Staff', icon: Users, capability: 'staffAdmin' },
+  { to: '/submissions', label: 'Submissions', icon: Inbox, capability: 'submissions' },
   { to: '/support', label: 'Support', icon: MessageSquare, capability: 'support' },
   { to: '/billing', label: 'Billing', icon: CreditCard, capability: 'billing' },
 ];
