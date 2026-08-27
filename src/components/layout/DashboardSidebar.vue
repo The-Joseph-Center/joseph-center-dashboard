@@ -9,6 +9,7 @@ import { RouterLink, useRoute } from 'vue-router';
 import {
   LayoutDashboard,
   BarChart3,
+  Users,
   MessageSquare,
   CreditCard,
   LogOut,
@@ -43,6 +44,7 @@ interface NavItem { to: string; label: string; icon: unknown; capability: Capabi
 const ALL_NAV: NavItem[] = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, capability: 'myCard' },
   { to: '/analytics', label: 'Analytics', icon: BarChart3, capability: 'analytics' },
+  { to: '/staff', label: 'Staff', icon: Users, capability: 'staffAdmin' },
   { to: '/support', label: 'Support', icon: MessageSquare, capability: 'support' },
   { to: '/billing', label: 'Billing', icon: CreditCard, capability: 'billing' },
 ];

@@ -21,6 +21,7 @@ export type Capability =
   | 'support'    // raise a support request
   | 'analytics'  // site analytics
   | 'content'    // blog, newsletter and post-building tools (in progress)
+  | 'staffAdmin' // edit anyone's public staff details, create cards
   | 'billing';   // invoices, admin only
 
 export const ADMIN_GROUP = 'jc-dashboard-admins';
@@ -34,6 +35,9 @@ const RULES: Record<Capability, string[] | '*'> = {
   // who act on it.
   analytics: [ADMIN_GROUP, 'Social Media Manager'],
   content: [ADMIN_GROUP, 'Social Media Manager'],
+  // Its own capability rather than folding into billing, so onboarding can be
+  // delegated later without also handing over the invoices.
+  staffAdmin: [ADMIN_GROUP],
   billing: [ADMIN_GROUP],
 };
 
