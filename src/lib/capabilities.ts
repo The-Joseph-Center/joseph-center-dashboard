@@ -49,15 +49,21 @@ export type FormId =
   | 'volunteers' | 'events' | 'letters' | 'coffee-chat' | 'seasonal' | 'subscribers';
 
 export const FORM_ACCESS: Record<FormId, string[]> = {
-  volunteers: [ADMIN_GROUP, 'Operational Director', 'Front Desk', 'Executive Assistant'],
-  events: [ADMIN_GROUP, 'Operational Director', 'Front Desk', 'Social Media Manager'],
+  // The Operational Director manages the volunteers.
+  volunteers: [ADMIN_GROUP, 'Operational Director', 'Social Media Manager'],
+  events: [ADMIN_GROUP, 'Operational Director', 'Social Media Manager', 'Executive Assistant'],
   // Mona's queue. Home addresses, so it stays tight.
   letters: [ADMIN_GROUP, 'Executive Director', 'Executive Assistant'],
   // Asks about legal matters and sensitive topics — the people who book and
   // record the episodes, and nobody else.
   'coffee-chat': [ADMIN_GROUP, 'Social Media Manager', 'Executive Assistant'],
-  seasonal: [ADMIN_GROUP, 'Operational Director', 'Front Desk', 'Executive Assistant'],
-  subscribers: [ADMIN_GROUP, 'Social Media Manager'],
+  // 'Event Coordinator' does not exist in Okta yet. An unmatched name grants
+  // nothing rather than erroring, so this is safe to have here first — the
+  // moment the group is created and someone is added, they get access with no
+  // change needed here.
+  seasonal: [ADMIN_GROUP, 'Operational Director', 'Executive Assistant', 'Event Coordinator'],
+  // The Executive Assistant helps with social.
+  subscribers: [ADMIN_GROUP, 'Social Media Manager', 'Executive Assistant'],
 };
 
 /** '*' means every authenticated staff member. */
