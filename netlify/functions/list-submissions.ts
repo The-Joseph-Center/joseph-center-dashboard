@@ -132,7 +132,7 @@ export async function handler(event: {
       // Sensitive forms are readable in the browser but not downloadable: a
       // spreadsheet of home addresses leaves the building the moment it exists,
       // and nothing here can follow it.
-      if (def.sensitive) {
+      if (def.exportable === false || (def.exportable === undefined && def.sensitive)) {
         return { statusCode: 403, headers: JSON_HEADERS, body: JSON.stringify({ error: 'This form cannot be exported.' }) };
       }
       return {
@@ -152,7 +152,7 @@ export async function handler(event: {
         form: {
           id: def.id, label: def.label, description: def.description,
           sensitive: def.sensitive ?? null, columns: def.columns,
-          exportable: !def.sensitive, groupColumn: def.groupColumn ?? null,
+          exportable: def.exportable ?? !def.sensitive, groupColumn: def.groupColumn ?? null,
         },
         rows,
         total: Number(counted.rows[0]?.n ?? 0),

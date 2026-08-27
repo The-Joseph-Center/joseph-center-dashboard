@@ -46,24 +46,35 @@ export const ADMIN_GROUP = 'jc-dashboard-admins';
  * it is written down.
  */
 export type FormId =
-  | 'volunteers' | 'events' | 'letters' | 'coffee-chat' | 'seasonal' | 'subscribers';
+  | 'contact' | 'volunteers' | 'events' | 'letters'
+  | 'coffee-chat' | 'seasonal' | 'subscribers';
+
+/**
+ * Web Developer is on every form.
+ *
+ * Deliberately a separate group from jc-dashboard-admins rather than the same
+ * one doing double duty: "can fix the site" and "should read everyone's
+ * submissions" are different claims, and folding them together would have made
+ * every future admin a reader of the letter and Coffee Chat queues as a side
+ * effect of being able to see the invoices. Admins get the two inboxes that are
+ * general business — the contact form and volunteers — and everything else is
+ * granted to the person who actually does that work.
+ */
+const DEV = 'Web Developer';
 
 export const FORM_ACCESS: Record<FormId, string[]> = {
+  contact: [DEV, ADMIN_GROUP],
   // The Operational Director manages the volunteers.
-  volunteers: [ADMIN_GROUP, 'Operational Director', 'Social Media Manager'],
-  events: [ADMIN_GROUP, 'Operational Director', 'Social Media Manager', 'Executive Assistant'],
-  // Mona's queue. Home addresses, so it stays tight.
-  letters: [ADMIN_GROUP, 'Executive Director', 'Executive Assistant'],
-  // Asks about legal matters and sensitive topics — the people who book and
-  // record the episodes, and nobody else.
-  'coffee-chat': [ADMIN_GROUP, 'Social Media Manager', 'Executive Assistant'],
-  // 'Event Coordinator' does not exist in Okta yet. An unmatched name grants
-  // nothing rather than erroring, so this is safe to have here first — the
-  // moment the group is created and someone is added, they get access with no
-  // change needed here.
-  seasonal: [ADMIN_GROUP, 'Operational Director', 'Executive Assistant', 'Event Coordinator'],
+  volunteers: [DEV, ADMIN_GROUP, 'Operational Director', 'Social Media Manager'],
+  events: [DEV, 'Operational Director', 'Social Media Manager', 'Executive Assistant'],
+  // Mona's queue.
+  letters: [DEV, 'Executive Director', 'Executive Assistant'],
+  // Guest applications for the podcast — booked and coordinated by the people
+  // who make the episodes.
+  'coffee-chat': [DEV, 'Social Media Manager', 'Executive Assistant'],
+  seasonal: [DEV, 'Operational Director', 'Executive Assistant', 'Event Coordinator'],
   // The Executive Assistant helps with social.
-  subscribers: [ADMIN_GROUP, 'Social Media Manager', 'Executive Assistant'],
+  subscribers: [DEV, 'Social Media Manager', 'Executive Assistant'],
 };
 
 /** '*' means every authenticated staff member. */

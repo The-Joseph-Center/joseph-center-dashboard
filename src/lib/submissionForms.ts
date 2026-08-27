@@ -27,7 +27,16 @@ export interface FormDef {
   searchColumns: string[];
   /** Splits one table into several forms — dynamic forms share form_submissions. */
   groupColumn?: string;
+  /** Shown as a confidentiality note above the table. */
   sensitive?: string;
+  /**
+   * Whether a CSV can be downloaded. Defaults to the opposite of `sensitive`,
+   * but the two are separate questions: letter requests carry addresses AND
+   * need to be exported, because writing the letters is the job and copying
+   * addresses off a screen one at a time is worse for everyone without making
+   * the data any less exposed.
+   */
+  exportable?: boolean;
   columns: Column[];
 }
 
@@ -35,6 +44,18 @@ const t = (key: string, label: string, primary = false, type: Column['type'] = '
   ({ key, label, primary, type });
 
 export const FORMS: FormDef[] = [
+  {
+    id: 'contact',
+    label: 'Contact messages',
+    description: 'Messages sent from the contact form on the site.',
+    table: 'contact_messages',
+    timeColumn: 'submitted_at',
+    searchColumns: ['name', 'email', 'phone', 'message'],
+    columns: [
+      t('name', 'Name', true), t('email', 'Email', true), t('phone', 'Phone'),
+      t('message', 'Message', true), t('submitted_at', 'Received', true, 'date'),
+    ],
+  },
   {
     id: 'volunteers',
     label: 'Volunteers',
@@ -70,7 +91,8 @@ export const FORMS: FormDef[] = [
     table: 'letter_requests',
     timeColumn: 'submitted_at',
     searchColumns: ['first_name', 'last_name', 'email', 'city'],
-    sensitive: 'These are home addresses. Please do not export or forward them.',
+    sensitive: 'These are home addresses — handle the export accordingly.',
+    exportable: true,
     columns: [
       t('first_name', 'First name', true), t('last_name', 'Last name', true),
       t('email', 'Email', true), t('street', 'Street'), t('city', 'City', true),
