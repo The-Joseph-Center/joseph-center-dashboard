@@ -129,6 +129,7 @@ async function uploadImage(base64: string, filename: string): Promise<string> {
 interface Card {
   _id: string; name?: string; title?: string; email?: string;
   departments?: string[]; hidden?: boolean; imageUrl?: string | null;
+  linkedLogin?: string | null;
 }
 
 export async function handler(event: {
@@ -147,11 +148,17 @@ export async function handler(event: {
           _id,name,title,email,departments,hidden,"imageUrl":image.asset->url
         }`
       );
+      const linkRows = (await turso().execute('SELECT okta_login, sanity_staff_id FROM staff_identity')).rows;
       const linked = new Map<string, string>(
-        (await turso().execute('SELECT okta_login, sanity_staff_id FROM staff_identity')).rows.map(
-          (r) => [String(r.okta_login), String(r.sanity_staff_id)]
-        )
+        linkRows.map((r) => [String(r.okta_login), String(r.sanity_staff_id)])
       );
+      // The reverse direction, so each card can say which account owns it —
+      // an unnamed placeholder card is indistinguishable from a real one
+      // otherwise, and that is the state this page exists to clear.
+      const loginForCard = new Map<string, string>(
+        linkRows.map((r) => [String(r.sanity_staff_id), String(r.okta_login)])
+      );
+      for (const c of cards) c.linkedLogin = loginForCard.get(c._id) ?? null;
       const [users, serviceAccounts, dismissed] = await Promise.all([
         fetchOktaUsers(process.env.OKTA_ISSUER!, process.env.OKTA_API_TOKEN!),
         // Okta's own group for shared inboxes. Read rather than duplicated here
@@ -295,6 +302,52 @@ export async function handler(event: {
         }
       }
       return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ created: true, id: newId }) };
+    }
+
+    // ── Link an Okta account to a card that already exists ──
+    // The placeholder cards (joseph_1…joseph_6) are real documents waiting for a
+    // name, not missing ones, so "create" is the wrong verb for them and the
+    // nightly matcher cannot resolve them on its own: it keys on the public
+    // email, and these staff have none. Linking here is explicit, which is also
+    // what keeps it safe — the public email is deliberately not an identity key,
+    // because kisaacs@ appears on two cards.
+    if (action === 'link' || action === 'unlink') {
+      const id = clean(body._id, 120);
+      if (!id) {
+        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Missing staff id' }) };
+      }
+      const db = turso();
+      await ensureIdentityTable(db);
+
+      if (action === 'unlink') {
+        await db.execute({ sql: 'DELETE FROM staff_identity WHERE sanity_staff_id = ?', args: [id] });
+        return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ unlinked: true }) };
+      }
+
+      const login = clean(body.login, 200).toLowerCase();
+      const user = (await fetchOktaUsers(process.env.OKTA_ISSUER!, process.env.OKTA_API_TOKEN!))
+        .find((u) => oktaLogin(u) === login);
+      if (!user) {
+        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'No such Okta account' }) };
+      }
+      // One account, one card, in both directions — a wrong link hands someone
+      // edit rights over a colleague's record.
+      const clash = await db.execute({
+        sql: 'SELECT sanity_staff_id FROM staff_identity WHERE okta_login = ? AND sanity_staff_id <> ? LIMIT 1',
+        args: [login, id],
+      });
+      if (clash.rows[0]) {
+        return { statusCode: 409, headers: JSON_HEADERS, body: JSON.stringify({ error: 'That account is already linked to another card.' }) };
+      }
+      await db.execute({
+        sql: `INSERT INTO staff_identity (sanity_staff_id, okta_login, okta_user_id, matched_by, updated_at)
+              VALUES (?, ?, ?, 'dashboard', unixepoch())
+              ON CONFLICT(sanity_staff_id) DO UPDATE SET
+                okta_login=excluded.okta_login, okta_user_id=excluded.okta_user_id,
+                matched_by='dashboard', updated_at=unixepoch()`,
+        args: [id, login, user.id],
+      });
+      return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ linked: true }) };
     }
 
     // ── Delete a card ──

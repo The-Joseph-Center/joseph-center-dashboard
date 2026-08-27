@@ -14,6 +14,7 @@ import { apiFetch } from '@/lib/api';
 interface Card {
   _id: string; name?: string; title?: string; email?: string;
   departments?: string[]; hidden?: boolean; imageUrl?: string | null;
+  linkedLogin?: string | null;
 }
 interface NeedsCard {
   login: string; firstName: string; lastName: string; title: string; status: string;
@@ -44,6 +45,12 @@ const savedId = ref<string | null>(null);
 const photoFor = ref<Record<string, { base64: string; filename: string } | undefined>>({});
 
 const incomplete = computed(() => cards.value.filter((c) => !c.title || !c.email));
+
+// Cards nobody owns yet — the placeholders, and anyone whose public email was
+// never set so the nightly matcher could not resolve them.
+const unlinkedCards = computed(() => cards.value.filter((c) => !c.linkedLogin));
+const cardLabel = (c: Card) =>
+  [c.name || '(no name)', c.title].filter(Boolean).join(' — ');
 
 async function load() {
   loading.value = true; error.value = '';
@@ -191,6 +198,24 @@ async function createFor(u: NeedsCard) {
   }
 }
 
+// ── Linking an account to a card that already exists ──
+// Separate from "create" because the placeholder cards are real documents
+// waiting for a name. Creating another would leave the placeholder behind.
+const linking = ref<string | null>(null);
+const linkTarget = ref('');
+function openLink(u: NeedsCard) {
+  linking.value = u.login;
+  linkTarget.value = unlinkedCards.value[0]?._id ?? '';
+}
+async function confirmLink(u: NeedsCard) {
+  if (!linkTarget.value) return;
+  const id = linkTarget.value;
+  await post({ action: 'link', login: u.login, _id: id }, u.login);
+  linking.value = null;
+  await revealCard(id);
+}
+const unlink = (card: Card) => post({ action: 'unlink', _id: card._id }, card._id);
+
 // ── Removing a card ──
 // Two clicks, because it cannot be undone. Hiding is the right tool for someone
 // who has left; this is for a card that should never have existed.
@@ -250,13 +275,36 @@ async function removeCard(card: Card) {
                 <button type="button" class="btn btn--sm" :disabled="creating === u.login" @click="createFor(u)">
                   {{ creating === u.login ? 'Creating…' : 'Create card' }}
                 </button>
-                <button type="button" class="btn btn--ghost btn--sm" @click="openDismiss(u)">Not a staff card</button>
+                <button
+                  v-if="unlinkedCards.length"
+                  type="button"
+                  class="btn btn--outline btn--sm"
+                  @click="openLink(u)"
+                >
+                  Link to a card
+                </button>
+                <button type="button" class="linkish" @click="openDismiss(u)">Not a staff card</button>
               </span>
             </div>
 
             <p v-for="(hint, i) in u.duplicateOf" :key="i" class="queue__dupe">
               Possible duplicate — {{ hint }}
             </p>
+
+            <div v-if="linking === u.login" class="dismiss">
+              <label class="f dismiss__wide">
+                <span>Which card is {{ u.firstName || u.login }}?</span>
+                <select v-model="linkTarget">
+                  <option v-for="c in unlinkedCards" :key="c._id" :value="c._id">{{ cardLabel(c) }}</option>
+                </select>
+              </label>
+              <div class="dismiss__actions">
+                <button type="button" class="btn btn--sm" :disabled="busy === u.login" @click="confirmLink(u)">
+                  {{ busy === u.login ? 'Linking…' : 'Link' }}
+                </button>
+                <button type="button" class="linkish" @click="linking = null">Cancel</button>
+              </div>
+            </div>
 
             <div v-if="dismissing === u.login" class="dismiss">
               <label class="f">
@@ -273,7 +321,7 @@ async function removeCard(card: Card) {
                 <button type="button" class="btn btn--sm" :disabled="busy === u.login" @click="confirmDismiss(u.login)">
                   {{ busy === u.login ? 'Saving…' : 'Confirm' }}
                 </button>
-                <button type="button" class="btn btn--ghost btn--sm" @click="dismissing = null">Cancel</button>
+                <button type="button" class="linkish" @click="dismissing = null">Cancel</button>
               </div>
             </div>
           </li>
@@ -298,7 +346,7 @@ async function removeCard(card: Card) {
                 · {{ d.by }}, {{ when(d.at) }}
               </span>
             </span>
-            <button type="button" class="btn btn--ghost btn--sm" :disabled="busy === d.login" @click="restore(d.login)">
+            <button type="button" class="linkish" :disabled="busy === d.login" @click="restore(d.login)">
               {{ busy === d.login ? 'Restoring…' : 'Put back' }}
             </button>
           </li>
@@ -344,6 +392,14 @@ async function removeCard(card: Card) {
                   <span>{{ LABELS[d] ?? d }}</span>
                 </label>
               </fieldset>
+              <p class="row__link">
+                <template v-if="card.linkedLogin">
+                  Signs in as {{ card.linkedLogin }}
+                  <button type="button" class="linkish" :disabled="busy === card._id" @click="unlink(card)">Unlink</button>
+                </template>
+                <span v-else class="row__link--none">No Okta account linked — link one from the queue above.</span>
+              </p>
+
               <div class="row__actions">
                 <label class="chk">
                   <input type="checkbox" :checked="card.hidden === true" @change="card.hidden = ($event.target as HTMLInputElement).checked" />
@@ -360,9 +416,9 @@ async function removeCard(card: Card) {
                     <button type="button" class="btn btn--danger btn--sm" :disabled="savingId === card._id" @click="removeCard(card)">
                       {{ savingId === card._id ? 'Removing…' : 'Yes, remove' }}
                     </button>
-                    <button type="button" class="btn btn--ghost btn--sm" @click="confirmingDelete = null">Cancel</button>
+                    <button type="button" class="linkish" @click="confirmingDelete = null">Cancel</button>
                   </template>
-                  <button v-else type="button" class="btn btn--ghost btn--sm" @click="confirmingDelete = card._id">
+                  <button v-else type="button" class="linkish linkish--danger" @click="confirmingDelete = card._id">
                     Remove card
                   </button>
                 </span>
@@ -398,7 +454,19 @@ async function removeCard(card: Card) {
 .dismiss__actions { grid-column: 1 / -1; display: flex; gap: .5rem; }
 @media (max-width: 640px) { .dismiss { grid-template-columns: 1fr; } }
 .btn--ghost { background: none; color: var(--color-text-secondary); border: 1px solid var(--color-border); }
+.btn--outline { background: none; color: var(--color-primary-strong); border: 1px solid var(--color-primary-strong); }
 .btn--danger { background: #8a1f1f; }
+/* Text controls, for actions that should not compete with Save. Red is kept for
+   the one action that cannot be undone; Cancel is plain so the two never read
+   as the same weight. */
+.linkish { background: none; border: 0; padding: 0; font: inherit; font-size: .75rem; color: var(--color-text-secondary); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.linkish:hover { color: var(--color-text); }
+.linkish:disabled { opacity: .6; cursor: not-allowed; }
+.linkish--danger { color: #8a1f1f; }
+.linkish--danger:hover { color: #6d1818; }
+.row__link { margin: 0 0 .5rem; font-size: .75rem; color: var(--color-text-secondary); display: flex; align-items: center; gap: .5rem; }
+.row__link--none { color: #8a5a1f; }
+.dismiss__wide { grid-column: 1 / -1; }
 .row--new { outline: 2px solid var(--color-primary-strong); outline-offset: 2px; transition: outline-color 1s ease; }
 .row__remove { margin-left: auto; display: flex; align-items: center; gap: .5rem; }
 .row__warn { font-size: .75rem; color: #8a1f1f; font-weight: 600; }
