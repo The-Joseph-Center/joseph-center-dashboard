@@ -7,7 +7,10 @@ import { createClient } from '@libsql/client/web';
 export interface OktaUser {
   id: string;
   status: string;
-  profile: { firstName?: string; lastName?: string; email?: string; login?: string };
+  profile: {
+    firstName?: string; lastName?: string; email?: string; login?: string;
+    title?: string; secondEmail?: string; mobilePhone?: string;
+  };
 }
 export interface Card {
   _id: string;
@@ -122,6 +125,49 @@ export function matchAll(cards: Card[], users: OktaUser[]): Match[] {
     }
     return { card };
   });
+}
+
+/**
+ * Okta logins a human has marked as never needing a website card.
+ *
+ * Okta's own "Service Accounts" group already covers the shared inboxes, but it
+ * only covers the ones somebody remembered to put in it, and it cannot express
+ * the other reasons an account will never be a staff card — a duplicate that is
+ * waiting to be cleaned up, a device login, a volunteer. Without somewhere to
+ * record that, the same handful of accounts are reported as outstanding work
+ * every single day, and a daily report that always contains known noise stops
+ * being read.
+ *
+ * Kept out of Okta deliberately: this is a statement about the website, not
+ * about the directory, and the dashboard should not be quietly editing group
+ * membership in the identity system as a side effect of tidying a list.
+ */
+export interface NoCardEntry { login: string; reason: string; note: string; by: string; at: number }
+
+export async function ensureNoCardTable(db: ReturnType<typeof turso>) {
+  await db.executeMultiple(`
+    CREATE TABLE IF NOT EXISTS staff_no_card (
+      okta_login   TEXT PRIMARY KEY,
+      reason       TEXT NOT NULL,
+      note         TEXT,
+      dismissed_by TEXT NOT NULL,
+      dismissed_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+  `);
+}
+
+export async function fetchNoCard(db: ReturnType<typeof turso>): Promise<NoCardEntry[]> {
+  await ensureNoCardTable(db);
+  const { rows } = await db.execute(
+    'SELECT okta_login, reason, note, dismissed_by, dismissed_at FROM staff_no_card ORDER BY okta_login'
+  );
+  return rows.map((r) => ({
+    login: String(r.okta_login),
+    reason: String(r.reason),
+    note: r.note ? String(r.note) : '',
+    by: String(r.dismissed_by),
+    at: Number(r.dismissed_at),
+  }));
 }
 
 export function turso() {

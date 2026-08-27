@@ -17,6 +17,10 @@ interface Card {
 }
 interface NeedsCard {
   login: string; firstName: string; lastName: string; title: string; status: string;
+  duplicateOf: string[];
+}
+interface NotStaff {
+  login: string; name: string; reason: string; note: string; by: string; at: number;
 }
 
 const LABELS: Record<string, string> = {
@@ -29,6 +33,9 @@ const LABELS: Record<string, string> = {
 
 const cards = ref<Card[]>([]);
 const needsCard = ref<NeedsCard[]>([]);
+const notStaff = ref<NotStaff[]>([]);
+const serviceAccounts = ref<string[]>([]);
+const reasons = ref<Record<string, string>>({});
 const departments = ref<string[]>([]);
 const loading = ref(true);
 const error = ref('');
@@ -45,6 +52,8 @@ async function load() {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
     const d = await res.json();
     cards.value = d.cards; needsCard.value = d.needsCard; departments.value = d.departments;
+    notStaff.value = d.notStaff ?? []; serviceAccounts.value = d.serviceAccounts ?? [];
+    reasons.value = d.reasons ?? {};
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not load the staff list.';
   } finally {
@@ -93,6 +102,45 @@ async function save(card: Card) {
   }
 }
 
+// ── Not a staff card ──
+// A note field rather than reason-only, because the two cases behave
+// differently: a scanner is settled forever, while a suspected duplicate is a
+// reminder that something still needs sorting out in Okta. Both belong off the
+// onboarding queue; only one of them is finished.
+const dismissing = ref<string | null>(null);
+const dismissForm = ref<{ reason: string; note: string }>({ reason: 'shared-inbox', note: '' });
+const busy = ref<string | null>(null);
+
+function openDismiss(u: NeedsCard) {
+  dismissing.value = u.login;
+  dismissForm.value = { reason: u.duplicateOf.length ? 'duplicate' : 'shared-inbox', note: '' };
+}
+
+async function post(payload: Record<string, unknown>, login: string) {
+  busy.value = login; error.value = '';
+  try {
+    const res = await apiFetch('/.netlify/functions/admin-staff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
+    dismissing.value = null;
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not save.';
+  } finally {
+    busy.value = null;
+  }
+}
+
+const confirmDismiss = (login: string) =>
+  post({ action: 'dismiss', login, ...dismissForm.value }, login);
+const restore = (login: string) => post({ action: 'restore', login }, login);
+
+const when = (secs: number) =>
+  new Date(secs * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
 const creating = ref<string | null>(null);
 async function createFor(u: NeedsCard) {
   creating.value = u.login; error.value = '';
@@ -140,17 +188,77 @@ async function createFor(u: NeedsCard) {
       <!-- Onboarding queue -->
       <section v-if="needsCard.length" class="widget block">
         <h2 class="block__title">In Okta, no staff card yet ({{ needsCard.length }})</h2>
-        <p class="block__hint">Creating a card pre-fills the name from the directory. Add a title, department and photo below once created.</p>
+        <p class="block__hint">
+          Creating a card pre-fills the name from the directory. Add a title, department and photo below once created.
+          Shared inboxes in Okta's <strong>Service Accounts</strong> group are left out of this list automatically.
+        </p>
         <ul class="queue">
-          <li v-for="u in needsCard" :key="u.login" class="queue__row">
+          <li v-for="u in needsCard" :key="u.login" class="queue__item">
+            <div class="queue__row">
+              <span class="queue__who">
+                <strong>{{ [u.firstName, u.lastName].filter(Boolean).join(' ') || u.login }}</strong>
+                <span class="queue__login">{{ u.login }}</span>
+                <span v-if="u.status !== 'ACTIVE'" class="queue__status">{{ u.status }}</span>
+              </span>
+              <span class="queue__buttons">
+                <button type="button" class="btn btn--sm" :disabled="creating === u.login" @click="createFor(u)">
+                  {{ creating === u.login ? 'Creating…' : 'Create card' }}
+                </button>
+                <button type="button" class="btn btn--ghost btn--sm" @click="openDismiss(u)">Not a staff card</button>
+              </span>
+            </div>
+
+            <p v-for="(hint, i) in u.duplicateOf" :key="i" class="queue__dupe">
+              Possible duplicate — {{ hint }}
+            </p>
+
+            <div v-if="dismissing === u.login" class="dismiss">
+              <label class="f">
+                <span>Reason</span>
+                <select v-model="dismissForm.reason">
+                  <option v-for="(label, key) in reasons" :key="key" :value="key">{{ label }}</option>
+                </select>
+              </label>
+              <label class="f">
+                <span>Note (optional)</span>
+                <input v-model="dismissForm.note" type="text" placeholder="e.g. sends scans from the copier" />
+              </label>
+              <div class="dismiss__actions">
+                <button type="button" class="btn btn--sm" :disabled="busy === u.login" @click="confirmDismiss(u.login)">
+                  {{ busy === u.login ? 'Saving…' : 'Confirm' }}
+                </button>
+                <button type="button" class="btn btn--ghost btn--sm" @click="dismissing = null">Cancel</button>
+              </div>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- Marked as never needing a card -->
+      <section v-if="notStaff.length || serviceAccounts.length" class="widget block">
+        <h2 class="block__title">Not staff cards ({{ notStaff.length + serviceAccounts.length }})</h2>
+        <p class="block__hint">
+          Left out of the queue above and out of the daily reconciliation email. Nothing here is deleted from Okta.
+        </p>
+        <ul class="queue">
+          <li v-for="d in notStaff" :key="d.login" class="queue__row">
             <span class="queue__who">
-              <strong>{{ [u.firstName, u.lastName].filter(Boolean).join(' ') || u.login }}</strong>
-              <span class="queue__login">{{ u.login }}</span>
-              <span v-if="u.status !== 'ACTIVE'" class="queue__status">{{ u.status }}</span>
+              <strong>{{ d.name || d.login }}</strong>
+              <span class="queue__login">{{ d.login }}</span>
+              <span class="queue__meta">
+                {{ reasons[d.reason] ?? d.reason }}<template v-if="d.note"> — {{ d.note }}</template>
+                · {{ d.by }}, {{ when(d.at) }}
+              </span>
             </span>
-            <button type="button" class="btn btn--sm" :disabled="creating === u.login" @click="createFor(u)">
-              {{ creating === u.login ? 'Creating…' : 'Create card' }}
+            <button type="button" class="btn btn--ghost btn--sm" :disabled="busy === d.login" @click="restore(d.login)">
+              {{ busy === d.login ? 'Restoring…' : 'Put back' }}
             </button>
+          </li>
+          <li v-for="l in serviceAccounts" :key="l" class="queue__row">
+            <span class="queue__who">
+              <strong>{{ l }}</strong>
+              <span class="queue__meta">Okta “Service Accounts” group — change it there</span>
+            </span>
           </li>
         </ul>
       </section>
@@ -212,6 +320,17 @@ async function createFor(u: NeedsCard) {
 .state--err { color: #8a1f1f; }
 
 .queue { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.queue__item { padding: .6rem .75rem; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--border-radius); }
+.queue__item .queue__row { padding: 0; background: none; border: 0; border-radius: 0; }
+.queue__buttons { display: flex; gap: .5rem; flex-shrink: 0; }
+.queue__meta { font-size: .7rem; color: var(--color-text-secondary); }
+.queue__dupe { margin: .45rem 0 0; font-size: .75rem; color: #8a5a1f; }
+.dismiss { margin-top: .65rem; padding-top: .65rem; border-top: 1px solid var(--color-border); display: grid; grid-template-columns: minmax(0, 12rem) 1fr; gap: .6rem; align-items: end; }
+.dismiss select, .dismiss input { width: 100%; padding: .45rem .55rem; font: inherit; font-size: .8125rem; border: 1px solid var(--color-border); border-radius: var(--border-radius); background: var(--color-surface); color: var(--color-text); }
+.dismiss .f { margin-bottom: 0; }
+.dismiss__actions { grid-column: 1 / -1; display: flex; gap: .5rem; }
+@media (max-width: 640px) { .dismiss { grid-template-columns: 1fr; } }
+.btn--ghost { background: none; color: var(--color-text-secondary); border: 1px solid var(--color-border); }
 .queue__row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .6rem .75rem; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--border-radius); }
 .queue__who { display: flex; flex-direction: column; }
 .queue__login { font-size: .75rem; color: var(--color-text-secondary); }

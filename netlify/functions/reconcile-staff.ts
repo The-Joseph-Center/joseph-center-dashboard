@@ -1,7 +1,7 @@
 import { Resend } from 'resend';
 import {
-  fetchOktaUsers, fetchStaffCards, fetchServiceAccountLogins, matchAll, oktaLogin, DEPARTED_STATUSES,
-  turso, ensureIdentityTable, unpublishCard, type OktaUser,
+  fetchOktaUsers, fetchStaffCards, fetchServiceAccountLogins, fetchNoCard, matchAll, oktaLogin,
+  DEPARTED_STATUSES, turso, ensureIdentityTable, unpublishCard, type OktaUser,
 } from './_lib/staff-directory';
 
 /**
@@ -94,6 +94,9 @@ export async function handler() {
 
     const db = turso();
     await ensureIdentityTable(db);
+    // Accounts a human has already said will never have a card. Without this the
+    // report repeats the same known-fine list every day and stops being read.
+    const notStaff = new Set((await fetchNoCard(db)).map((d) => d.login));
     const existing = new Map<string, string>(
       (await db.execute('SELECT sanity_staff_id, okta_login FROM staff_identity')).rows.map(
         (r) => [r.sanity_staff_id as string, r.okta_login as string]
@@ -166,7 +169,7 @@ export async function handler() {
     for (const u of users) {
       const l = oktaLogin(u);
       // Shared inboxes are not people and are never expected to have a card.
-      if (!linkedLogins.has(l) && !DEPARTED_STATUSES.has(u.status) && !serviceAccounts.has(l)) {
+      if (!linkedLogins.has(l) && !DEPARTED_STATUSES.has(u.status) && !serviceAccounts.has(l) && !notStaff.has(l)) {
         report.accountsWithoutCard.push(`${u.profile.firstName ?? ''} ${u.profile.lastName ?? ''}`.trim() + ` (${l})`);
       }
     }

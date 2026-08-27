@@ -1,5 +1,8 @@
 import { requireCapability, denial } from './_lib/verify-okta';
-import { fetchOktaUsers, oktaLogin, DEPARTED_STATUSES, turso } from './_lib/staff-directory';
+import {
+  fetchOktaUsers, fetchServiceAccountLogins, fetchNoCard, ensureNoCardTable,
+  oktaLogin, DEPARTED_STATUSES, turso, type OktaUser,
+} from './_lib/staff-directory';
 
 /**
  * Staff administration — read the roster, edit public details, create a card.
@@ -13,6 +16,10 @@ import { fetchOktaUsers, oktaLogin, DEPARTED_STATUSES, turso } from './_lib/staf
  *
  * Creating a card pre-fills name and email from Okta so onboarding is a click
  * plus a photo, without a directory change ever silently rewriting public copy.
+ *
+ * Not every Okta account is a person. "Not a staff card" records that decision
+ * so the account stops being reported as outstanding work — see the note on
+ * staff_no_card in _lib/staff-directory.
  */
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
@@ -25,6 +32,57 @@ const DEPARTMENTS = [
   'day-shelter', 'family-center', 'golden-girls', 'ifs', 'it-marketing',
   'kitchen', 'maintenance', 'security', 'operations', 'unknown',
 ];
+
+/** Why an account will never have a card. Free text lives in `note`. */
+const REASONS: Record<string, string> = {
+  'shared-inbox': 'Shared inbox or device',
+  duplicate: 'Duplicate account',
+  'not-staff': 'Not staff',
+  other: 'Other',
+};
+
+/**
+ * Accounts that look like the same person twice.
+ *
+ * Matched on recovery email or mobile number **and** a shared last name, not on
+ * name alone: Okta holds legal names, and the duplicate worth catching is
+ * exactly the one where the given names differ — a "Trisha" account from April
+ * and a "Patricia" account from August are one person if they share a recovery
+ * address, and comparing names would never say so.
+ *
+ * The last-name condition is what makes the hint trustworthy. A recovery email
+ * on its own is a false positive generator here: the admin's own address is the
+ * recovery address on scanner@, itadmin@ and jc@, which pairs him with three
+ * accounts that are not him. Requiring the surname to match as well costs a
+ * missed duplicate across a name change and buys a hint that is worth reading.
+ *
+ * Reported, never acted on: merging or deactivating is a decision for the
+ * directory, not a side effect of tidying this page.
+ */
+export function duplicateHints(users: OktaUser[]): Map<string, string[]> {
+  const norm = (v?: string) => (v || '').toLowerCase().replace(/[^a-z0-9@.]/g, '').trim();
+  const surname = (u: OktaUser) => norm(u.profile.lastName);
+  const who = (u: OktaUser) =>
+    `${[u.profile.firstName, u.profile.lastName].filter(Boolean).join(' ') || oktaLogin(u)} (${oktaLogin(u)}, ${u.status})`;
+
+  const hints = new Map<string, string[]>();
+  const add = (u: OktaUser, text: string) =>
+    hints.set(oktaLogin(u), [...(hints.get(oktaLogin(u)) ?? []), text]);
+
+  for (let i = 0; i < users.length; i++) {
+    for (let j = i + 1; j < users.length; j++) {
+      const [a, b] = [users[i], users[j]];
+      if (!surname(a) || surname(a) !== surname(b)) continue;
+      const shared =
+        (norm(a.profile.secondEmail) && norm(a.profile.secondEmail) === norm(b.profile.secondEmail) && 'the same recovery email') ||
+        (norm(a.profile.mobilePhone) && norm(a.profile.mobilePhone) === norm(b.profile.mobilePhone) && 'the same mobile number');
+      if (!shared) continue;
+      add(a, `same last name and ${shared} as ${who(b)}`);
+      add(b, `same last name and ${shared} as ${who(a)}`);
+    }
+  }
+  return hints;
+}
 
 const clean = (v: unknown, max = 200) =>
   typeof v === 'string' ? v.trim().slice(0, max) : '';
@@ -94,23 +152,49 @@ export async function handler(event: {
           (r) => [String(r.okta_login), String(r.sanity_staff_id)]
         )
       );
-      const users = await fetchOktaUsers(process.env.OKTA_ISSUER!, process.env.OKTA_API_TOKEN!);
+      const [users, serviceAccounts, dismissed] = await Promise.all([
+        fetchOktaUsers(process.env.OKTA_ISSUER!, process.env.OKTA_API_TOKEN!),
+        // Okta's own group for shared inboxes. Read rather than duplicated here
+        // so adding scanner@ to it in the directory is enough on its own.
+        fetchServiceAccountLogins(process.env.OKTA_ISSUER!, process.env.OKTA_API_TOKEN!),
+        fetchNoCard(turso()),
+      ]);
+      const dismissedLogins = new Set(dismissed.map((d) => d.login));
+      const hints = duplicateHints(
+        users.filter((u) => !DEPARTED_STATUSES.has(u.status) && !serviceAccounts.has(oktaLogin(u)))
+      );
 
       // People in the directory who have no card yet — the onboarding queue.
       const needsCard = users
-        .filter((u) => !DEPARTED_STATUSES.has(u.status) && !linked.has(oktaLogin(u)))
+        .filter((u) => !DEPARTED_STATUSES.has(u.status))
+        .filter((u) => !linked.has(oktaLogin(u)))
+        .filter((u) => !serviceAccounts.has(oktaLogin(u)) && !dismissedLogins.has(oktaLogin(u)))
         .map((u) => ({
           login: oktaLogin(u),
           firstName: u.profile.firstName ?? '',
           lastName: u.profile.lastName ?? '',
           title: u.profile.title ?? '',
           status: u.status,
+          duplicateOf: hints.get(oktaLogin(u)) ?? [],
         }));
+
+      // Names for the dismissed list, so it does not read as bare logins.
+      const nameFor = new Map(users.map((u) => [
+        oktaLogin(u),
+        [u.profile.firstName, u.profile.lastName].filter(Boolean).join(' '),
+      ]));
 
       return {
         statusCode: 200,
         headers: JSON_HEADERS,
-        body: JSON.stringify({ cards, needsCard, departments: DEPARTMENTS }),
+        body: JSON.stringify({
+          cards,
+          needsCard,
+          departments: DEPARTMENTS,
+          reasons: REASONS,
+          notStaff: dismissed.map((d) => ({ ...d, name: nameFor.get(d.login) ?? '' })),
+          serviceAccounts: [...serviceAccounts].sort(),
+        }),
       };
     }
 
@@ -120,6 +204,33 @@ export async function handler(event: {
 
     const body = JSON.parse(event.body || '{}');
     const action = clean(body.action, 20);
+
+    // ── Mark an account as never needing a card, or put it back ──
+    if (action === 'dismiss' || action === 'restore') {
+      const login = clean(body.login, 200).toLowerCase();
+      if (!login) {
+        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Missing login' }) };
+      }
+      const db = turso();
+      await ensureNoCardTable(db);
+      if (action === 'restore') {
+        await db.execute({ sql: 'DELETE FROM staff_no_card WHERE okta_login = ?', args: [login] });
+        return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ restored: true }) };
+      }
+      const reason = clean(body.reason, 40);
+      if (!REASONS[reason]) {
+        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Unknown reason' }) };
+      }
+      await db.execute({
+        sql: `INSERT INTO staff_no_card (okta_login, reason, note, dismissed_by, dismissed_at)
+              VALUES (?, ?, ?, ?, unixepoch())
+              ON CONFLICT(okta_login) DO UPDATE SET
+                reason=excluded.reason, note=excluded.note,
+                dismissed_by=excluded.dismissed_by, dismissed_at=excluded.dismissed_at`,
+        args: [login, reason, clean(body.note, 300), auth.email ?? 'unknown'],
+      });
+      return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ dismissed: true }) };
+    }
 
     const name = clean(body.name, 120);
     const title = clean(body.title, 200);
