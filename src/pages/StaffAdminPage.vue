@@ -49,6 +49,40 @@ const incomplete = computed(() => cards.value.filter((c) => !c.title || !c.email
 // Cards nobody owns yet — the placeholders, and anyone whose public email was
 // never set so the nightly matcher could not resolve them.
 const unlinkedCards = computed(() => cards.value.filter((c) => !c.linkedLogin));
+
+// ── Finding a card ──
+// One text box across name, title, email and department label, plus a
+// department picker — searching for "kitchen" should find the same people
+// whether it is typed or picked. The visibility filter is here because the
+// hidden cards are the ones you go looking for deliberately, and they are
+// otherwise mixed in with 26 others.
+const search = ref('');
+const deptFilter = ref('');
+const visibility = ref<'all' | 'visible' | 'hidden' | 'unlinked' | 'incomplete'>('all');
+
+const filtered = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  return cards.value.filter((c) => {
+    if (deptFilter.value && !(c.departments ?? []).includes(deptFilter.value)) return false;
+    if (visibility.value === 'visible' && c.hidden === true) return false;
+    if (visibility.value === 'hidden' && c.hidden !== true) return false;
+    if (visibility.value === 'unlinked' && c.linkedLogin) return false;
+    if (visibility.value === 'incomplete' && c.title && c.email) return false;
+    if (!q) return true;
+    // Department matches on the label people actually read, not the slug —
+    // "Golden Girls" finds golden-girls.
+    const haystack = [
+      c.name, c.title, c.email, c.linkedLogin,
+      ...(c.departments ?? []).map((d) => LABELS[d] ?? d),
+    ].filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes(q);
+  });
+});
+
+const filtering = computed(() => !!search.value.trim() || !!deptFilter.value || visibility.value !== 'all');
+function clearFilters() {
+  search.value = ''; deptFilter.value = ''; visibility.value = 'all';
+}
 const cardLabel = (c: Card) =>
   [c.name || '(no name)', c.title].filter(Boolean).join(' — ');
 
@@ -155,6 +189,9 @@ const creating = ref<string | null>(null);
 const justCreated = ref<string | null>(null);
 
 async function revealCard(id: string) {
+  // A filter that hides the new card would leave nothing to scroll to, which is
+  // the same dead end this function exists to fix.
+  clearFilters();
   await nextTick();
   const el = document.getElementById(`card-${id}`);
   if (!el) return;
@@ -361,10 +398,41 @@ async function removeCard(card: Card) {
 
       <!-- The roster -->
       <section class="widget block">
-        <h2 class="block__title">Staff cards ({{ cards.length }})</h2>
+        <h2 class="block__title">
+          Staff cards
+          <span v-if="filtering">({{ filtered.length }} of {{ cards.length }})</span>
+          <span v-else>({{ cards.length }})</span>
+        </h2>
+
+        <div class="find">
+          <input
+            v-model="search"
+            type="search"
+            class="find__q"
+            placeholder="Search name, title, email or department…"
+            aria-label="Search staff cards"
+          />
+          <select v-model="deptFilter" aria-label="Filter by department">
+            <option value="">All departments</option>
+            <option v-for="d in departments" :key="d" :value="d">{{ LABELS[d] ?? d }}</option>
+          </select>
+          <select v-model="visibility" aria-label="Filter by status">
+            <option value="all">Everyone</option>
+            <option value="visible">On the website</option>
+            <option value="hidden">Hidden</option>
+            <option value="unlinked">No Okta account</option>
+            <option value="incomplete">Missing title or email</option>
+          </select>
+          <button v-if="filtering" type="button" class="linkish" @click="clearFilters">Clear</button>
+        </div>
+
+        <p v-if="filtering && !filtered.length" class="block__hint find__empty">
+          No cards match. <button type="button" class="linkish" @click="clearFilters">Clear the filters</button>
+        </p>
+
         <div class="roster">
           <article
-            v-for="card in cards"
+            v-for="card in filtered"
             :key="card._id"
             :id="`card-${card._id}`"
             class="row"
@@ -480,6 +548,10 @@ async function removeCard(card: Card) {
 .queue__login { font-size: .75rem; color: var(--color-text-secondary); }
 .queue__status { font-size: .7rem; color: #8a5a1f; }
 
+.find { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
+.find__q { flex: 1 1 16rem; min-width: 0; }
+.find input, .find select { padding: .45rem .55rem; font: inherit; font-size: .8125rem; border: 1px solid var(--color-border); border-radius: var(--border-radius); background: var(--color-surface); color: var(--color-text); }
+.find__empty { margin: 0 0 1rem; }
 .roster { display: grid; gap: 1rem; }
 .row { display: flex; gap: 1rem; padding: 1rem; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--border-radius); }
 .row__photo { flex: 0 0 96px; display: flex; flex-direction: column; gap: .4rem; align-items: center; }
