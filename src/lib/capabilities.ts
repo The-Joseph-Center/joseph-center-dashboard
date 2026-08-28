@@ -89,7 +89,7 @@ const RULES: Record<Capability, string[] | '*'> = {
   // Deliberately not everyone. Site performance is the concern of the people
   // who act on it.
   analytics: [ADMIN_GROUP, 'Social Media Manager'],
-  content: [ADMIN_GROUP, 'Social Media Manager'],
+  content: [DEV, ADMIN_GROUP, 'Social Media Manager'],
   // Its own capability rather than folding into billing, so onboarding can be
   // delegated later without also handing over the invoices.
   staffAdmin: [ADMIN_GROUP],

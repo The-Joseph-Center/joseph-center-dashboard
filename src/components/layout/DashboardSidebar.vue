@@ -18,6 +18,7 @@ import {
   Mail,
   HandCoins,
   Megaphone,
+  PenLine,
   CreditCard,
   LogOut,
   Sun,
@@ -68,6 +69,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/letters', label: 'Letters', icon: Mail, capability: 'letterQueue' },
   { to: '/giving', label: 'Year-end giving', icon: HandCoins, capability: 'taxData' },
   { to: '/banner', label: 'Site banner', icon: Megaphone, capability: 'banners' },
+  { to: '/blog', label: 'Blog', icon: PenLine, capability: 'content' },
   { to: '/support', label: 'Support', icon: MessageSquare, capability: 'support' },
   { to: '/billing', label: 'Billing', icon: CreditCard, capability: 'billing' },
 ];
