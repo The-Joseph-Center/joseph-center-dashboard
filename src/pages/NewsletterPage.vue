@@ -127,6 +127,59 @@ function applySheet() {
   sheetOpen.value = false;
 }
 
+// ── Sending, via AWeber ──
+// Two steps with a deliberate gap. The check reads only; applying the tag is
+// the send, and the server refuses it while the review has anything
+// outstanding — the disabled button here is a courtesy, not the control.
+interface SendState {
+  ready: boolean; status?: string; tag?: string;
+  missingScopes?: string[]; error?: string;
+  totals?: { subscribers: number; active: number; alreadyTagged: number; toTag: number };
+  blocking?: { where: string; problem: string }[];
+  plan?: { tag: string; waitDays: number; endOfMonth: string };
+}
+const sendOpen = ref(false);
+const sendState = ref<SendState | null>(null);
+const checking = ref(false);
+const sending = ref(false);
+const confirmTag = ref('');
+const sendResult = ref<{ added: number; already: number; failed: number; failedEmails: string[]; markedSent: boolean } | null>(null);
+
+async function checkSend() {
+  checking.value = true; sendResult.value = null; error.value = '';
+  try {
+    const res = await apiFetch(`/.netlify/functions/newsletter-aweber?month=${month.value}`);
+    const d = await res.json().catch(() => ({}));
+    sendState.value = res.ok ? d : { ready: false, error: d.error || String(res.status) };
+    sendOpen.value = true;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not reach AWeber.';
+  } finally {
+    checking.value = false;
+  }
+}
+
+async function applyTag() {
+  if (!sendState.value?.tag) return;
+  if (!window.confirm(`This applies "${sendState.value.tag}" to every active subscriber, which is what triggers the send. There is no undo. Continue?`)) return;
+  sending.value = true; error.value = '';
+  try {
+    const res = await apiFetch('/.netlify/functions/newsletter-aweber', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month: month.value, confirm: confirmTag.value }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || String(res.status));
+    sendResult.value = d;
+    await load();
+    await checkSend();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not apply the tag.';
+  } finally {
+    sending.value = false;
+  }
+}
+
 // ── Email HTML ──
 const htmlVersions = ref<Record<string, string>>({});
 const buildingHtml = ref(false);
@@ -484,6 +537,66 @@ function videoBlock() {
         </ul>
       </section>
 
+      <!-- Sending -->
+      <section class="widget block">
+        <h2 class="block__title">Send</h2>
+        <p class="block__hint">
+          Applying the month's tag is what triggers the automations, so it is the send itself.
+          Building the automations stays in AWeber — their API does not cover Campaigns at all.
+        </p>
+
+        <div class="tools">
+          <button type="button" class="btn btn--ghost btn--sm" :disabled="checking" @click="checkSend">
+            {{ checking ? 'Checking AWeber…' : 'Check everything' }}
+          </button>
+        </div>
+
+        <template v-if="sendState">
+          <p v-if="sendState.error" class="warn" role="alert">
+            {{ sendState.error }}
+            <template v-if="sendState.missingScopes?.length">
+              <br />Run <code>node scripts/aweber-oauth.mjs</code> to reauthorize.
+            </template>
+          </p>
+
+          <template v-if="sendState.totals">
+            <dl class="plan">
+              <dt>Tag</dt><dd><code>{{ sendState.tag }}</code></dd>
+              <dt>Subscribers</dt><dd>{{ sendState.totals.active }} active of {{ sendState.totals.subscribers }}</dd>
+              <dt>To tag</dt><dd>{{ sendState.totals.toTag }}<span v-if="sendState.totals.alreadyTagged"> ({{ sendState.totals.alreadyTagged }} already have it)</span></dd>
+              <dt>Wait step</dt><dd v-if="sendState.plan">{{ sendState.plan.waitDays }} days, landing {{ sendState.plan.endOfMonth }}</dd>
+            </dl>
+
+            <p v-if="sendState.status === 'sent'" class="ok">This month has already been sent.</p>
+
+            <template v-else-if="sendState.blocking?.length">
+              <p class="warn">
+                {{ sendState.blocking.length }} thing{{ sendState.blocking.length === 1 ? '' : 's' }} still to fix before this can go out —
+                see the review below. Sending is blocked until they are cleared.
+              </p>
+            </template>
+
+            <template v-else>
+              <p class="ready">Nothing outstanding. Confirm by typing the tag to enable the send.</p>
+              <div class="actions">
+                <input v-model="confirmTag" type="text" :placeholder="sendState.tag" class="confirm" />
+                <button type="button" class="btn btn--danger btn--sm" :disabled="sending || confirmTag !== sendState.tag" @click="applyTag">
+                  {{ sending ? 'Tagging subscribers…' : `Apply the tag to ${sendState.totals.toTag} subscribers` }}
+                </button>
+              </div>
+            </template>
+          </template>
+
+          <div v-if="sendResult" class="result">
+            <p><strong>{{ sendResult.added }}</strong> tagged<span v-if="sendResult.already">, {{ sendResult.already }} already had it</span><span v-if="sendResult.failed">, <strong>{{ sendResult.failed }} failed</strong></span>.</p>
+            <p v-if="sendResult.failed" class="hint">
+              Run it again — the ones already tagged are skipped. Failed: {{ sendResult.failedEmails.join(', ') }}
+            </p>
+            <p v-else-if="sendResult.markedSent" class="ok">Marked as sent.</p>
+          </div>
+        </template>
+      </section>
+
       <!-- The three versions -->
       <section class="widget block">
         <h2 class="block__title">The three versions</h2>
@@ -600,6 +713,11 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .rotation summary { cursor: pointer; }
 .rotation ul { margin: .4rem 0 0; padding-left: 1.1rem; }
 .rotation li { margin-bottom: .15rem; }
+.ready { font-size: .8125rem; color: #14532d; margin: 0 0 .6rem; }
+.confirm { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; min-width: 14rem; }
+.result { margin-top: .8rem; padding: .65rem .8rem; background: var(--color-bg); border-radius: var(--border-radius); font-size: .8125rem; }
+.result p { margin: 0 0 .25rem; }
+.btn--danger { background: #8a1f1f; }
 .btn--ghost { background: none; color: var(--color-text-secondary); border: 1px solid var(--color-border); }
 
 .tabs { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: 1rem; }
