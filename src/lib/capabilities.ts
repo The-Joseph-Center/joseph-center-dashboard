@@ -107,9 +107,10 @@ const RULES: Record<Capability, string[] | '*'> = {
   letterQueue: FORM_ACCESS.letters,
   // Financial, so it sits with billing rather than with the form inboxes.
   taxData: [DEV, ADMIN_GROUP, 'Executive Director'],
-  // Front Desk is on this list deliberately: they know the building is shut
-  // before anyone else does, and a closure notice is worth nothing an hour late.
-  banners: [DEV, ADMIN_GROUP, 'Operational Director', 'Executive Assistant', 'Front Desk'],
+  // Posting to the front page of the site is not a front-desk task, even for
+  // something urgent — this stays with the people accountable for what the
+  // organisation says publicly.
+  banners: [DEV, ADMIN_GROUP, 'Operational Director', 'Executive Assistant'],
   billing: [ADMIN_GROUP],
 };
 

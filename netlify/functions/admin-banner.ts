@@ -99,8 +99,6 @@ export function fromPortableText(blocks: unknown): { text: string; linkLabel: st
  * reason a notice does not go up at all. Wording is theirs to change.
  */
 const TEMPLATES = [
-  { id: 'weather', label: 'Weather closure',
-    text: 'The Joseph Center is closed today due to weather. We will reopen at our usual time tomorrow.' },
   { id: 'early', label: 'Closing early',
     text: 'We are closing early today at 2:00pm. Normal hours resume tomorrow.' },
   { id: 'holiday', label: 'Holiday hours',
