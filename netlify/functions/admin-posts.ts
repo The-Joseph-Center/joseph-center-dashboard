@@ -154,6 +154,15 @@ export async function handler(event: {
     const action = clean(body.action, 20);
     const id = clean(body._id, 120);
 
+    // Uploading an image for the middle of a post. Returns the asset reference
+    // so the editor can drop a placeholder line in at the cursor; the image is
+    // attached to the document by the next save like any other block.
+    if (action === 'upload') {
+      const ref = await uploadImage(clean(body.imageBase64, 20_000_000), clean(body.imageFilename, 120));
+      const url = await sanityQuery<string | null>(`*[_id == $ref][0].url`, { ref });
+      return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ ref, url }) };
+    }
+
     if (action === 'publish' || action === 'unpublish' || action === 'delete') {
       if (!id) return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Missing id' }) };
       const live = publishedId(id);
