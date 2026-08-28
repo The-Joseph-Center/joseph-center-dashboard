@@ -77,6 +77,15 @@ export async function handler(event: {
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
         'Content-Type': 'application/json',
+        // Identity-backed keys (personal or service account) that are not
+        // scoped to a single workspace must name the workspace on every
+        // request, and fail with a 400 that does not obviously say so if they
+        // do not. Setting ANTHROPIC_WORKSPACE_ID covers that case; a key
+        // created against one workspace needs neither the variable nor this
+        // header.
+        ...(process.env.ANTHROPIC_WORKSPACE_ID
+          ? { 'anthropic-workspace-id': process.env.ANTHROPIC_WORKSPACE_ID }
+          : {}),
       },
       body: JSON.stringify({
         model: MODEL,
