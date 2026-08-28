@@ -14,7 +14,7 @@ import QuotePicker from '@/components/QuotePicker.vue';
 
 interface Card {
   _id: string; name?: string; title?: string; email?: string;
-  quote?: string; departments?: string[]; hidden?: boolean; imageUrl?: string | null;
+  quote?: string; quoteSource?: string; departments?: string[]; hidden?: boolean; imageUrl?: string | null;
 }
 
 // The overview hides this entirely for anyone with no linked card — being met
@@ -31,6 +31,9 @@ const loading = computed(() => my.loading);
 const loadError = computed(() => my.error);
 
 const quote = ref('');
+// Separate from the quote so the card can render it on its own line. Typed on
+// the end of the sentence it reads as part of the sentence.
+const quoteSource = ref('');
 const saving = ref(false);
 const submitted = ref(false);
 const unchanged = ref(false);
@@ -48,6 +51,7 @@ const label = (d: string) => DEPT_LABELS[d] ?? d;
 onMounted(async () => {
   await my.load();
   quote.value = my.card?.quote ?? '';
+  quoteSource.value = my.card?.quoteSource ?? '';
 });
 
 async function submit() {
@@ -56,7 +60,7 @@ async function submit() {
     const res = await apiFetch('/.netlify/functions/request-quote-change', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quote: quote.value }),
+      body: JSON.stringify({ quote: quote.value, quoteSource: quoteSource.value }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || String(res.status));
@@ -123,11 +127,23 @@ async function submit() {
       <!-- Quote -->
       <div class="quote">
         <label class="quote__label" for="my-quote">My quote</label>
-        <p v-if="card?.quote" class="quote__current">Currently live: “{{ card?.quote }}”</p>
+        <p v-if="card?.quote" class="quote__current">
+          Currently live: “{{ card?.quote }}”<template v-if="card?.quoteSource"> — {{ card?.quoteSource }}</template>
+        </p>
         <textarea
           id="my-quote" v-model="quote" rows="2" maxlength="400"
           class="quote__input" placeholder="Add a quote, or leave blank for none"
         ></textarea>
+
+        <label class="quote__label quote__label--sub" for="my-quote-source">Who said it (optional)</label>
+        <input
+          id="my-quote-source" v-model="quoteSource" type="text" maxlength="200"
+          class="quote__input" placeholder="e.g. Stephen Stills"
+        />
+        <p class="quote__hint">
+          Keep the name out of the quote itself — the card adds the quotation
+          marks and puts the name on its own line underneath.
+        </p>
 
         <div class="quote__row">
           <button type="button" class="quote__submit" :disabled="saving" @click="submit">
@@ -144,7 +160,7 @@ async function submit() {
         <details class="help">
           <summary class="help__summary">Need help choosing?</summary>
           <QuotePicker
-            @use="(q) => { quote = `${q.text} — ${q.attribution}`; submitted = false; unchanged = false; }"
+            @use="(q) => { quote = q.text; quoteSource = q.attribution; submitted = false; unchanged = false; }"
           />
         </details>
       </div>
@@ -208,6 +224,9 @@ async function submit() {
   font-size: 0.8125rem; font-weight: 600;
   color: var(--color-text); margin-bottom: 0.35rem;
 }
+.quote__label--sub { margin-top: 0.6rem; }
+.quote__hint { font-size: 0.75rem; color: var(--color-text-secondary); margin: 0.35rem 0 0; }
+
 .quote__current {
   font-size: 0.75rem; color: var(--color-text-secondary);
   margin: 0 0 0.4rem; font-style: italic;

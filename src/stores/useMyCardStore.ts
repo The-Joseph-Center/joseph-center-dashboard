@@ -10,7 +10,7 @@ import { apiFetch } from '@/lib/api';
 
 export interface MyCard {
   _id: string; name?: string; title?: string; email?: string;
-  quote?: string; departments?: string[]; hidden?: boolean; imageUrl?: string | null;
+  quote?: string; quoteSource?: string; departments?: string[]; hidden?: boolean; imageUrl?: string | null;
 }
 
 export const useMyCardStore = defineStore('myCard', () => {

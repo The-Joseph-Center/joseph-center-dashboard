@@ -33,8 +33,14 @@ export async function handler(event: {
   }
 
   let proposed = '';
+  let proposedSource = '';
   try {
-    proposed = String(JSON.parse(event.body || '{}').quote ?? '').trim().slice(0, MAX_QUOTE);
+    const parsed = JSON.parse(event.body || '{}');
+    proposed = String(parsed.quote ?? '').trim().slice(0, MAX_QUOTE);
+    // Kept separate from the quote itself. Typed on the end of the sentence it
+    // renders as part of the sentence, which is how the live cards ended up
+    // reading "…eel pie. --Puddleglum, The Silver Chair".
+    proposedSource = String(parsed.quoteSource ?? '').trim().slice(0, 200);
   } catch {
     return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Invalid JSON body' }) };
   }
@@ -49,7 +55,7 @@ export async function handler(event: {
     const staffId = await staffIdForLogin(auth.email);
     const card = staffId ? await fetchCard(staffId) : null;
 
-    if (card && (card.quote ?? '').trim() === proposed) {
+    if (card && (card.quote ?? '').trim() === proposed && (card.quoteSource ?? '').trim() === proposedSource) {
       return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ submitted: false, reason: 'unchanged' }) };
     }
     if (!card && !proposed) {
@@ -61,6 +67,8 @@ export async function handler(event: {
       staffTitle: card?.title,
       requesterEmail: auth.email,
       currentQuote: card?.quote,
+      currentSource: card?.quoteSource,
+      proposedSource,
       proposedQuote: proposed,
       staffId: staffId ?? '',
       unlinked: !card,

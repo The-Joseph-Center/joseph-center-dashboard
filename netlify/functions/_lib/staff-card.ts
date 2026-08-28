@@ -23,6 +23,7 @@ export interface StaffCard {
   title?: string;
   email?: string;
   quote?: string;
+  quoteSource?: string;
   departments?: string[];
   hidden?: boolean;
   imageUrl?: string | null;
@@ -38,7 +39,7 @@ export async function staffIdForLogin(login: string): Promise<string | null> {
 }
 
 export async function fetchCard(staffId: string): Promise<StaffCard | null> {
-  const q = `*[_id == $id][0]{_id,name,title,email,quote,departments,hidden,"imageUrl":image.asset->url}`;
+  const q = `*[_id == $id][0]{_id,name,title,email,quote,quoteSource,departments,hidden,"imageUrl":image.asset->url}`;
   const url = new URL(`https://${PROJECT}.api.sanity.io/v2024-06-20/data/query/${DATASET}`);
   url.searchParams.set('query', q);
   url.searchParams.set('$id', JSON.stringify(staffId));
@@ -57,7 +58,7 @@ export async function fetchCard(staffId: string): Promise<StaffCard | null> {
  * own, and the allow-list below is a backstop against a caller passing through
  * more than it meant to, not a substitute for that check.
  */
-const PATCHABLE = new Set(['quote', 'title', 'departments']);
+const PATCHABLE = new Set(['quote', 'quoteSource', 'title', 'departments']);
 
 export async function patchCard(staffId: string, fields: Record<string, unknown>) {
   const set: Record<string, unknown> = {};

@@ -3,7 +3,9 @@ export interface QuoteRequestVars {
   staffTitle?: string | null;
   requesterEmail: string;
   currentQuote?: string | null;
+  currentSource?: string | null;
   proposedQuote: string;
+  proposedSource?: string;
   staffId: string;
   /** True when the submitter has no staff card yet — needs one creating. */
   unlinked?: boolean;
@@ -35,11 +37,15 @@ export function quoteRequestEmail(v: QuoteRequestVars) {
   </p>` : ''}
   <p style="margin:20px 0 6px;font-size:13px;color:#5C5C5C;">Currently on the site</p>
   <blockquote style="margin:0;padding:10px 14px;background:#F7F5EE;border-left:3px solid #d8d2c2;font-size:14px;">
-    ${v.currentQuote ? esc(v.currentQuote) : '<em style="color:#5C5C5C;">— none —</em>'}
+    ${v.currentQuote ? esc(v.currentQuote) : '<em style="color:#5C5C5C;">— none —</em>'}${
+      v.currentSource ? `<br /><span style="color:#5C5C5C;">— ${esc(v.currentSource)}</span>` : ''
+    }
   </blockquote>
   <p style="margin:18px 0 6px;font-size:13px;color:#5C5C5C;">Requested</p>
   <blockquote style="margin:0;padding:10px 14px;background:#F1F6F1;border-left:3px solid #1D5F55;font-size:14px;">
-    ${cleared ? '<em style="color:#5C5C5C;">— remove the quote —</em>' : esc(v.proposedQuote)}
+    ${cleared ? '<em style="color:#5C5C5C;">— remove the quote —</em>' : esc(v.proposedQuote)}${
+      !cleared && v.proposedSource ? `<br /><span style="color:#5C5C5C;">— ${esc(v.proposedSource)}</span>` : ''
+    }
   </blockquote>
   <p style="margin:22px 0 0;font-size:12px;color:#5C5C5C;">
     Apply it in Sanity Studio if you're happy with it.
@@ -56,8 +62,8 @@ export function quoteRequestEmail(v: QuoteRequestVars) {
     `Document ID  : ${v.staffId || '— no card yet —'}`,
     ...(noCard ? ['', 'NOTE: this person has no staff card yet. Apply the quote when one exists.'] : []),
     '',
-    `Currently    : ${v.currentQuote || '— none —'}`,
-    `Requested    : ${cleared ? '— remove the quote —' : v.proposedQuote}`,
+    `Currently    : ${v.currentQuote || '— none —'}${v.currentSource ? ` — ${v.currentSource}` : ''}`,
+    `Requested    : ${cleared ? '— remove the quote —' : v.proposedQuote}${!cleared && v.proposedSource ? ` — ${v.proposedSource}` : ''}`,
     '',
     "Apply it in Sanity Studio if you're happy with it.",
   ].join('\n');
