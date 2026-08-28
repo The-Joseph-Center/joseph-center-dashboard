@@ -2,8 +2,9 @@ import { requireCapability, denial } from './_lib/verify-okta';
 import { turso, fetchOktaUsers } from './_lib/staff-directory';
 import {
   TIERS, section4, closingSection, aweberPlan, reviewNewsletter, bridgeLine,
-  type NewsletterDraft,
+  DONATE_URL, type NewsletterDraft,
 } from './_lib/newsletter';
+import { newsletterHtml, promoteButtons } from './_lib/newsletter-html';
 
 /**
  * The monthly newsletter, assembled.
@@ -203,6 +204,37 @@ export async function handler(event: {
     const month = clean(body.month, 7);
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'A month is required, as YYYY-MM.' }) };
+    }
+
+    /**
+     * The three versions as email HTML, from whatever is on screen.
+     *
+     * Rendered from the posted draft rather than the saved row so the copy
+     * button reflects an edit made a moment ago — being handed last save's
+     * HTML is the kind of thing nobody notices until it has gone out.
+     */
+    if (clean(body.action, 20) === 'html') {
+      const name = monthName(month);
+      const prev = MONTHS[(Number(month.split('-')[1]) - 2 + 12) % 12];
+      const versions = TIERS.map((t) => ({
+        id: t.id,
+        label: t.label,
+        subject: t.subject(name),
+        html: promoteButtons(newsletterHtml({
+          monthName: name,
+          section1: clean(body.section1),
+          section2: clean(body.section2),
+          section3Header: `${name} Impact & ${prev} Videos`,
+          stats: (body.stats ?? {}) as Record<string, string>,
+          videos: (body.videos ?? []) as { title: string; url: string }[],
+          section4: section4(t, name, clean(body.guestName, 120)),
+          closing: closingSection((body.partners ?? []) as { name: string; url: string }[]),
+          signature: t.signature,
+          donateUrl: DONATE_URL,
+          coffeeChatFormUrl: 'https://forms.gle/aQZRYokrT7YK8GFL9',
+        }), DONATE_URL),
+      }));
+      return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ versions }) };
     }
 
     if (clean(body.action, 20) === 'sent') {

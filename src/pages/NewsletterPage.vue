@@ -37,6 +37,64 @@ const partnerHistory = ref<{ name: string; url: string; months: string[]; lastUs
 const history = ref<{ month: string; monthName: string; guest: string | null; program: string | null }[]>([]);
 const carriedPartners = ref(false);
 const pullingVideos = ref(false);
+
+// ── Section 1 from a transcript ──
+const transcriptOpen = ref(false);
+const transcript = ref('');
+const drafting = ref(false);
+const draftQuotes = ref<string[]>([]);
+const draftGaps = ref<string[]>([]);
+const appendedBridge = ref(false);
+
+async function draftSection1() {
+  if (!draft.value) return;
+  drafting.value = true; error.value = ''; draftQuotes.value = []; draftGaps.value = [];
+  try {
+    const res = await apiFetch('/.netlify/functions/newsletter-draft', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transcript: transcript.value, guestName: draft.value.guestName,
+        monthName: draft.value.monthName, frame: draft.value.guestFrame, program: draft.value.program,
+      }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || String(res.status));
+    if (draft.value.section1.trim() && !window.confirm('Replace what is already in Section 1?')) return;
+    draft.value.section1 = d.draft;
+    draftQuotes.value = d.quotes ?? [];
+    draftGaps.value = d.gaps ?? [];
+    appendedBridge.value = !!d.appendedBridgeLine;
+    transcriptOpen.value = false;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not draft from the transcript.';
+  } finally {
+    drafting.value = false;
+  }
+}
+
+// ── Email HTML ──
+const htmlVersions = ref<Record<string, string>>({});
+const buildingHtml = ref(false);
+const showHtml = ref(false);
+
+async function buildHtml() {
+  if (!draft.value) return;
+  buildingHtml.value = true; error.value = '';
+  try {
+    const res = await apiFetch('/.netlify/functions/admin-newsletter', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...draft.value, month: month.value, action: 'html' }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || String(res.status));
+    htmlVersions.value = Object.fromEntries(d.versions.map((v: { id: string; html: string }) => [v.id, v.html]));
+    showHtml.value = true;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not build the HTML.';
+  } finally {
+    buildingHtml.value = false;
+  }
+}
 const section3Header = ref('');
 const bridge = ref('');
 const loading = ref(true);
@@ -208,7 +266,38 @@ function videoBlock() {
           3–4 paragraphs, most resonant angle first. Must end on the bridge line:
           <button type="button" class="linkish" @click="copy(bridge, 'bridge')">{{ copied === 'bridge' ? 'Copied' : 'copy it' }}</button>
         </p>
+        <div class="tools">
+          <button type="button" class="btn btn--ghost btn--sm" @click="transcriptOpen = !transcriptOpen">
+            {{ transcriptOpen ? 'Close' : 'Draft from a Coffee Chat transcript' }}
+          </button>
+        </div>
+
+        <div v-if="transcriptOpen" class="transcript">
+          <p class="block__hint">
+            Paste both sides of the conversation, plus the bonus content if there is any. The transcript is the
+            only thing it works from — anything it cannot settle comes back as a question rather than a guess.
+          </p>
+          <textarea v-model="transcript" rows="8" class="body" placeholder="MONA: …&#10;GUEST: …"></textarea>
+          <div class="actions">
+            <button type="button" class="btn btn--sm" :disabled="drafting || transcript.trim().length < 400 || !draft.guestName" @click="draftSection1">
+              {{ drafting ? 'Reading the transcript…' : `Draft the ${draft.guestFrame === 'calling' ? 'partner' : 'guest'} story` }}
+            </button>
+            <span v-if="!draft.guestName" class="hint">Set the guest name first.</span>
+            <span v-else-if="transcript.trim().length < 400" class="hint">Paste the transcript first.</span>
+          </div>
+        </div>
+
         <textarea v-model="draft.section1" rows="10" class="body"></textarea>
+
+        <p v-if="appendedBridge" class="hint hint--warn">The bridge line was missing from the draft and has been added at the end — check it reads naturally there.</p>
+        <div v-if="draftQuotes.length" class="quotes">
+          <p class="quotes__head">Quotations used — check each against the transcript:</p>
+          <ul><li v-for="(q, i) in draftQuotes" :key="i">&ldquo;{{ q }}&rdquo;</li></ul>
+        </div>
+        <div v-if="draftGaps.length" class="gaps">
+          <p class="gaps__head">The transcript did not settle these:</p>
+          <ul><li v-for="(g, i) in draftGaps" :key="i">{{ g }}</li></ul>
+        </div>
       </section>
 
       <section class="widget block">
@@ -316,14 +405,21 @@ function videoBlock() {
               <dt>Excludes</dt><dd><code>{{ v.excludes.join(', ') }}</code></dd>
             </dl>
             <div class="version__actions">
-              <button type="button" class="btn btn--sm" @click="copy(fullVersion(v), v.id)">
-                {{ copied === v.id ? 'Copied' : 'Copy this version' }}
+              <button type="button" class="btn btn--sm" @click="copy(showHtml && htmlVersions[v.id] ? htmlVersions[v.id]! : fullVersion(v), v.id)">
+                {{ copied === v.id ? 'Copied' : showHtml ? 'Copy the HTML' : 'Copy this version' }}
               </button>
               <button type="button" class="linkish" @click="copy(v.subject, v.id + '-subject')">
                 {{ copied === v.id + '-subject' ? 'Copied' : 'Copy subject line' }}
               </button>
+              <span class="version__spacer"></span>
+              <button type="button" class="linkish" :disabled="buildingHtml" @click="showHtml && Object.keys(htmlVersions).length ? (showHtml = false) : buildHtml()">
+                {{ buildingHtml ? 'Building…' : showHtml ? 'Show plain text' : 'Build email HTML' }}
+              </button>
             </div>
-            <pre class="preview">{{ fullVersion(v) }}</pre>
+            <p v-if="showHtml" class="block__hint">
+              Paste this into AWeber's HTML mode. Inline styles and tables throughout, 600px wide — what email clients need rather than what a browser would.
+            </p>
+            <pre class="preview">{{ showHtml && htmlVersions[v.id] ? htmlVersions[v.id] : fullVersion(v) }}</pre>
           </div>
         </template>
       </section>
@@ -376,6 +472,21 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .plan dt { font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); }
 .plan dd { margin: 0; }
 .plan code { background: var(--color-bg); padding: .05rem .3rem; border-radius: 3px; }
+
+.tools { margin-bottom: .7rem; }
+.transcript { border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .8rem; margin-bottom: .8rem; background: var(--color-bg); }
+.transcript .body { margin-bottom: .6rem; }
+.actions { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+.hint { font-size: .75rem; color: var(--color-text-secondary); margin: .4rem 0 0; }
+.hint--warn { color: #8a5a1f; }
+.quotes, .gaps { margin-top: .7rem; padding: .6rem .8rem; border-radius: var(--border-radius); }
+.quotes { background: var(--color-bg); }
+.gaps { background: color-mix(in srgb, #8a5a1f 8%, transparent); }
+.quotes__head, .gaps__head { margin: 0 0 .3rem; font-size: .8125rem; font-weight: 600; }
+.gaps__head { color: #8a5a1f; }
+.quotes ul, .gaps ul { margin: 0; padding-left: 1.1rem; }
+.quotes li, .gaps li { font-size: .8125rem; margin-bottom: .25rem; line-height: 1.5; }
+.version__spacer { flex: 1; }
 
 .suggest-partners { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin-bottom: .8rem; }
 .suggest-partners__label { font-size: .75rem; color: var(--color-text-secondary); }
