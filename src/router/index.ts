@@ -10,6 +10,7 @@ const BillingPage = () => import('@/pages/BillingPage.vue');
 const StaffAdminPage = () => import('@/pages/StaffAdminPage.vue');
 const SubmissionsPage = () => import('@/pages/SubmissionsPage.vue');
 const FormsAdminPage = () => import('@/pages/FormsAdminPage.vue');
+const LetterQueuePage = () => import('@/pages/LetterQueuePage.vue');
 const LoginPage = () => import('@/pages/LoginPage.vue');
 const ForbiddenPage = () => import('@/pages/ForbiddenPage.vue');
 const NotFound = () => import('@/pages/NotFound.vue');
@@ -22,6 +23,7 @@ const routes = [
   // form, server-side, by list-submissions.
   { path: '/submissions', name: 'Submissions', component: SubmissionsPage, meta: { capability: 'submissions' } },
   { path: '/forms', name: 'Forms', component: FormsAdminPage, meta: { capability: 'formsAdmin' } },
+  { path: '/letters', name: 'Letters', component: LetterQueuePage, meta: { capability: 'letterQueue' } },
   { path: '/support', name: 'Support', component: SupportPage },
   // Admin-only. The guard below hides it; the billing Functions verify the same
   // group server-side, which is what actually protects it.

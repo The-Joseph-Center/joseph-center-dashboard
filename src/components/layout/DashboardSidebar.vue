@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Inbox,
   ClipboardList,
+  Mail,
   CreditCard,
   LogOut,
   Sun,
@@ -62,6 +63,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/staff', label: 'Staff', icon: Users, capability: 'staffAdmin' },
   { to: '/submissions', label: 'Submissions', icon: Inbox, capability: 'submissions' },
   { to: '/forms', label: 'Seasonal forms', icon: ClipboardList, capability: 'formsAdmin' },
+  { to: '/letters', label: 'Letters', icon: Mail, capability: 'letterQueue' },
   { to: '/support', label: 'Support', icon: MessageSquare, capability: 'support' },
   { to: '/billing', label: 'Billing', icon: CreditCard, capability: 'billing' },
 ];

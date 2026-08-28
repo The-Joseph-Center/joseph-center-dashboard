@@ -24,6 +24,7 @@ export type Capability =
   | 'staffAdmin'  // edit anyone's public staff details, create cards
   | 'submissions' // the form inbox — which forms is decided per form, below
   | 'formsAdmin'  // open, close and edit the seasonal forms
+  | 'letterQueue' // work through Mona's year-end letters
   | 'billing';    // invoices, admin only
 
 export const ADMIN_GROUP = 'jc-dashboard-admins';
@@ -98,6 +99,10 @@ const RULES: Record<Capability, string[] | '*'> = {
   // what the public sees — so it is not simply "whoever can read `seasonal`".
   // The Event Coordinator runs Angel Tree and needs to open and close it.
   formsAdmin: [DEV, ADMIN_GROUP, 'Operational Director', 'Event Coordinator'],
+  // Exactly the people who may read the letter requests — the queue is the same
+  // data with somewhere to record that a letter got written. Derived from that
+  // list rather than restated, so the two can never disagree.
+  letterQueue: FORM_ACCESS.letters,
   billing: [ADMIN_GROUP],
 };
 
