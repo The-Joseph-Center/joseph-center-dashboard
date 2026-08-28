@@ -150,65 +150,103 @@ export async function sheetGrid(sheetId: string, range: string): Promise<string[
 const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
 
 /**
- * Which column holds a given month.
+ * The tab holding a month.
  *
- * Monthly sheets label columns every which way — "September", "Sep", "Sept-26",
- * "9/1/2026", "2026-09". All of them are tried, because the alternative is
- * telling someone their sheet is laid out wrong.
+ * This sheet is a tab per month — "March", "April", "May " (with a trailing
+ * space) — rather than a column per month, so the month is resolved to a tab
+ * name and matched loosely enough that a stray space or a year suffix does not
+ * break it. There is no year in the tab names, so the sheet is assumed to cover
+ * the current year; a tab named "August 2027" would still match, which is the
+ * behaviour to want if they ever start labelling them.
  */
-export function findMonthColumn(grid: string[][], month: string): number {
+export function findMonthTab(tabs: string[], month: string): string | null {
   const [year, m] = month.split('-').map(Number);
   const name = MONTHS[m! - 1]!;
   const abbrev = name.slice(0, 3);
-  const shortYear = String(year).slice(2);
+  const norm = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
 
-  const matches = (cell: string): boolean => {
-    const c = cell.toLowerCase().replace(/\s+/g, ' ').trim();
-    if (!c) return false;
-    if (c === month || c === `${year}-${String(m).padStart(2, '0')}`) return true;
-    // A date cell Google has already formatted.
-    const asDate = Date.parse(cell);
-    if (!Number.isNaN(asDate)) {
-      const d = new Date(asDate);
-      if (d.getUTCFullYear() === year && d.getUTCMonth() === m! - 1) return true;
-    }
-    const hasMonth = c.startsWith(name) || c.startsWith(abbrev);
-    if (!hasMonth) return false;
-    // With a year in the header it has to be the right year; without one,
-    // assume the sheet covers a single year.
-    const yearInCell = /\d{2,4}/.exec(c)?.[0];
-    if (!yearInCell) return true;
-    return yearInCell === String(year) || yearInCell === shortYear;
-  };
-
-  // Headers are usually in the first few rows, not always the first.
-  for (const row of grid.slice(0, 6)) {
-    const idx = row.findIndex(matches);
-    if (idx !== -1) return idx;
-  }
-  return -1;
+  // A tab naming this month and this year wins over one naming only the month.
+  const withYear = tabs.find((t) => norm(t).startsWith(name) && norm(t).includes(String(year)));
+  if (withYear) return withYear;
+  const exact = tabs.find((t) => norm(t) === name);
+  if (exact) return exact;
+  const starts = tabs.find((t) => norm(t).startsWith(name) || norm(t).startsWith(abbrev));
+  return starts ?? null;
 }
 
-/** Which row holds a metric, matched loosely on its label in the first columns. */
-export function findStatRow(grid: string[][], label: string): number {
-  const want = label.toLowerCase().replace(/[^a-z]/g, '');
-  if (!want) return -1;
-  let best = -1;
-  let bestScore = 0;
+export interface Metric { row: number; department: string; category: string; label: string; value: string }
+
+/**
+ * The sheet's rows as addressable metrics.
+ *
+ * Layout is Department | Category | Value, where the department is written once
+ * and carries down over the rows beneath it. So "Front Desk" followed by a blank
+ * department and "Individuals Served" is one metric, and it is only meaningful
+ * as the pair — "Individuals Served" alone appears under more than one
+ * department, and picking the wrong one silently reports the wrong programme.
+ */
+export function flattenMetrics(grid: string[][]): Metric[] {
+  const out: Metric[] = [];
+  let department = '';
   grid.forEach((row, i) => {
-    for (const cell of row.slice(0, 2)) {
-      const got = cell.toLowerCase().replace(/[^a-z]/g, '');
-      if (!got) continue;
-      let score = 0;
-      if (got === want) score = 3;
-      else if (got.includes(want) || want.includes(got)) score = 2;
-      else {
-        // Share a distinctive word — "meals" matching "Meals Served (Hot)".
-        const words = label.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 3);
-        if (words.some((w) => cell.toLowerCase().includes(w))) score = 1;
-      }
-      if (score > bestScore) { bestScore = score; best = i; }
-    }
+    const [a = '', b = '', c = ''] = row;
+    if (a && /^(department|metric)$/i.test(a)) return;   // the header row
+    if (a) department = a;
+    const value = c.trim();
+    if (!value) return;
+    const category = b.trim();
+    out.push({
+      row: i,
+      department,
+      category,
+      label: category ? `${department} › ${category}` : department,
+      value,
+    });
   });
-  return bestScore >= 1 ? best : -1;
+  return out;
+}
+
+/**
+ * Aliases for the newsletter's standard stats.
+ *
+ * The process document names the five stats one way and the sheet names them
+ * another — "Meals served" against "Kitchen (Meals per month) › Plates served
+ * per Month". Written down rather than left to fuzzy matching, because
+ * "Individuals Served" appears under both Front Desk and IFS and the difference
+ * between those two is the difference between 291 and 110.
+ */
+const ALIASES: Record<string, string[]> = {
+  'meals served': ['plates served per month'],
+  'individuals welcomed': ['front desk › individuals served'],
+  'families served': ['front desk › families served'],
+  'ifs financial stability': ['ifs › individuals served'],
+};
+
+const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ›]/g, ' ').replace(/\s+/g, ' ').trim();
+
+/** The metric that best answers a newsletter stat label, or null. */
+export function matchMetric(metrics: Metric[], statLabel: string): Metric | null {
+  const want = squash(statLabel);
+  const aliases = ALIASES[want] ?? [];
+
+  for (const alias of aliases) {
+    const hit = metrics.find((m) => squash(m.label).includes(squash(alias)));
+    if (hit) return hit;
+  }
+
+  let best: Metric | null = null;
+  let bestScore = 0;
+  for (const m of metrics) {
+    const label = squash(m.label);
+    let score = 0;
+    if (label === want) score = 5;
+    else if (label.endsWith(want) || squash(m.category) === want) score = 4;
+    else {
+      const words = want.split(' ').filter((w) => w.length > 3);
+      const hits = words.filter((w) => label.includes(w)).length;
+      if (hits) score = hits;
+    }
+    if (score > bestScore) { bestScore = score; best = m; }
+  }
+  return bestScore >= 2 ? best : null;
 }

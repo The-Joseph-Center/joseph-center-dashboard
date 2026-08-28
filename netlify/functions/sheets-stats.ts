@@ -1,5 +1,5 @@
 import { requireCapability, denial } from './_lib/verify-okta';
-import { sheetTabs, sheetGrid, findMonthColumn, findStatRow, googleAuthMode } from './_lib/google-sheets';
+import { sheetTabs, sheetGrid, findMonthTab, flattenMetrics, matchMetric, googleAuthMode } from './_lib/google-sheets';
 
 /**
  * This month's numbers, from the shared Google Sheet.
@@ -46,53 +46,41 @@ export async function handler(event: {
   try {
     const tabs = await sheetTabs(sheetId);
 
-    if (!tab) {
-      return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ tabs }) };
-    }
-    if (!tabs.includes(tab)) {
-      return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: `No tab called "${tab}". Found: ${tabs.join(', ')}`, tabs }) };
-    }
-    if (!/^\d{4}-\d{2}$/.test(month)) {
-      return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'A month is required, as YYYY-MM.', tabs }) };
-    }
+    // The month is a tab in this sheet, not a column. Resolved for them unless
+    // they have picked one explicitly.
+    const chosen = tab || (/^\d{4}-\d{2}$/.test(month) ? findMonthTab(tabs, month) : null);
 
-    const grid = await sheetGrid(sheetId, `${tab}!${RANGE}`);
-    const column = findMonthColumn(grid, month);
-
-    if (column === -1) {
-      // Show the headers rather than just failing — nine times out of ten the
-      // month simply is not in the sheet yet.
-      const headers = grid.slice(0, 4).map((r) => r.filter(Boolean).slice(0, 14));
+    if (!chosen) {
       return {
         statusCode: 200,
         headers: JSON_HEADERS,
-        body: JSON.stringify({
-          tabs, tab, column: -1, matches: [],
-          error: `No column for that month in "${tab}".`,
-          headers,
-        }),
+        body: JSON.stringify({ tabs, tab: '', metrics: [], matches: [], error: `No tab for that month. Found: ${tabs.join(', ')}` }),
       };
     }
+    if (!tabs.includes(chosen)) {
+      return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: `No tab called "${chosen}".`, tabs }) };
+    }
 
-    // Rows that could plausibly be a metric, for the manual picker.
-    const rows = grid
-      .map((r, i) => ({ index: i, label: r[0] || r[1] || '', value: r[column] ?? '' }))
-      .filter((r) => r.label && r.value);
+    const grid = await sheetGrid(sheetId, `${chosen}!A1:D80`);
+    const metrics = flattenMetrics(grid);
 
     const matches = labels.map((label) => {
-      const row = findStatRow(grid, label);
+      const hit = matchMetric(metrics, label);
       return {
         label,
-        row,
-        value: row === -1 ? '' : (grid[row]?.[column] ?? ''),
-        sourceLabel: row === -1 ? '' : (grid[row]?.[0] || grid[row]?.[1] || ''),
+        row: hit?.row ?? -1,
+        value: hit?.value ?? '',
+        sourceLabel: hit?.label ?? '',
       };
     });
 
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
-      body: JSON.stringify({ tabs, tab, column, monthHeader: grid.find((r) => r[column])?.[column] ?? '', matches, rows }),
+      body: JSON.stringify({
+        tabs, tab: chosen, matches,
+        rows: metrics.map((m) => ({ index: m.row, label: m.label, value: m.value })),
+      }),
     };
   } catch (err) {
     console.error('sheets-stats:', err);

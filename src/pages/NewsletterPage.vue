@@ -81,7 +81,6 @@ const sheetTabs = ref<string[]>([]);
 const sheetTab = ref('');
 const sheetRows = ref<{ index: number; label: string; value: string }[]>([]);
 const sheetMatches = ref<SheetMatch[]>([]);
-const sheetHeader = ref('');
 const sheetError = ref('');
 const readingSheet = ref(false);
 
@@ -105,7 +104,7 @@ async function readSheet() {
     if (!sheetTab.value && sheetTabs.value.length) { sheetTab.value = d.tab || sheetTabs.value[0]!; if (!d.matches) return readSheet(); }
     sheetMatches.value = d.matches ?? [];
     sheetRows.value = d.rows ?? [];
-    sheetHeader.value = d.monthHeader ?? '';
+
     sheetError.value = d.error ?? '';
   } catch (e) {
     sheetError.value = e instanceof Error ? e.message : 'Could not read the sheet.';
@@ -381,7 +380,7 @@ function videoBlock() {
                 <option v-for="t in sheetTabs" :key="t" :value="t">{{ t }}</option>
               </select>
             </label>
-            <span v-if="sheetHeader" class="hint">Reading the column headed <strong>{{ sheetHeader }}</strong>.</span>
+            <span v-if="sheetTab" class="hint">Reading the <strong>{{ sheetTab }}</strong> tab.</span>
           </div>
 
           <table v-if="sheetMatches.length" class="sheet__tbl">
