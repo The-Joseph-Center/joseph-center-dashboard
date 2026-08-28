@@ -19,6 +19,42 @@ import { BRAND_REFERENCE } from './_lib/brand-reference';
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const MODEL = 'claude-sonnet-5';
 
+/**
+ * Room for the model to think and still finish the answer.
+ *
+ * This was 1024, which looked ample for four short fields and was not: the
+ * model returns a thinking block first and that counts against the same budget.
+ * On the June newsletter it spent the entire 1024 thinking and the JSON came
+ * back cut in half — which surfaced as "the suggestions came back in a form we
+ * could not read", a message about the symptom that gave no hint of the cause.
+ */
+const MAX_TOKENS = 4096;
+
+/**
+ * The answer comes back as a tool call rather than as JSON in prose.
+ *
+ * The shape is then guaranteed by the schema instead of by asking politely and
+ * parsing whatever arrives — no code fences to strip, no preamble to skip, and
+ * a malformed reply becomes impossible rather than merely unlikely.
+ */
+const SUGGEST_TOOL = {
+  name: 'suggest_metadata',
+  description: 'Return the suggested title options, summary, category and tags for the draft.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      titles: {
+        type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 3,
+        description: 'Two or three plain, specific title options.',
+      },
+      excerpt: { type: 'string', description: 'One or two sentences for the blog index card.' },
+      category: { type: 'string', description: 'Prefer one of the categories already in use.' },
+      tags: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 6 },
+    },
+    required: ['titles', 'excerpt', 'category', 'tags'],
+  },
+};
+
 const SYSTEM = `You help staff at The Joseph Center label blog posts they have already written.
 
 ${BRAND_REFERENCE}
@@ -31,8 +67,29 @@ Rules that override anything else:
 - Prefer an existing category over inventing one.
 - Tags are lowercase, two to six of them, no hashes.
 
-Reply with JSON only, no prose around it:
-{"titles":["…","…","…"],"excerpt":"…","category":"…","tags":["…"]}`;
+Call the suggest_metadata tool with your answer.`;
+
+/**
+ * A list of strings, however it arrived.
+ *
+ * The tool schema asks for an array and usually gets one, but not always: on
+ * the June newsletter `tags` came back as "golden girls project, family centre,
+ * …" — a single comma-separated string. A schema is guidance to the model, not
+ * a guarantee from it, and the earlier `Array.isArray(v) ? … : []` silently
+ * returned no tags at all, which is the worst of the three possible outcomes.
+ */
+export function toStringList(v: unknown, max: number): string[] {
+  const list = Array.isArray(v) ? v : typeof v === 'string' ? v.split(',') : [];
+  return list
+    .filter((x): x is string => typeof x === 'string')
+    // Strip stray JSON punctuation from the ends. When the model returns the
+    // list as one comma-separated string it sometimes carries the closing
+    // brackets along with it, which produced a real tag reading
+    // "western slope]}" — visible, but only if you looked at the last one.
+    .map((s) => s.trim().replace(/^[\[\]{}"'`\s]+|[\[\]{}"'`\s]+$/g, '').trim())
+    .filter(Boolean)
+    .slice(0, max);
+}
 
 export async function handler(event: {
   httpMethod: string;
@@ -89,8 +146,10 @@ export async function handler(event: {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 1024,
+        max_tokens: MAX_TOKENS,
         system: SYSTEM,
+        tools: [SUGGEST_TOOL],
+        tool_choice: { type: 'tool', name: SUGGEST_TOOL.name },
         messages: [{
           role: 'user',
           content: `Categories already in use: ${known.length ? known.join(', ') : '(none yet)'}\n\nThe draft:\n\n${draft}`,
@@ -108,32 +167,37 @@ export async function handler(event: {
       };
     }
 
-    const data = await res.json() as { content?: { type: string; text?: string }[] };
-    const text = (data.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
+    const data = await res.json() as {
+      stop_reason?: string;
+      content?: { type: string; name?: string; input?: Record<string, unknown> }[];
+    };
 
-    // The model is told to return bare JSON; a fenced block is the likely
-    // deviation, so unwrap it rather than failing the whole request over
-    // punctuation.
-    const json = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
-    let parsed: { titles?: unknown; excerpt?: unknown; category?: unknown; tags?: unknown };
-    try {
-      parsed = JSON.parse(json);
-    } catch {
-      console.error('ai-assist: unparseable reply:', json.slice(0, 300));
-      return { statusCode: 502, headers: JSON_HEADERS, body: JSON.stringify({ error: 'The suggestions came back in a form we could not read. Try again.' }) };
+    // Truncation is the one failure worth naming, because the fix is a setting
+    // rather than a retry — an identical second attempt fails identically.
+    if (data.stop_reason === 'max_tokens') {
+      console.error('ai-assist: hit the token ceiling before finishing');
+      return {
+        statusCode: 502,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: 'That post is long enough that the suggestions ran out of room. Tell Eric — the limit needs raising.' }),
+      };
     }
 
-    const strings = (v: unknown, max: number) =>
-      Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((s) => s.trim()).filter(Boolean).slice(0, max) : [];
+    const call = (data.content ?? []).find((c) => c.type === 'tool_use' && c.name === SUGGEST_TOOL.name);
+    if (!call?.input) {
+      console.error('ai-assist: no tool call in the reply:', JSON.stringify(data.content ?? []).slice(0, 300));
+      return { statusCode: 502, headers: JSON_HEADERS, body: JSON.stringify({ error: 'The suggestions came back empty. Try again.' }) };
+    }
+    const parsed = call.input as { titles?: unknown; excerpt?: unknown; category?: unknown; tags?: unknown };
 
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
       body: JSON.stringify({
-        titles: strings(parsed.titles, 3),
+        titles: toStringList(parsed.titles, 3),
         excerpt: typeof parsed.excerpt === 'string' ? parsed.excerpt.trim().slice(0, 500) : '',
         category: typeof parsed.category === 'string' ? parsed.category.trim().slice(0, 80) : '',
-        tags: strings(parsed.tags, 6).map((t) => t.toLowerCase().replace(/^#/, '')),
+        tags: toStringList(parsed.tags, 6).map((t) => t.toLowerCase().replace(/^#/, '')),
       }),
     };
   } catch (err) {
