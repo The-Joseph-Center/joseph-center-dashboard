@@ -25,6 +25,7 @@ export type Capability =
   | 'submissions' // the form inbox — which forms is decided per form, below
   | 'formsAdmin'  // open, close and edit the seasonal forms
   | 'letterQueue' // work through Mona's year-end letters
+  | 'taxData'     // year-end giving totals for acknowledgments and the 990
   | 'billing';    // invoices, admin only
 
 export const ADMIN_GROUP = 'jc-dashboard-admins';
@@ -103,6 +104,8 @@ const RULES: Record<Capability, string[] | '*'> = {
   // data with somewhere to record that a letter got written. Derived from that
   // list rather than restated, so the two can never disagree.
   letterQueue: FORM_ACCESS.letters,
+  // Financial, so it sits with billing rather than with the form inboxes.
+  taxData: [DEV, ADMIN_GROUP, 'Executive Director'],
   billing: [ADMIN_GROUP],
 };
 
