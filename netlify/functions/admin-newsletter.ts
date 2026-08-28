@@ -139,6 +139,13 @@ export async function handler(event: {
 
       const usedTags = all.filter((r) => r.month !== month).map((r) => r.aweber_tag ?? '').filter(Boolean);
 
+      // Fetched together — two independent reads, and the page waits for both
+      // either way. Declared here because the partner list below uses `marquee`;
+      // it was previously declared after its own use, which threw a temporal
+      // dead zone ReferenceError and surfaced as "Could not load the
+      // newsletter" on every visit.
+      const [surnames, marquee] = await Promise.all([staffSurnames(), marqueePartners()]);
+
       /**
        * Which partners have been featured, and when.
        *
@@ -174,7 +181,6 @@ export async function handler(event: {
       const history = all
         .filter((r) => r.month !== month)
         .map((r) => ({ month: r.month, monthName: monthName(r.month), guest: r.guest_name, program: r.program }));
-      const [surnames, marquee] = await Promise.all([staffSurnames(), marqueePartners()]);
       const issues = reviewNewsletter({ ...draft, usedTags, staffSurnames: surnames } as NewsletterDraft);
       const plan = aweberPlan(month, new Date());
 
