@@ -1,17 +1,28 @@
 import { SignJWT, importPKCS8 } from 'jose';
 
 /**
- * Read-only access to a Google Sheet, as a service account.
+ * Read-only access to a Google Sheet.
  *
- * A service account rather than an API key because an API key only works on a
- * sheet published to the whole web, and monthly program numbers are not
- * something to make world-readable to save a setup step. The account is granted
- * Viewer on the one sheet and can reach nothing else in the Google account.
+ * Not an API key: that only works on a sheet published to the whole web, and
+ * monthly program numbers are not something to make world-readable to save a
+ * setup step.
  *
- * The token exchange is done by hand rather than with googleapis: it is one
- * signed JWT posted to one endpoint, and `jose` is already here for verifying
- * Okta tokens. Pulling in a large SDK to sign a single assertion would be the
- * bigger dependency, not the smaller one.
+ * Two ways in, tried in order:
+ *
+ *   OAuth refresh token — a person grants read-only access to the sheets they
+ *     can already see, once, and the refresh token is stored. This is the path
+ *     that works under `iam.disableServiceAccountKeyCreation`, the Secure by
+ *     Default org policy that blocks downloading service account keys. It is
+ *     also how the AWeber integration already authenticates, so it is a pattern
+ *     this project already carries.
+ *
+ *   Service account — cleaner when it is available, because it is not tied to
+ *     anyone's personal access and survives them leaving. Kept for the day the
+ *     org policy gets an exception for this project.
+ *
+ * Either way the token exchange is one POST. `jose` is already here for Okta,
+ * so signing the service-account assertion needs no new dependency, and the
+ * OAuth path needs no library at all.
  */
 
 interface ServiceAccount { client_email: string; private_key: string }
@@ -35,11 +46,55 @@ export function serviceAccount(): ServiceAccount | null {
   }
 }
 
+export function oauthCredentials() {
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
+  return clientId && clientSecret && refreshToken ? { clientId, clientSecret, refreshToken } : null;
+}
+
+/** Whether Sheets is reachable at all, and by which route. */
+export const googleAuthMode = (): 'oauth' | 'service-account' | null =>
+  oauthCredentials() ? 'oauth' : serviceAccount() ? 'service-account' : null;
+
+async function oauthAccessToken(): Promise<{ token: string; expiresIn: number }> {
+  const creds = oauthCredentials()!;
+  const res = await fetch(TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: creds.clientId,
+      client_secret: creds.clientSecret,
+      refresh_token: creds.refreshToken,
+    }),
+  });
+  const data = await res.json() as { access_token?: string; expires_in?: number; error?: string; error_description?: string };
+  if (!res.ok || !data.access_token) {
+    // invalid_grant almost always means the refresh token was revoked, or the
+    // consent screen is still in Testing mode, where Google expires refresh
+    // tokens after seven days.
+    throw new Error(
+      data.error === 'invalid_grant'
+        ? 'Google rejected the saved authorization. Re-run the consent step — and check the OAuth consent screen is not still in Testing mode, which expires refresh tokens after seven days.'
+        : data.error_description || data.error || `Token refresh failed (${res.status})`
+    );
+  }
+  return { token: data.access_token, expiresIn: data.expires_in ?? 3600 };
+}
+
 export async function accessToken(): Promise<string> {
   if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
 
+  const creds = oauthCredentials();
+  if (creds) {
+    const { token, expiresIn } = await oauthAccessToken();
+    cached = { token, expiresAt: Date.now() + expiresIn * 1000 };
+    return token;
+  }
+
   const account = serviceAccount();
-  if (!account) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON is missing or is not valid JSON');
+  if (!account) throw new Error('No Google credentials are configured');
 
   const key = await importPKCS8(account.private_key, 'RS256');
   const now = Math.floor(Date.now() / 1000);

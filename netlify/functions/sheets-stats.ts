@@ -1,5 +1,5 @@
 import { requireCapability, denial } from './_lib/verify-okta';
-import { sheetTabs, sheetGrid, findMonthColumn, findStatRow, serviceAccount } from './_lib/google-sheets';
+import { sheetTabs, sheetGrid, findMonthColumn, findStatRow, googleAuthMode } from './_lib/google-sheets';
 
 /**
  * This month's numbers, from the shared Google Sheet.
@@ -28,12 +28,12 @@ export async function handler(event: {
   if (!auth.ok) return denial(auth);
 
   const sheetId = process.env.NEWSLETTER_SHEET_ID;
-  if (!serviceAccount() || !sheetId) {
+  if (!googleAuthMode() || !sheetId) {
     return {
       statusCode: 503,
       headers: JSON_HEADERS,
       body: JSON.stringify({
-        error: 'The stats sheet is not connected yet — GOOGLE_SERVICE_ACCOUNT_JSON and NEWSLETTER_SHEET_ID need setting in Netlify.',
+        error: 'The stats sheet is not connected yet — the Google OAuth variables and NEWSLETTER_SHEET_ID need setting in Netlify.',
       }),
     };
   }
