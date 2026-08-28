@@ -72,6 +72,62 @@ async function draftSection1() {
   }
 }
 
+// ── Stats from the shared sheet ──
+// Shows where each number came from rather than just filling the boxes: a
+// silently wrong figure in a sent newsletter is not correctable.
+interface SheetMatch { label: string; row: number; value: string; sourceLabel: string }
+const sheetOpen = ref(false);
+const sheetTabs = ref<string[]>([]);
+const sheetTab = ref('');
+const sheetRows = ref<{ index: number; label: string; value: string }[]>([]);
+const sheetMatches = ref<SheetMatch[]>([]);
+const sheetHeader = ref('');
+const sheetError = ref('');
+const readingSheet = ref(false);
+
+async function openSheet() {
+  sheetOpen.value = !sheetOpen.value;
+  if (!sheetOpen.value || sheetTabs.value.length) return;
+  await readSheet();
+}
+
+async function readSheet() {
+  if (!draft.value) return;
+  readingSheet.value = true; sheetError.value = '';
+  try {
+    const labels = Object.keys(draft.value.stats).join('|');
+    const params = new URLSearchParams({ month: month.value, labels });
+    if (sheetTab.value) params.set('tab', sheetTab.value);
+    const res = await apiFetch(`/.netlify/functions/sheets-stats?${params}`);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { sheetError.value = d.error || String(res.status); sheetTabs.value = d.tabs ?? []; return; }
+    sheetTabs.value = d.tabs ?? [];
+    if (!sheetTab.value && sheetTabs.value.length) { sheetTab.value = d.tab || sheetTabs.value[0]!; if (!d.matches) return readSheet(); }
+    sheetMatches.value = d.matches ?? [];
+    sheetRows.value = d.rows ?? [];
+    sheetHeader.value = d.monthHeader ?? '';
+    sheetError.value = d.error ?? '';
+  } catch (e) {
+    sheetError.value = e instanceof Error ? e.message : 'Could not read the sheet.';
+  } finally {
+    readingSheet.value = false;
+  }
+}
+
+function pickRow(m: SheetMatch, index: number) {
+  const row = sheetRows.value.find((r) => r.index === index);
+  if (!row) return;
+  m.row = index; m.value = row.value; m.sourceLabel = row.label;
+}
+
+function applySheet() {
+  if (!draft.value) return;
+  for (const m of sheetMatches.value) {
+    if (m.value) draft.value.stats[m.label] = m.value;
+  }
+  sheetOpen.value = false;
+}
+
 // ── Email HTML ──
 const htmlVersions = ref<Record<string, string>>({});
 const buildingHtml = ref(false);
@@ -310,6 +366,45 @@ function videoBlock() {
       <section class="widget block">
         <h2 class="block__title">Section 3 — {{ section3Header }}</h2>
         <p class="block__hint">Stats come from the program directors. Never estimated, never left as placeholders.</p>
+        <div class="tools">
+          <button type="button" class="btn btn--ghost btn--sm" :disabled="readingSheet" @click="openSheet">
+            {{ readingSheet ? 'Reading the sheet…' : sheetOpen ? 'Close' : 'Pull from the shared sheet' }}
+          </button>
+        </div>
+
+        <div v-if="sheetOpen" class="sheet">
+          <p v-if="sheetError" class="warn" role="alert">{{ sheetError }}</p>
+          <div v-if="sheetTabs.length" class="sheet__head">
+            <label class="f f--inline">
+              <span>Tab</span>
+              <select v-model="sheetTab" @change="readSheet">
+                <option v-for="t in sheetTabs" :key="t" :value="t">{{ t }}</option>
+              </select>
+            </label>
+            <span v-if="sheetHeader" class="hint">Reading the column headed <strong>{{ sheetHeader }}</strong>.</span>
+          </div>
+
+          <table v-if="sheetMatches.length" class="sheet__tbl">
+            <thead><tr><th>Stat</th><th>Row it was taken from</th><th class="num">Value</th></tr></thead>
+            <tbody>
+              <tr v-for="m in sheetMatches" :key="m.label">
+                <td>{{ m.label }}</td>
+                <td>
+                  <select :value="m.row" @change="pickRow(m, Number(($event.target as HTMLSelectElement).value))">
+                    <option :value="-1">— not found, pick one —</option>
+                    <option v-for="r in sheetRows" :key="r.index" :value="r.index">{{ r.label }}</option>
+                  </select>
+                </td>
+                <td class="num"><strong>{{ m.value || '—' }}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div v-if="sheetMatches.length" class="actions">
+            <button type="button" class="btn btn--sm" @click="applySheet">Use these numbers</button>
+            <span class="hint">Check each one against the row it came from before you do.</span>
+          </div>
+        </div>
         <div class="grid2">
           <label v-for="(_, k) in draft.stats" :key="k" class="f"><span>{{ k }}</span><input v-model="draft.stats[k]" type="text" /></label>
         </div>
@@ -474,6 +569,15 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .plan code { background: var(--color-bg); padding: .05rem .3rem; border-radius: 3px; }
 
 .tools { margin-bottom: .7rem; }
+.sheet { border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .8rem; margin-bottom: .9rem; background: var(--color-bg); }
+.sheet__head { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin-bottom: .7rem; }
+.f--inline { display: flex; align-items: center; gap: .4rem; margin: 0; }
+.f--inline > span { margin: 0; }
+.sheet__tbl { width: 100%; border-collapse: collapse; font-size: .8125rem; }
+.sheet__tbl th { text-align: left; font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); padding: .3rem .4rem; border-bottom: 1px solid var(--color-border); }
+.sheet__tbl td { padding: .35rem .4rem; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
+.sheet__tbl select { width: 100%; max-width: 22rem; }
+.warn { font-size: .8125rem; color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 8%, transparent); border-radius: var(--border-radius); padding: .6rem .7rem; margin: 0 0 .7rem; line-height: 1.5; }
 .transcript { border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .8rem; margin-bottom: .8rem; background: var(--color-bg); }
 .transcript .body { margin-bottom: .6rem; }
 .actions { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
