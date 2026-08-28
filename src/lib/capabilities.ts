@@ -27,6 +27,7 @@ export type Capability =
   | 'letterQueue' // work through Mona's year-end letters
   | 'taxData'     // year-end giving totals for acknowledgments and the 990
   | 'banners'     // the site-wide notice: closures, hours, announcements
+  | 'newsletter'  // build the monthly newsletter
   | 'billing';    // invoices, admin only
 
 export const ADMIN_GROUP = 'jc-dashboard-admins';
@@ -111,6 +112,8 @@ const RULES: Record<Capability, string[] | '*'> = {
   // something urgent — this stays with the people accountable for what the
   // organization says publicly.
   banners: [DEV, ADMIN_GROUP, 'Operational Director', 'Executive Assistant'],
+  // Same people who write the blog — it is the same job, done monthly.
+  newsletter: [DEV, ADMIN_GROUP, 'Social Media Manager', 'Executive Assistant'],
   billing: [ADMIN_GROUP],
 };
 

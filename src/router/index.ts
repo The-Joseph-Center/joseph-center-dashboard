@@ -14,6 +14,7 @@ const LetterQueuePage = () => import('@/pages/LetterQueuePage.vue');
 const TaxDataPage = () => import('@/pages/TaxDataPage.vue');
 const BannerPage = () => import('@/pages/BannerPage.vue');
 const BlogEditorPage = () => import('@/pages/BlogEditorPage.vue');
+const NewsletterPage = () => import('@/pages/NewsletterPage.vue');
 const LoginPage = () => import('@/pages/LoginPage.vue');
 const ForbiddenPage = () => import('@/pages/ForbiddenPage.vue');
 const NotFound = () => import('@/pages/NotFound.vue');
@@ -30,6 +31,7 @@ const routes = [
   { path: '/giving', name: 'Giving', component: TaxDataPage, meta: { capability: 'taxData' } },
   { path: '/banner', name: 'Banner', component: BannerPage, meta: { capability: 'banners' } },
   { path: '/blog', name: 'Blog', component: BlogEditorPage, meta: { capability: 'content' } },
+  { path: '/newsletter', name: 'Newsletter', component: NewsletterPage, meta: { capability: 'newsletter' } },
   { path: '/support', name: 'Support', component: SupportPage },
   // Admin-only. The guard below hides it; the billing Functions verify the same
   // group server-side, which is what actually protects it.
