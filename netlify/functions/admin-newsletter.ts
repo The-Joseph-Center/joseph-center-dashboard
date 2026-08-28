@@ -25,6 +25,33 @@ const parse = <T,>(v: unknown, fallback: T): T => {
   try { return typeof v === 'string' ? JSON.parse(v) as T : fallback; } catch { return fallback; }
 };
 
+const SANITY_PROJECT = process.env.VITE_SANITY_PROJECT_ID!;
+const SANITY_DATASET = process.env.VITE_SANITY_DATASET || 'staging';
+
+/**
+ * Every partner already on the website's home-page marquee.
+ *
+ * These are the organizations The Joseph Center already names publicly, so they
+ * are the pool a quarter's foundation partners come from — no reason to retype
+ * a name and a URL that are already in the CMS, and no reason for the two to
+ * disagree about how a partner is spelled.
+ */
+async function marqueePartners(): Promise<{ name: string; url: string }[]> {
+  try {
+    const q = `*[_type=="page" && slug.current=="/"][0].sections[_type=="partnersSection"][0].partners[]{name, "url": href}`;
+    const res = await fetch(
+      `https://${SANITY_PROJECT}.apicdn.sanity.io/v2024-01-01/data/query/${SANITY_DATASET}?query=${encodeURIComponent(q)}`
+    );
+    if (!res.ok) return [];
+    const rows = (await res.json()).result as { name?: string; url?: string }[] | null;
+    return (rows ?? [])
+      .filter((p) => p?.name)
+      .map((p) => ({ name: p.name!.trim(), url: (p.url ?? '').trim() }));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Surnames from the directory, for the "first names only" rule.
  *
@@ -88,15 +115,65 @@ export async function handler(event: {
       }
 
       const row = all.find((r) => r.month === month);
+
+      /**
+       * Where a new month starts from.
+       *
+       * A blank form for a document with this many parts is daunting enough
+       * that it gets put off. Foundation partners change quarterly, so last
+       * month's are almost always still right and carrying them forward with a
+       * reminder to confirm beats retyping them. The stat labels are the
+       * standard set from the process document, so the shape of Section 3 is
+       * there before any numbers are.
+       */
+      const previous = all.filter((r) => r.month < month).sort((a, b) => b.month.localeCompare(a.month))[0];
       const draft = row ? shape(row) : {
         id: 0, month, monthName: monthName(month), guestName: '', guestFrame: 'guest',
         program: '', aweberTag: aweberPlan(month, new Date()).tag, section1: '', section2: '',
         stats: { 'Meals served': '', 'Individuals welcomed': '', 'Families served': '', 'Program spotlight stat': '', 'IFS financial stability': '' },
-        videos: [], partners: [], previewText: '', status: 'draft', sentAt: null, updatedBy: null, updatedAt: 0,
+        videos: [],
+        partners: previous ? parse<{ name: string; url: string }[]>(previous.partners, []) : [],
+        previewText: '', status: 'draft', sentAt: null, updatedBy: null, updatedAt: 0,
       };
 
       const usedTags = all.filter((r) => r.month !== month).map((r) => r.aweber_tag ?? '').filter(Boolean);
-      const surnames = await staffSurnames();
+
+      /**
+       * Which partners have been featured, and when.
+       *
+       * Partners are locked in for a quarter, so the same names recur for three
+       * months and it is easy to lose track of who has already had their turn.
+       * Least recently featured first, because that is the order the question
+       * "who next?" actually wants answering in.
+       */
+      const partnerHistory = new Map<string, { name: string; url: string; months: string[] }>();
+      for (const r of all) {
+        for (const p of parse<{ name: string; url: string }[]>(r.partners, [])) {
+          if (!p?.name) continue;
+          const entry = partnerHistory.get(p.name) ?? { name: p.name, url: p.url ?? '', months: [] };
+          entry.months.push(r.month);
+          if (!entry.url && p.url) entry.url = p.url;
+          partnerHistory.set(p.name, entry);
+        }
+      }
+      const used = [...partnerHistory.values()]
+        .map((p) => ({ ...p, months: p.months.sort().reverse(), lastUsed: p.months.sort().reverse()[0] ?? '' }));
+
+      // Everyone on the marquee, whether or not they have been featured. The
+      // ones never used sort first: the aim is to give a different partner a
+      // turn rather than cycling the same three.
+      const usedNames = new Set(used.map((p) => p.name));
+      const partners = [
+        ...marquee.filter((p) => !usedNames.has(p.name)).map((p) => ({ ...p, months: [] as string[], lastUsed: '' })),
+        ...used,
+      ].sort((a, b) => (a.lastUsed || '').localeCompare(b.lastUsed || ''));
+
+      // Which programs and guests have already had a turn, so the rotation is
+      // visible rather than remembered.
+      const history = all
+        .filter((r) => r.month !== month)
+        .map((r) => ({ month: r.month, monthName: monthName(r.month), guest: r.guest_name, program: r.program }));
+      const [surnames, marquee] = await Promise.all([staffSurnames(), marqueePartners()]);
       const issues = reviewNewsletter({ ...draft, usedTags, staffSurnames: surnames } as NewsletterDraft);
       const plan = aweberPlan(month, new Date());
 
@@ -104,7 +181,8 @@ export async function handler(event: {
         statusCode: 200,
         headers: JSON_HEADERS,
         body: JSON.stringify({
-          draft, issues, plan, usedTags,
+          draft, issues, plan, usedTags, partners, history,
+          carriedPartners: !row && !!previous,
           bridgeLine: bridgeLine(draft.monthName),
           section3Header: `${draft.monthName} Impact & ${MONTHS[(Number(month.split('-')[1]) - 2 + 12) % 12]} Videos`,
           versions: TIERS.map((t) => ({

@@ -170,7 +170,11 @@ export function aweberPlan(month: string, today: Date) {
   const endOfMonth = new Date(Date.UTC(y!, m!, 0));
   const startOfToday = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
   const waitDays = Math.max(0, Math.round((endOfMonth.getTime() - startOfToday.getTime()) / 86400000));
-  return { tag: `${name}-newsletter`, waitDays, endOfMonth: endOfMonth.toISOString().slice(0, 10) };
+  // The year is in the tag from here on. "sep-newsletter" works exactly once:
+  // next September it would re-trigger the automation that already ran, and
+  // "subscribers can enter once" means the people who received the old one are
+  // silently skipped while everyone else gets last year's newsletter.
+  return { tag: `${name}-${y}-newsletter`, waitDays, endOfMonth: endOfMonth.toISOString().slice(0, 10) };
 }
 
 // ── Review ────────────────────────────────────────────────────────────────
@@ -280,6 +284,9 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
 
   if (d.usedTags.includes(d.aweberTag))
     add('must', 'AWeber', `The tag "${d.aweberTag}" has been used before.`, 'Monthly tags cannot be reused — subscribers can only enter an automation once.');
+
+  if (d.aweberTag && !/\d{4}/.test(d.aweberTag))
+    add('must', 'AWeber', `"${d.aweberTag}" has no year in it.`, `Use "${d.aweberTag.replace(/-newsletter$/, '')}-${d.month.slice(0, 4)}-newsletter" — without a year the same tag comes round again next year and re-triggers an automation that has already run.`);
 
   // ── the rest of the standards ──
   if (d.section1 && !d.section1.includes('hope has an address'))

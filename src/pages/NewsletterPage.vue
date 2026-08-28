@@ -33,6 +33,10 @@ const draft = ref<Draft | null>(null);
 const issues = ref<Issue[]>([]);
 const versions = ref<Version[]>([]);
 const plan = ref<{ tag: string; waitDays: number; endOfMonth: string } | null>(null);
+const partnerHistory = ref<{ name: string; url: string; months: string[]; lastUsed: string }[]>([]);
+const history = ref<{ month: string; monthName: string; guest: string | null; program: string | null }[]>([]);
+const carriedPartners = ref(false);
+const pullingVideos = ref(false);
 const section3Header = ref('');
 const bridge = ref('');
 const loading = ref(true);
@@ -63,6 +67,8 @@ async function load() {
     const d = await res.json();
     draft.value = d.draft; issues.value = d.issues; versions.value = d.versions;
     plan.value = d.plan; section3Header.value = d.section3Header; bridge.value = d.bridgeLine;
+    partnerHistory.value = d.partners ?? []; history.value = d.history ?? [];
+    carriedPartners.value = !!d.carriedPartners;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not load the newsletter.';
   } finally {
@@ -95,6 +101,30 @@ async function save() {
     saving.value = false;
   }
 }
+
+/** Last month's videos, from the channel — titles have to match exactly. */
+async function pullVideos() {
+  if (!draft.value) return;
+  const [y, m] = month.value.split('-').map(Number);
+  const prev = `${m === 1 ? y! - 1 : y}-${String(m === 1 ? 12 : m! - 1).padStart(2, '0')}`;
+  pullingVideos.value = true; error.value = '';
+  try {
+    const res = await apiFetch(`/.netlify/functions/youtube-videos?month=${prev}`);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || String(res.status));
+    if (!d.videos.length) { error.value = `No videos found for ${prev}.`; return; }
+    draft.value.videos = d.videos.map((v: { title: string; url: string }) => ({ title: v.title, url: v.url }));
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not reach YouTube.';
+  } finally {
+    pullingVideos.value = false;
+  }
+}
+
+const usePartner = (p: { name: string; url: string }) => {
+  if (!draft.value || draft.value.partners.some((x) => x.name === p.name)) return;
+  draft.value.partners.push({ name: p.name, url: p.url });
+};
 
 const addVideo = () => draft.value?.videos.push({ title: '', url: '' });
 const removeVideo = (i: number) => draft.value?.videos.splice(i, 1);
@@ -145,25 +175,6 @@ function videoBlock() {
       </div>
       <p v-if="error" class="state state--err" role="alert">{{ error }}</p>
 
-      <!-- Review -->
-      <section class="widget block">
-        <h2 class="block__title">
-          Review
-          <span v-if="!issues.length" class="pill pill--ok">nothing outstanding</span>
-          <span v-else class="pill pill--warn">{{ musts.length }} to fix, {{ shoulds.length }} to check</span>
-        </h2>
-        <p class="block__hint">Every one of these is a mistake that has been caught in review before.</p>
-        <ul v-if="issues.length" class="issues">
-          <li v-for="(i, n) in issues" :key="n" class="issue" :class="`issue--${i.severity}`">
-            <span class="sev" :class="`sev--${i.severity}`">{{ i.severity === 'must' ? 'Fix' : 'Check' }}</span>
-            <div>
-              <p class="issue__problem"><strong>{{ i.where }}</strong> — {{ i.problem }}</p>
-              <p class="issue__fix">{{ i.fix }}</p>
-            </div>
-          </li>
-        </ul>
-      </section>
-
       <!-- This month -->
       <section class="widget block">
         <h2 class="block__title">This month</h2>
@@ -179,6 +190,15 @@ function videoBlock() {
         </div>
         <label class="f"><span>Section 2 program or theme</span><input v-model="draft.program" type="text" placeholder="Day Shelter, Food Pantry, IFS, The Golden Girls Project, Family Center…" /></label>
         <label class="f"><span>Preview text — one evocative sentence</span><input v-model="draft.previewText" type="text" maxlength="200" /></label>
+
+        <details v-if="history.length" class="rotation">
+          <summary>What has already run ({{ history.length }})</summary>
+          <ul>
+            <li v-for="h in history" :key="h.month">
+              <strong>{{ h.monthName }}</strong> — {{ h.guest || 'no guest' }} · {{ h.program || 'no program' }}
+            </li>
+          </ul>
+        </details>
       </section>
 
       <!-- Sections 1 and 2 -->
@@ -205,7 +225,13 @@ function videoBlock() {
           <label v-for="(_, k) in draft.stats" :key="k" class="f"><span>{{ k }}</span><input v-model="draft.stats[k]" type="text" /></label>
         </div>
 
-        <h3 class="sub">Last month's Coffee Chat videos</h3>
+        <h3 class="sub">
+          Last month's Coffee Chat videos
+          <button type="button" class="btn btn--ghost btn--sm" :disabled="pullingVideos" @click="pullVideos">
+            {{ pullingVideos ? 'Fetching…' : 'Pull from YouTube' }}
+          </button>
+        </h3>
+        <p class="block__hint">Titles come from the channel so they match exactly — the document is clear they are never typed or estimated.</p>
         <div v-for="(v, i) in draft.videos" :key="i" class="rowline">
           <input v-model="v.title" type="text" placeholder="Exact title as published on YouTube" />
           <input v-model="v.url" type="text" placeholder="https://youtu.be/…" />
@@ -217,7 +243,23 @@ function videoBlock() {
       <!-- Closing -->
       <section class="widget block">
         <h2 class="block__title">This quarter's foundation partners</h2>
-        <p class="block__hint">Confirm with Mona or Shawna before each quarter changes.</p>
+        <p class="block__hint">
+          Confirm with Mona or Shawna before each quarter changes.
+          <span v-if="carriedPartners"> Carried over from last month — check they are still current.</span>
+        </p>
+        <div v-if="partnerHistory.length" class="suggest-partners">
+          <span class="suggest-partners__label">From the home-page marquee — never featured first, then least recent:</span>
+          <button
+            v-for="p in partnerHistory"
+            :key="p.name"
+            type="button"
+            class="chip"
+            :title="p.months.length ? `Featured in ${p.months.join(', ')}` : 'Never featured in a newsletter'"
+            @click="usePartner(p)"
+          >
+            {{ p.name }} <span class="chip__when">{{ p.lastUsed || 'new' }}</span>
+          </button>
+        </div>
         <div v-for="(p, i) in draft.partners" :key="i" class="rowline">
           <input v-model="p.name" type="text" placeholder="Peer 180" />
           <input v-model="p.url" type="text" placeholder="https://peer-180.com" />
@@ -238,6 +280,25 @@ function videoBlock() {
           <dt>Wait step</dt><dd>{{ plan.waitDays }} days, so it lands on {{ plan.endOfMonth }}</dd>
           <dt>Entry rule</dt><dd>Subscribers can enter once — confirm on all three automations</dd>
         </dl>
+      </section>
+
+      <!-- Review -->
+      <section class="widget block">
+        <h2 class="block__title">
+          Review
+          <span v-if="!issues.length" class="pill pill--ok">nothing outstanding</span>
+          <span v-else class="pill pill--warn">{{ musts.length }} to fix, {{ shoulds.length }} to check</span>
+        </h2>
+        <p class="block__hint">Every one of these is a mistake that has been caught in review before.</p>
+        <ul v-if="issues.length" class="issues">
+          <li v-for="(i, n) in issues" :key="n" class="issue" :class="`issue--${i.severity}`">
+            <span class="sev" :class="`sev--${i.severity}`">{{ i.severity === 'must' ? 'Fix' : 'Check' }}</span>
+            <div>
+              <p class="issue__problem"><strong>{{ i.where }}</strong> — {{ i.problem }}</p>
+              <p class="issue__fix">{{ i.fix }}</p>
+            </div>
+          </li>
+        </ul>
       </section>
 
       <!-- The three versions -->
@@ -315,6 +376,17 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .plan dt { font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); }
 .plan dd { margin: 0; }
 .plan code { background: var(--color-bg); padding: .05rem .3rem; border-radius: 3px; }
+
+.suggest-partners { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin-bottom: .8rem; }
+.suggest-partners__label { font-size: .75rem; color: var(--color-text-secondary); }
+.chip { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 999px; padding: .2rem .6rem; font: inherit; font-size: .75rem; cursor: pointer; color: var(--color-text); }
+.chip:hover { border-color: var(--color-primary-strong); color: var(--color-primary-strong); }
+.chip__when { color: var(--color-text-secondary); font-size: .7rem; }
+.rotation { font-size: .75rem; color: var(--color-text-secondary); margin-top: .4rem; }
+.rotation summary { cursor: pointer; }
+.rotation ul { margin: .4rem 0 0; padding-left: 1.1rem; }
+.rotation li { margin-bottom: .15rem; }
+.btn--ghost { background: none; color: var(--color-text-secondary); border: 1px solid var(--color-border); }
 
 .tabs { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .tab { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .35rem .7rem; font: inherit; font-size: .8125rem; cursor: pointer; color: var(--color-text); }
