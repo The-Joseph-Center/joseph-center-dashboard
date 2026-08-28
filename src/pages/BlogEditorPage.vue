@@ -152,6 +152,30 @@ const suggesting = ref(false);
 const suggestions = ref<{ titles: string[]; excerpt: string; category: string; tags: string[] } | null>(null);
 const suggestError = ref('');
 
+// ── Brand check ──
+interface Finding { severity: 'must' | 'should' | 'consider'; rule: string; quote: string; why: string; suggestion: string }
+const checking = ref(false);
+const review = ref<{ findings: Finding[]; verdict: string; partial?: boolean } | null>(null);
+const checkError = ref('');
+const SEVERITY_LABEL = { must: 'Fix', should: 'Look at', consider: 'Consider' } as const;
+
+async function brandCheck() {
+  checking.value = true; checkError.value = ''; review.value = null;
+  try {
+    const res = await apiFetch('/.netlify/functions/brand-check', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bodyText: form.value.bodyText }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || String(res.status));
+    review.value = d;
+  } catch (e) {
+    checkError.value = e instanceof Error ? e.message : 'Could not run the check.';
+  } finally {
+    checking.value = false;
+  }
+}
+
 async function suggest() {
   suggesting.value = true; suggestError.value = ''; suggestions.value = null;
   try {
@@ -366,6 +390,32 @@ const publishRow = (row: Row) => post({ action: 'publish', _id: row._id }, row._
             Leave a blank line between paragraphs. Images appear as <code>![image](…)</code> lines — leave those alone and they stay put.
           </p>
 
+          <!-- Brand check -->
+          <div class="suggest">
+            <div class="suggest__head">
+              <button type="button" class="btn btn--ghost btn--sm" :disabled="checking || words < 30" @click="brandCheck">
+                {{ checking ? 'Reading the post…' : 'Brand check' }}
+              </button>
+              <span v-if="review" class="verdict">{{ review.verdict }}</span>
+            </div>
+            <p v-if="checkError" class="warn" role="alert">{{ checkError }}</p>
+
+            <ul v-if="review?.findings.length" class="findings">
+              <li v-for="(f, i) in review.findings" :key="i" class="finding" :class="`finding--${f.severity}`">
+                <p class="finding__head">
+                  <span class="sev" :class="`sev--${f.severity}`">{{ SEVERITY_LABEL[f.severity] }}</span>
+                  <strong>{{ f.rule }}</strong>
+                </p>
+                <p v-if="f.quote" class="finding__quote">“{{ f.quote }}”</p>
+                <p class="finding__why">{{ f.why }}</p>
+                <p class="finding__fix"><span>Instead:</span> {{ f.suggestion }}</p>
+              </li>
+            </ul>
+            <p v-if="review?.partial" class="finding__why">
+              Word choice was checked locally; the fuller review needs the API key set.
+            </p>
+          </div>
+
           <!-- Suggestions -->
           <div class="suggest">
             <div class="suggest__head">
@@ -529,6 +579,22 @@ const publishRow = (row: Row) => post({ action: 'publish', _id: row._id }, row._
 .chip { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 999px; padding: .25rem .7rem; font: inherit; font-size: .75rem; cursor: pointer; text-align: left; color: var(--color-text); }
 .chip:hover { border-color: var(--color-primary-strong); color: var(--color-primary-strong); }
 .chip--wide { border-radius: var(--border-radius); max-width: 100%; }
+
+.verdict { font-size: .75rem; color: var(--color-text-secondary); flex: 1 1 12rem; }
+.findings { list-style: none; margin: .8rem 0 0; padding: 0; display: grid; gap: .5rem; }
+.finding { padding: .6rem .75rem; background: var(--color-surface); border: 1px solid var(--color-border); border-left-width: 3px; border-radius: var(--border-radius); }
+.finding--must { border-left-color: #8a1f1f; }
+.finding--should { border-left-color: #8a5a1f; }
+.finding--consider { border-left-color: var(--color-border); }
+.finding__head { margin: 0 0 .25rem; font-size: .8125rem; display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+.sev { font-size: .65rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: .1rem .4rem; border-radius: 3px; }
+.sev--must { color: #8a1f1f; background: color-mix(in srgb, #8a1f1f 12%, transparent); }
+.sev--should { color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 12%, transparent); }
+.sev--consider { color: var(--color-text-secondary); background: var(--color-bg); }
+.finding__quote { margin: 0 0 .3rem; font-size: .75rem; font-style: italic; color: var(--color-text-secondary); }
+.finding__why { margin: 0 0 .3rem; font-size: .8125rem; line-height: 1.5; }
+.finding__fix { margin: 0; font-size: .8125rem; line-height: 1.5; }
+.finding__fix span { font-weight: 600; color: var(--color-primary-strong); }
 .hint--inline { margin: 0; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
 @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
