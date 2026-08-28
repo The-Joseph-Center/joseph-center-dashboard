@@ -48,7 +48,7 @@ export function isAdminFromClaims(claims: Record<string, unknown> | undefined): 
  *
  * Deliberately the ID token, not the access token. Without a custom
  * authorization server Okta cannot put group claims in an access token, so the
- * ID token is the only credential that carries authorisation information. The
+ * ID token is the only credential that carries authorization information. The
  * functions verify it properly — signature, issuer, audience, expiry — so this
  * is a narrower compromise than it looks: both sides are first party, and the
  * alternative is the current state of trusting any string.

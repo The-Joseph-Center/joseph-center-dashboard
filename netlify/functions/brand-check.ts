@@ -61,7 +61,7 @@ ${BRAND_REFERENCE}
 How to review:
 - The word-level terminology table is already checked automatically. Do not report banned words; another pass has them covered. Look at what a word list cannot see.
 - What matters most is dignity: is a person written about as a person with a story, or as a case study, a statistic, or an object of pity? That is the failure worth catching.
-- Flag any specific claim — a number, a date, a programme detail, an outcome — that reads as though it may have been assumed rather than known. Say it needs checking. Do not assert it is wrong.
+- Flag any specific claim — a number, a date, a program detail, an outcome — that reads as though it may have been assumed rather than known. Say it needs checking. Do not assert it is wrong.
 - Note where the framing slips into charity rather than community partnership, or where the bridge positioning is used incorrectly.
 - Consider whether the ask, if there is one, is clear and consistent with the giving language.
 

@@ -47,7 +47,7 @@ const RULES: Rule[] = [
     pattern: /\btransitional housing\b/gi,
     severity: 'must',
     rule: 'Temporary housing',
-    why: '"Transitional housing" is not the term used for the Golden Girls Project or any housing programme.',
+    why: '"Transitional housing" is not the term used for the Golden Girls Project or any housing program.',
     suggestion: 'temporary housing',
   },
   {
@@ -89,7 +89,7 @@ const RULES: Rule[] = [
     pattern: /\bMesa County\b/g,
     severity: 'should',
     rule: 'Western Slope, not one county',
-    why: 'The organisation serves 16 counties. Naming only Mesa County understates the scope.',
+    why: 'The organization serves 16 counties. Naming only Mesa County understates the scope.',
     suggestion: 'the Western Slope of Colorado',
   },
 ];

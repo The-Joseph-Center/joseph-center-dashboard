@@ -2,7 +2,7 @@
 
 :root {
   --color-primary: #60B567;
-  /* #60B567 is the brand green, but it is a FILL colour, not a text colour:
+  /* #60B567 is the brand green, but it is a FILL color, not a text color:
      white on it measures 2.53:1 and it measures 2.36:1 on --color-surface,
      against a 4.5:1 requirement. This is JC's deep green, which reaches 7.45:1
      and 6.96:1 respectively. Use it for anything carrying words. */

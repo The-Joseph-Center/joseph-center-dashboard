@@ -109,7 +109,7 @@ const RULES: Record<Capability, string[] | '*'> = {
   taxData: [DEV, ADMIN_GROUP, 'Executive Director'],
   // Posting to the front page of the site is not a front-desk task, even for
   // something urgent — this stays with the people accountable for what the
-  // organisation says publicly.
+  // organization says publicly.
   banners: [DEV, ADMIN_GROUP, 'Operational Director', 'Executive Assistant'],
   billing: [ADMIN_GROUP],
 };

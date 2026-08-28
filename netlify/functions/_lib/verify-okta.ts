@@ -15,7 +15,7 @@ import { hasCapability, isAdmin as groupsAreAdmin, type Capability } from '../..
  * consequence of the tenant, not a shortcut: without API Access Management
  * there is no custom authorization server, and Okta will only put group claims
  * in an ID token. Both the SPA and these Functions are first party, so the ID
- * token is the only credential that carries the authorisation signal we need.
+ * token is the only credential that carries the authorization signal we need.
  * If API Access Management is ever licensed, switching to access tokens is a
  * change to ISSUER/AUDIENCE here and nothing else.
  *

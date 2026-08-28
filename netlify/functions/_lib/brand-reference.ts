@@ -4,7 +4,7 @@
  * Both are derived from jc-brand-reference.md at the project root. Regenerate
  * them when that document changes, or the guidance quietly drifts out of date.
  *
- * Kept verbatim rather than summarised: the "Always Use" / "Never Use"
+ * Kept verbatim rather than summarized: the "Always Use" / "Never Use"
  * terminology table and the dignity-first framing are exactly what degrades
  * when paraphrased.
  *
@@ -15,7 +15,7 @@
 /**
  * For labelling and reviewing — six of the thirteen sections.
  *
- * Dropped: logo and colour specifications, office addresses, CTA link targets,
+ * Dropped: logo and color specifications, office addresses, CTA link targets,
  * social hashtags, impact statistics, the approval process and the staff list.
  * None of them help decide a title, a summary, a category or a tag, and every
  * one was being paid for on every request. Trimming took a call from 8,492 to

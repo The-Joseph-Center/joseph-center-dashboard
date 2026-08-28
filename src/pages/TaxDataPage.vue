@@ -4,7 +4,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import { apiFetch } from '@/lib/api';
 
 // Year-end giving, for the two jobs it gets used for: the acknowledgment
-// letters donors need, and the organisational figures that go on the 990.
+// letters donors need, and the organizational figures that go on the 990.
 //
 // Read from Stripe rather than our own donations table, because that table only
 // holds gifts made through the current on-site flow — the Harness-era recurring

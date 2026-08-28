@@ -38,10 +38,10 @@ const STYLE_OF: Record<string, string> = { '### ': 'h3', '## ': 'h2', '# ': 'h2'
 /**
  * Bullet markers people and models actually type.
  *
- * Only "- " was recognised. Anything else fell through to the paragraph branch
+ * Only "- " was recognized. Anything else fell through to the paragraph branch
  * and a three-item list silently became one run-on line — "— one — two". The
  * canonical form written back out is always "- ", so a list typed with
- * asterisks is normalised rather than lost.
+ * asterisks is normalized rather than lost.
  */
 const BULLET = /^[-*•–—]\s+/;
 const NUMBERED = /^\d+[.)]\s+/;
@@ -72,7 +72,7 @@ export function unsupported(blocks: unknown): string[] {
  * Some imported content carries a leading newline inside the first span. A
  * line-based format cannot tell that apart from the blank line between
  * paragraphs, and HTML collapses it to nothing anyway, so the rendered page is
- * identical either way. Normalising it is the honest choice; pretending to
+ * identical either way. Normalizing it is the honest choice; pretending to
  * preserve it would only mean losing it silently on the first save.
  */
 function spansToText(block: Block): string {

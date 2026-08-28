@@ -234,7 +234,7 @@ const remove = (b: Banner) => post({ action: 'delete', _id: b._id }, b._id);
 .state--err { color: #8a1f1f; margin-bottom: .75rem; }
 
 /* Mirrors the site's own banner — cream panel, gold left bar — so what is
-   written here is recognisable as what will appear. */
+   written here is recognizable as what will appear. */
 .preview { background: #f4f1ea; border-left: 5px solid #C9A227; border-radius: 0 var(--border-radius) var(--border-radius) 0; padding: .8rem 1rem; }
 .preview--draft { margin: .5rem 0 1rem; }
 .preview__cap { margin: 0 0 .3rem; font-family: var(--font-heading); font-size: .6rem; letter-spacing: .06em; text-transform: uppercase; color: #6b6350; }

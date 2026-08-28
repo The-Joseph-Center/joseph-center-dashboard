@@ -2,7 +2,7 @@ import Stripe from 'stripe';
 import { requireCapability, denial } from './_lib/verify-okta';
 
 /**
- * Year-end giving: what each donor gave, and what the organisation received.
+ * Year-end giving: what each donor gave, and what the organization received.
  *
  * Read from Stripe rather than the Turso `donations` table, because Turso only
  * holds gifts made through the current on-site flow. The nine Harness-era

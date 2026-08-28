@@ -54,7 +54,7 @@ export async function fetchCard(staffId: string): Promise<StaffCard | null> {
  * Patches a staff document.
  *
  * Callers must have already established that the requester is allowed to touch
- * this document and these fields — this function does no authorisation of its
+ * this document and these fields — this function does no authorization of its
  * own, and the allow-list below is a backstop against a caller passing through
  * more than it meant to, not a substitute for that check.
  */

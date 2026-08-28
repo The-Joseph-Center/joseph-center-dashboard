@@ -73,7 +73,7 @@ Call the suggest_metadata tool with your answer.`;
  * A list of strings, however it arrived.
  *
  * The tool schema asks for an array and usually gets one, but not always: on
- * the June newsletter `tags` came back as "golden girls project, family centre,
+ * the June newsletter `tags` came back as "golden girls project, family center,
  * …" — a single comma-separated string. A schema is guidance to the model, not
  * a guarantee from it, and the earlier `Array.isArray(v) ? … : []` silently
  * returned no tags at all, which is the worst of the three possible outcomes.
@@ -121,7 +121,7 @@ export async function handler(event: {
       return {
         statusCode: 400,
         headers: JSON_HEADERS,
-        body: JSON.stringify({ error: 'Write a bit more of the post first — there is not enough here to summarise.' }),
+        body: JSON.stringify({ error: 'Write a bit more of the post first — there is not enough here to summarize.' }),
       };
     }
     const known = Array.isArray(body.categories)

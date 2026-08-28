@@ -75,7 +75,7 @@ export async function handler(event: { queryStringParameters: Record<string, str
     }
 
     // Only genuinely current subscriptions. Listing status:'all' and taking
-    // data[0] surfaced a subscription cancelled in 2022 as though it were the
+    // data[0] surfaced a subscription canceled in 2022 as though it were the
     // live arrangement — this client is billed by invoice, not by card.
     const subscriptions = await stripe.subscriptions.list({
       customer: customerId,

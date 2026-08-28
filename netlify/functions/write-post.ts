@@ -4,7 +4,7 @@ import { BRAND_REFERENCE_FULL } from './_lib/brand-reference';
 /**
  * Drafts a blog post from facts a staff member supplies.
  *
- * The brand reference is explicit that content must not invent programme
+ * The brand reference is explicit that content must not invent program
  * details, and a model given only a topic will do exactly that. The guided
  * answers are the answer to that problem rather than a nicety: the person who
  * knows what happened supplies the facts, and this composes them. It is told,
@@ -26,9 +26,9 @@ const MAX_TOKENS = 4096;
 /** What the form asks for. Order matters — it is the order of the form. */
 export const PROMPTS = [
   { id: 'kind', label: 'What kind of post is this?', type: 'choice',
-    options: ['A guest’s story', 'Programme update', 'Event recap', 'Giving ask', 'General update'],
+    options: ['A guest’s story', 'Program update', 'Event recap', 'Giving ask', 'General update'],
     help: '' },
-  { id: 'programs', label: 'Which programme is it about?', type: 'text',
+  { id: 'programs', label: 'Which program is it about?', type: 'text',
     help: 'Day Shelter, Food Pantry, IFS, Family Center, Golden Girls Project — or leave blank for org-wide.' },
   { id: 'facts', label: 'What happened? Write it however it comes out.', type: 'long',
     help: 'This is the post. Rough notes are fine — names, what changed, what someone said, what you saw. Anything not here cannot go in the draft.' },
@@ -71,7 +71,7 @@ ${BRAND_REFERENCE_FULL}
 
 The rule that overrides everything else: **use only what you are given.**
 
-- Do not add a statistic, a date, a dollar figure, a programme detail, a service, an outcome or a quotation that is not in the answers. Not one, however plausible or however much better it would make the post read.
+- Do not add a statistic, a date, a dollar figure, a program detail, a service, an outcome or a quotation that is not in the answers. Not one, however plausible or however much better it would make the post read.
 - The impact statistics and CTA links in the reference above are approved and may be used. Nothing else may be introduced from outside the answers.
 - Where a detail would genuinely strengthen the piece and you were not given it, leave it out and put it in "gaps" as a question. A thinner post with an honest gap list is worth far more than a fuller one somebody has to fact-check line by line.
 - If the answers are too sparse to write from, say so in gaps and draft only what they support.

@@ -9,7 +9,7 @@ import QuotePicker from '@/components/QuotePicker.vue';
 // alongside Links and Analytics rather than looking like a page that wandered in.
 //
 // Name, title, department and contact email are read-only: they are the
-// organisation's record of a role, and admins change them. The quote is the one
+// organization's record of a role, and admins change them. The quote is the one
 // field the person owns, and even that is a request rather than a save.
 
 interface Card {

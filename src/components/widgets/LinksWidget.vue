@@ -83,7 +83,7 @@ const cards = computed(() => visible.value.filter(l => !!l.description));
   padding: 0.5rem 1rem;
   border-radius: 999px;
   background-color: var(--color-primary-strong);
-  /* Measured 7.92:1 after the colour fix, so the ratio was never the problem.
+  /* Measured 7.92:1 after the color fix, so the ratio was never the problem.
      Light text on a dark saturated fill at 13px/500 still reads thin — WCAG
      measures luminance, not perceived weight. Heavier and slightly larger is
      what actually makes it legible. */

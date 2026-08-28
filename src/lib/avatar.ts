@@ -9,7 +9,7 @@
  * silhouette that says nothing.
  *
  * A sprout, because the alternative to a generic user icon should look like it
- * belongs to this organisation and not to a settings screen.
+ * belongs to this organization and not to a settings screen.
  */
 
 // FNV-1a. Small, stable, and identical across runs — the point is that Penny's
