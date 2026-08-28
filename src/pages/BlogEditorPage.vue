@@ -152,6 +152,57 @@ const suggesting = ref(false);
 const suggestions = ref<{ titles: string[]; excerpt: string; category: string; tags: string[] } | null>(null);
 const suggestError = ref('');
 
+// ── Write a draft ──
+// The questions are where the facts come from. The model composes what it is
+// given and reports what it wanted and did not get; it is told not to fill a
+// gap with something plausible, which is the failure the brand reference warns
+// about by name.
+interface Prompt { id: string; label: string; type: 'text' | 'long' | 'choice'; options?: readonly string[]; help: string }
+const writerOpen = ref(false);
+const prompts = ref<Prompt[]>([]);
+const answers = ref<Record<string, string>>({});
+const writing = ref(false);
+const writeError = ref('');
+const gaps = ref<string[]>([]);
+
+async function openWriter() {
+  writerOpen.value = true; writeError.value = ''; gaps.value = [];
+  if (prompts.value.length) return;
+  try {
+    const res = await apiFetch('/.netlify/functions/write-post');
+    if (!res.ok) throw new Error(String(res.status));
+    prompts.value = (await res.json()).prompts;
+    for (const p of prompts.value) {
+      if (p.type === 'choice' && p.options?.length) answers.value[p.id] = p.options[0]!;
+    }
+  } catch {
+    writeError.value = 'Could not load the questions.';
+  }
+}
+
+async function writeDraft() {
+  writing.value = true; writeError.value = ''; gaps.value = [];
+  try {
+    const res = await apiFetch('/.netlify/functions/write-post', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers: answers.value }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || String(res.status));
+    // Never overwrite work in progress without saying so.
+    const existing = form.value.bodyText.trim();
+    if (existing && !window.confirm('Replace what is already in the post with the new draft?')) return;
+    form.value.bodyText = d.draft;
+    gaps.value = d.gaps ?? [];
+    writerOpen.value = false;
+    notice.value = 'Draft written. Read it through before publishing — it can only work from what you told it.';
+  } catch (e) {
+    writeError.value = e instanceof Error ? e.message : 'Could not write the draft.';
+  } finally {
+    writing.value = false;
+  }
+}
+
 // ── Brand check ──
 interface Finding { severity: 'must' | 'should' | 'consider'; rule: string; quote: string; why: string; suggestion: string }
 const checking = ref(false);
@@ -341,6 +392,42 @@ const publishRow = (row: Row) => post({ action: 'publish', _id: row._id }, row._
           </div>
 
           <label class="f"><span>Tags, separated by commas</span><input v-model="form.tags" type="text" /></label>
+
+          <!-- Guided drafting -->
+          <div class="writer">
+            <div class="writer__head">
+              <button type="button" class="btn btn--ghost btn--sm" @click="writerOpen ? (writerOpen = false) : openWriter()">
+                {{ writerOpen ? 'Close' : 'Write a draft for me' }}
+              </button>
+              <span class="hint hint--inline">Answer a few questions and it writes a first draft from your answers.</span>
+            </div>
+
+            <div v-if="writerOpen" class="writer__form">
+              <p v-if="writeError" class="warn" role="alert">{{ writeError }}</p>
+              <div v-for="p in prompts" :key="p.id" class="f">
+                <label :for="`w-${p.id}`"><span>{{ p.label }}</span></label>
+                <select v-if="p.type === 'choice'" :id="`w-${p.id}`" v-model="answers[p.id]">
+                  <option v-for="o in p.options" :key="o" :value="o">{{ o }}</option>
+                </select>
+                <textarea v-else-if="p.type === 'long'" :id="`w-${p.id}`" v-model="answers[p.id]" rows="6" />
+                <input v-else :id="`w-${p.id}`" v-model="answers[p.id]" type="text" />
+                <p v-if="p.help" class="hint">{{ p.help }}</p>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn btn--sm" :disabled="writing || (answers.facts ?? '').trim().length < 80" @click="writeDraft">
+                  {{ writing ? 'Writing…' : 'Write the draft' }}
+                </button>
+                <span v-if="(answers.facts ?? '').trim().length < 80" class="hint hint--inline">Tell it what happened first.</span>
+              </div>
+            </div>
+
+            <div v-if="gaps.length" class="gaps">
+              <p class="gaps__head">It left these out rather than guessing:</p>
+              <ul>
+                <li v-for="(g, i) in gaps" :key="i">{{ g }}</li>
+              </ul>
+            </div>
+          </div>
 
           <div class="image">
             <img v-if="form.imageUrl" :src="`${form.imageUrl}?w=200&h=120&fit=crop&auto=format`" alt="" class="image__thumb" />
@@ -581,6 +668,16 @@ const publishRow = (row: Row) => post({ action: 'publish', _id: row._id }, row._
 .chip--wide { border-radius: var(--border-radius); max-width: 100%; }
 
 .verdict { font-size: .75rem; color: var(--color-text-secondary); flex: 1 1 12rem; }
+
+.writer { border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .8rem; margin-bottom: 1rem; background: var(--color-bg); }
+.writer__head { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.writer__form { margin-top: .9rem; padding-top: .9rem; border-top: 1px solid var(--color-border); }
+.writer__form .f textarea, .writer__form .f input, .writer__form .f select { width: 100%; padding: .45rem .55rem; font: inherit; font-size: .8125rem; border: 1px solid var(--color-border); border-radius: var(--border-radius); background: var(--color-surface); color: var(--color-text); }
+.writer__form .hint { margin: .25rem 0 0; }
+.gaps { margin-top: .8rem; padding: .65rem .8rem; border-radius: var(--border-radius); background: color-mix(in srgb, #8a5a1f 8%, transparent); }
+.gaps__head { margin: 0 0 .3rem; font-size: .8125rem; font-weight: 600; color: #8a5a1f; }
+.gaps ul { margin: 0; padding-left: 1.1rem; }
+.gaps li { font-size: .8125rem; margin-bottom: .25rem; line-height: 1.5; }
 .findings { list-style: none; margin: .8rem 0 0; padding: 0; display: grid; gap: .5rem; }
 .finding { padding: .6rem .75rem; background: var(--color-surface); border: 1px solid var(--color-border); border-left-width: 3px; border-radius: var(--border-radius); }
 .finding--must { border-left-color: #8a1f1f; }

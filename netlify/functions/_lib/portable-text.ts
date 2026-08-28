@@ -30,7 +30,21 @@ export interface Block {
 const key = () => Math.random().toString(36).slice(2, 14);
 
 const STYLES: Record<string, string> = { h2: '## ', h3: '### ', blockquote: '> ' };
-const STYLE_OF: Record<string, string> = { '## ': 'h2', '### ': 'h3', '> ': 'blockquote' };
+// Longest prefix first, so "### " is not read as "## " plus a stray hash.
+// "# " maps to h2 because the post title is the page's only h1 — a body
+// heading written with one hash is a second-level heading in intent.
+const STYLE_OF: Record<string, string> = { '### ': 'h3', '## ': 'h2', '# ': 'h2', '> ': 'blockquote' };
+
+/**
+ * Bullet markers people and models actually type.
+ *
+ * Only "- " was recognised. Anything else fell through to the paragraph branch
+ * and a three-item list silently became one run-on line — "— one — two". The
+ * canonical form written back out is always "- ", so a list typed with
+ * asterisks is normalised rather than lost.
+ */
+const BULLET = /^[-*•–—]\s+/;
+const NUMBERED = /^\d+[.)]\s+/;
 
 /** Block types and styles this format can carry without loss. */
 export function unsupported(blocks: unknown): string[] {
@@ -151,11 +165,11 @@ export function fromText(text: string): Block[] {
     // A run of list items separated by single newlines is one paragraph of
     // input but several blocks of output.
     const listLines = line.split('\n').map((l) => l.trim()).filter(Boolean);
-    const allBullets = listLines.every((l) => /^- /.test(l));
-    const allNumbers = listLines.every((l) => /^\d+[.)] /.test(l));
+    const allBullets = listLines.every((l) => BULLET.test(l));
+    const allNumbers = listLines.every((l) => NUMBERED.test(l));
     if (listLines.length && (allBullets || allNumbers)) {
       for (const item of listLines) {
-        const body = item.replace(/^(- |\d+[.)] )/, '');
+        const body = item.replace(BULLET, '').replace(NUMBERED, '');
         blocks.push({
           _key: key(), _type: 'block', style: 'normal',
           listItem: allBullets ? 'bullet' : 'number', level: 1,
