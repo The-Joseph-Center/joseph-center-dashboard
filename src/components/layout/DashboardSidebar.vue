@@ -17,6 +17,7 @@ import {
   ClipboardList,
   Mail,
   HandCoins,
+  Megaphone,
   CreditCard,
   LogOut,
   Sun,
@@ -66,6 +67,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/forms', label: 'Seasonal forms', icon: ClipboardList, capability: 'formsAdmin' },
   { to: '/letters', label: 'Letters', icon: Mail, capability: 'letterQueue' },
   { to: '/giving', label: 'Year-end giving', icon: HandCoins, capability: 'taxData' },
+  { to: '/banner', label: 'Site banner', icon: Megaphone, capability: 'banners' },
   { to: '/support', label: 'Support', icon: MessageSquare, capability: 'support' },
   { to: '/billing', label: 'Billing', icon: CreditCard, capability: 'billing' },
 ];

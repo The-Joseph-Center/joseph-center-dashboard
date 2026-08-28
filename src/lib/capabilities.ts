@@ -26,6 +26,7 @@ export type Capability =
   | 'formsAdmin'  // open, close and edit the seasonal forms
   | 'letterQueue' // work through Mona's year-end letters
   | 'taxData'     // year-end giving totals for acknowledgments and the 990
+  | 'banners'     // the site-wide notice: closures, hours, announcements
   | 'billing';    // invoices, admin only
 
 export const ADMIN_GROUP = 'jc-dashboard-admins';
@@ -106,6 +107,9 @@ const RULES: Record<Capability, string[] | '*'> = {
   letterQueue: FORM_ACCESS.letters,
   // Financial, so it sits with billing rather than with the form inboxes.
   taxData: [DEV, ADMIN_GROUP, 'Executive Director'],
+  // Front Desk is on this list deliberately: they know the building is shut
+  // before anyone else does, and a closure notice is worth nothing an hour late.
+  banners: [DEV, ADMIN_GROUP, 'Operational Director', 'Executive Assistant', 'Front Desk'],
   billing: [ADMIN_GROUP],
 };
 
