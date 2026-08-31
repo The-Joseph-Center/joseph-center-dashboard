@@ -1,7 +1,7 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { turso, fetchOktaUsers } from './_lib/staff-directory';
 import { reviewNewsletter, aweberPlan, type NewsletterDraft } from './_lib/newsletter';
-import { aweberConfig, missingScopes, allSubscribers, addTag, REQUIRED_SCOPES } from './_lib/aweber';
+import { aweberConfig, missingScopes, allSubscribers, addTag, describeAudience, REQUIRED_SCOPES } from './_lib/aweber';
 
 /**
  * The AWeber end of sending the newsletter.
@@ -115,6 +115,11 @@ export async function handler(event: {
       const active = subscribers.filter((s) => s.status === 'subscribed');
       const alreadyTagged = active.filter((s) => s.tags.includes(draft.aweberTag));
 
+      // Who would actually receive something. The exclusion logic means a
+      // subscriber holding two tier tags is excluded from every automation and
+      // gets nothing — silently, since AWeber still reports a successful send.
+      const audience = describeAudience(subscribers);
+
       return {
         statusCode: 200,
         headers: JSON_HEADERS,
@@ -131,6 +136,12 @@ export async function handler(event: {
           },
           blocking,
           issues,
+          audience,
+          // Not blocking: a tag already on some subscribers usually means a
+          // half-finished earlier run, and re-running skips them safely. Worth
+          // saying out loud though, because it can also mean the tag was
+          // applied by hand and the automations have already fired.
+          partiallyTagged: alreadyTagged.length > 0 && alreadyTagged.length < active.length,
         }),
       };
     }

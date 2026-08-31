@@ -128,3 +128,38 @@ export async function addTag(cfg: AweberConfig, subscriber: Subscriber, tag: str
   if (status >= 300) throw new Error(body.error?.message ?? `Tagging ${subscriber.email} failed (${status})`);
   return 'added';
 }
+
+/** The tier tags the automations route on, from the process document. */
+export const TIER_TAGS = [
+  'community-friend', 'donor', 'repeat-donor', 'recurring-donor',
+  'vip', 'vip-repeat', 'vip-engaged',
+] as const;
+
+export interface Audience {
+  active: number;
+  perTier: Record<string, number>;
+  /** Carrying no tier tag at all — nothing excludes them, so they get the community-friend version. */
+  untagged: string[];
+  /**
+   * Carrying more than one tier tag.
+   *
+   * Every automation excludes all the other tiers, so someone holding two tier
+   * tags is excluded from all three and receives nothing at all. It is silent:
+   * AWeber reports a successful send and the person simply never appears in it.
+   */
+  overlapping: { email: string; tags: string[] }[];
+}
+
+export function describeAudience(subscribers: Subscriber[]): Audience {
+  const active = subscribers.filter((s) => s.status === 'subscribed');
+  const tiersOf = (s: Subscriber) => s.tags.filter((t) => (TIER_TAGS as readonly string[]).includes(t));
+  const perTier: Record<string, number> = {};
+  for (const t of TIER_TAGS) perTier[t] = 0;
+  for (const s of active) for (const t of tiersOf(s)) perTier[t] = (perTier[t] ?? 0) + 1;
+  return {
+    active: active.length,
+    perTier,
+    untagged: active.filter((s) => tiersOf(s).length === 0).map((s) => s.email),
+    overlapping: active.filter((s) => tiersOf(s).length > 1).map((s) => ({ email: s.email, tags: tiersOf(s) })),
+  };
+}

@@ -137,6 +137,13 @@ interface SendState {
   totals?: { subscribers: number; active: number; alreadyTagged: number; toTag: number };
   blocking?: { where: string; problem: string }[];
   plan?: { tag: string; waitDays: number; endOfMonth: string };
+  partiallyTagged?: boolean;
+  audience?: {
+    active: number;
+    perTier: Record<string, number>;
+    untagged: string[];
+    overlapping: { email: string; tags: string[] }[];
+  };
 }
 const sendOpen = ref(false);
 const sendState = ref<SendState | null>(null);
@@ -567,6 +574,31 @@ function videoBlock() {
               <dt>Wait step</dt><dd v-if="sendState.plan">{{ sendState.plan.waitDays }} days, landing {{ sendState.plan.endOfMonth }}</dd>
             </dl>
 
+            <div v-if="sendState.audience" class="audience">
+              <p class="audience__head">Who receives which version</p>
+              <ul class="audience__list">
+                <li v-for="(n, tier) in sendState.audience.perTier" :key="tier" v-show="n">
+                  <strong>{{ n }}</strong> {{ tier }}
+                </li>
+              </ul>
+              <p v-if="sendState.audience.untagged.length" class="hint">
+                {{ sendState.audience.untagged.length }} carry no tier tag, so they get the community-friend version — nothing excludes them.
+              </p>
+              <p v-if="sendState.audience.overlapping.length" class="warn">
+                <strong>{{ sendState.audience.overlapping.length }}
+                subscriber{{ sendState.audience.overlapping.length === 1 ? '' : 's' }} will receive nothing at all.</strong>
+                Each automation excludes every other tier, so holding two tier tags means being excluded from all three.
+                AWeber still reports a successful send.
+                <br />
+                <span v-for="o in sendState.audience.overlapping" :key="o.email" class="audience__over">
+                  {{ o.email }} — {{ o.tags.join(' + ') }}
+                </span>
+              </p>
+              <p v-if="sendState.partiallyTagged" class="hint">
+                Some subscribers already carry this tag. Re-running skips them — but if it was applied by hand, the automations may have already fired.
+              </p>
+            </div>
+
             <p v-if="sendState.status === 'sent'" class="ok">This month has already been sent.</p>
 
             <template v-else-if="sendState.blocking?.length">
@@ -713,6 +745,10 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .rotation summary { cursor: pointer; }
 .rotation ul { margin: .4rem 0 0; padding-left: 1.1rem; }
 .rotation li { margin-bottom: .15rem; }
+.audience { margin: .3rem 0 .9rem; }
+.audience__head { margin: 0 0 .3rem; font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); }
+.audience__list { list-style: none; margin: 0 0 .5rem; padding: 0; display: flex; flex-wrap: wrap; gap: .9rem; font-size: .8125rem; }
+.audience__over { display: block; font-size: .75rem; margin-top: .2rem; }
 .ready { font-size: .8125rem; color: #14532d; margin: 0 0 .6rem; }
 .confirm { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; min-width: 14rem; }
 .result { margin-top: .8rem; padding: .65rem .8rem; background: var(--color-bg); border-radius: var(--border-radius); font-size: .8125rem; }
