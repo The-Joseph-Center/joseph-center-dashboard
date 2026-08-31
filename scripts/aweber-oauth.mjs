@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * Reauthorizes AWeber with the scopes the newsletter tooling needs.
  *
@@ -78,9 +79,7 @@ async function exchange(code) {
     process.exit(1);
   }
   console.log('\nScopes granted:', data.scope ?? '(not reported)');
-  console.log('\nReplace AWEBER_REFRESH_TOKEN in .env and in Netlify with this, then clear your scrollback:\n');
-  console.log(`AWEBER_REFRESH_TOKEN=${data.refresh_token}\n`);
-  console.log('The old token keeps working for the signup form until you replace it.');
+  await saveSecret('AWEBER_REFRESH_TOKEN', data.refresh_token);
   console.log('Then check it:  npx tsx scripts/check-aweber.mjs\n');
 }
 
@@ -110,4 +109,34 @@ if (LOCAL) {
   const code = answer.includes('code=') ? new URL(answer).searchParams.get('code') : answer;
   if (!code) { console.error('No code found in that.'); process.exit(1); }
   await exchange(code);
+}
+
+/**
+ * Writes a variable into .env without ever printing it.
+ *
+ * The previous version printed the refresh token to stdout, which is precisely
+ * how a credential ends up pasted into a chat window — it happened on this
+ * project more than once. Nothing sensitive reaches the terminal now: the value
+ * goes into .env directly, and onto the clipboard so it can be pasted into
+ * Netlify without opening the file at all.
+ */
+async function saveSecret(name, value) {
+  const { readFileSync, writeFileSync } = await import('node:fs');
+  const envPath = new URL('../.env', import.meta.url);
+  const lines = readFileSync(envPath, 'utf8').split('\n');
+  const i = lines.findIndex((l) => l.startsWith(`${name}=`));
+  if (i === -1) lines.push(`${name}=${value}`);
+  else lines[i] = `${name}=${value}`;
+  writeFileSync(envPath, lines.join('\n'));
+
+  let clipped = false;
+  try {
+    const { spawnSync } = await import('node:child_process');
+    // macOS only; failure here is not worth mentioning twice.
+    clipped = spawnSync('pbcopy', { input: value }).status === 0;
+  } catch { /* no clipboard, no problem */ }
+
+  console.log(`\n${name} written to .env${clipped ? ' and copied to the clipboard' : ''}.`);
+  console.log('Paste it into Netlify from the clipboard — no need to open the file.');
+  console.log('It was not printed here, so nothing in this scrollback needs clearing.\n');
 }

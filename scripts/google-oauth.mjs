@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * One-time Google consent, to get a refresh token for the stats sheet.
  *
@@ -80,10 +81,39 @@ const server = createServer(async (req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/html' })
      .end('<p style="font:16px system-ui;padding:2rem">Done. Close this tab and look at the terminal.</p>');
 
-  console.log('Add this to .env and to Netlify, then delete it from your scrollback:\n');
-  console.log(`GOOGLE_OAUTH_REFRESH_TOKEN=${data.refresh_token}\n`);
+  await saveSecret('GOOGLE_OAUTH_REFRESH_TOKEN', data.refresh_token);
   console.log('Then check it works:  npx tsx scripts/check-sheet.mjs\n');
   server.close();
   process.exit(0);
 });
 server.listen(PORT);
+
+/**
+ * Writes a variable into .env without ever printing it.
+ *
+ * The previous version printed the refresh token to stdout, which is precisely
+ * how a credential ends up pasted into a chat window — it happened on this
+ * project more than once. Nothing sensitive reaches the terminal now: the value
+ * goes into .env directly, and onto the clipboard so it can be pasted into
+ * Netlify without opening the file at all.
+ */
+async function saveSecret(name, value) {
+  const { readFileSync, writeFileSync } = await import('node:fs');
+  const envPath = new URL('../.env', import.meta.url);
+  const lines = readFileSync(envPath, 'utf8').split('\n');
+  const i = lines.findIndex((l) => l.startsWith(`${name}=`));
+  if (i === -1) lines.push(`${name}=${value}`);
+  else lines[i] = `${name}=${value}`;
+  writeFileSync(envPath, lines.join('\n'));
+
+  let clipped = false;
+  try {
+    const { spawnSync } = await import('node:child_process');
+    // macOS only; failure here is not worth mentioning twice.
+    clipped = spawnSync('pbcopy', { input: value }).status === 0;
+  } catch { /* no clipboard, no problem */ }
+
+  console.log(`\n${name} written to .env${clipped ? ' and copied to the clipboard' : ''}.`);
+  console.log('Paste it into Netlify from the clipboard — no need to open the file.');
+  console.log('It was not printed here, so nothing in this scrollback needs clearing.\n');
+}
