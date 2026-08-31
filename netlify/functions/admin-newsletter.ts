@@ -211,6 +211,8 @@ export async function handler(event: {
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'A month is required, as YYYY-MM.' }) };
     }
+    const row = (await db.execute({ sql: 'SELECT status, aweber_tag FROM newsletters WHERE month = ?', args: [month] }))
+      .rows[0] as { status?: string; aweber_tag?: string } | undefined;
 
     /**
      * The three versions as email HTML, from whatever is on screen.
@@ -265,7 +267,12 @@ export async function handler(event: {
         clean(body.guestName, 120),
         clean(body.guestFrame, 20) === 'calling' ? 'calling' : 'guest',
         clean(body.program, 120),
-        clean(body.aweberTag, 60) || aweberPlan(month, new Date()).tag,
+        // Always derived, never taken from the client. There is no field for
+        // it and never was, so a posted value is only ever whatever was loaded
+        // a moment earlier — which is how a September draft saved before the
+        // year change kept writing back "sep-newsletter" on every save. A tag
+        // on a sent newsletter is history and is left alone.
+        row?.status === 'sent' ? String(row.aweber_tag ?? '') : aweberPlan(month, new Date()).tag,
         clean(body.section1),
         clean(body.section2),
         JSON.stringify(body.stats ?? {}),
