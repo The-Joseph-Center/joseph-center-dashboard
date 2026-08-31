@@ -7,6 +7,20 @@ const { aweberConfig, missingScopes, allSubscribers } = await import('../netlify
 const cfg = aweberConfig();
 if (!cfg) { console.error('AWEBER_* variables are missing from this .env — copy them from the frontend.'); process.exit(1); }
 
+// A shared app is the setup this is meant to avoid.
+try {
+  const site = Object.fromEntries(
+    readFileSync(new URL('../../frontend/.env', import.meta.url), 'utf8')
+      .split('\n').filter((l) => l.includes('=') && !l.trim().startsWith('#'))
+      .map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)])
+  );
+  if (site.AWEBER_CLIENT_ID && site.AWEBER_CLIENT_ID === process.env.AWEBER_CLIENT_ID) {
+    console.warn('WARNING: this is the same AWeber app the website uses.');
+    console.warn('Reauthorizing it may invalidate the token the live signup form depends on.');
+    console.warn('Create a separate app for the dashboard — see scripts/aweber-oauth.mjs.\n');
+  }
+} catch { /* the site repo may not be alongside */ }
+
 const missing = await missingScopes(cfg);
 console.log('scopes still missing:', missing.length ? missing.join(', ') : 'none');
 if (missing.length) process.exit(1);

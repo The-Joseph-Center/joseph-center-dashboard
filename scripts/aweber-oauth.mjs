@@ -6,17 +6,27 @@
  * on the app — AWeber grants whatever the authorization URL asks for and the
  * person approves — so widening them means going through consent again.
  *
- * Run once, locally:  node scripts/aweber-oauth.mjs
+ * Use a SEPARATE AWeber app for the dashboard.
  *
- * By default this uses the redirect URL already registered on the app, so
- * nothing in the AWeber app settings has to change. That URL currently returns
- * a 404 page, which does not matter: the authorization code is in the address
- * bar either way, and this asks you to paste it.
+ * The app the website uses has one redirect URL and one authorization, and the
+ * live site's newsletter signup form depends on the token issued from it.
+ * AWeber does not document whether a fresh authorization invalidates the
+ * previous refresh token, and finding out the hard way means signups stop
+ * working on the live site. A second app costs nothing and removes the
+ * question: separate credentials, separate tokens, separate revocation, and its
+ * redirect URL can point at localhost without touching anything shared.
  *
- * If you would rather not copy a code, change the app's OAuth Redirect URL to
- * http://localhost:8911 and run with --local; it will catch the redirect
- * itself. Change it back afterwards, since it is a single-value field and the
- * site's own integration uses it.
+ * Setup, once:
+ *   1. labs.aweber.com → My Apps → Create a New App
+ *   2. OAuth Redirect URL: http://localhost:8911
+ *   3. Leave the webhook events unchecked — they are notifications, not scopes,
+ *      and nothing here needs them.
+ *   4. Put that app's client id and secret in this project's .env
+ *   5. node scripts/aweber-oauth.mjs --local
+ *
+ * If the dashboard is ever pointed at the website's app instead, run without
+ * --local: it will use the registered redirect and ask for the code to be
+ * pasted out of the address bar.
  */
 import { createServer } from 'node:http';
 import { createInterface } from 'node:readline/promises';
