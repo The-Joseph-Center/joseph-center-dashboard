@@ -152,6 +152,29 @@ export async function handler(event: {
 
     // ── tag: this is the send ──
     const body = JSON.parse(event.body || '{}');
+
+    /**
+     * The failure this cannot see.
+     *
+     * Applying a new tag only sends anything if the automations are triggering
+     * on that tag. If they still point at last month's, the tag lands on 227
+     * subscribers, every automation ignores it, and nothing goes out — with no
+     * error anywhere, because from AWeber's side nothing went wrong.
+     *
+     * The API does not expose Campaigns, so this cannot be checked. It can be
+     * refused until someone says they have done it, which is the difference
+     * between a silent failure and a deliberate one.
+     */
+    if (body.automationsUpdated !== true) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          error: `Confirm the three automations are set to trigger on "${draft.aweberTag}" first. If they still point at last month's tag, this will send to nobody and report success.`,
+        }),
+      };
+    }
+
     if (body.confirm !== draft.aweberTag) {
       return {
         statusCode: 400,

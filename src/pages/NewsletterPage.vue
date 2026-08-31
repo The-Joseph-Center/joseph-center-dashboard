@@ -150,6 +150,7 @@ const sendState = ref<SendState | null>(null);
 const checking = ref(false);
 const sending = ref(false);
 const confirmTag = ref('');
+const automationsUpdated = ref(false);
 const sendResult = ref<{ added: number; already: number; failed: number; failedEmails: string[]; markedSent: boolean } | null>(null);
 
 async function checkSend() {
@@ -173,7 +174,7 @@ async function applyTag() {
   try {
     const res = await apiFetch('/.netlify/functions/newsletter-aweber', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ month: month.value, confirm: confirmTag.value }),
+      body: JSON.stringify({ month: month.value, confirm: confirmTag.value, automationsUpdated: automationsUpdated.value }),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d.error || String(res.status));
@@ -609,10 +610,18 @@ function videoBlock() {
             </template>
 
             <template v-else>
-              <p class="ready">Nothing outstanding. Confirm by typing the tag to enable the send.</p>
+              <p class="ready">Nothing outstanding in the review.</p>
+              <label class="attest">
+                <input v-model="automationsUpdated" type="checkbox" />
+                <span>
+                  All three automations are set to trigger on <code>{{ sendState.tag }}</code>.
+                  <em>Nothing here can check this — AWeber's API does not expose Campaigns. If they still point at
+                  last month's tag, this sends to nobody and reports success.</em>
+                </span>
+              </label>
               <div class="actions">
                 <input v-model="confirmTag" type="text" :placeholder="sendState.tag" class="confirm" />
-                <button type="button" class="btn btn--danger btn--sm" :disabled="sending || confirmTag !== sendState.tag" @click="applyTag">
+                <button type="button" class="btn btn--danger btn--sm" :disabled="sending || !automationsUpdated || confirmTag !== sendState.tag" @click="applyTag">
                   {{ sending ? 'Tagging subscribers…' : `Apply the tag to ${sendState.totals.toTag} subscribers` }}
                 </button>
               </div>
@@ -745,6 +754,10 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .rotation summary { cursor: pointer; }
 .rotation ul { margin: .4rem 0 0; padding-left: 1.1rem; }
 .rotation li { margin-bottom: .15rem; }
+.attest { display: flex; gap: .5rem; align-items: flex-start; margin: 0 0 .8rem; font-size: .8125rem; line-height: 1.5; }
+.attest input { margin-top: .2rem; flex-shrink: 0; }
+.attest em { display: block; color: var(--color-text-secondary); font-size: .75rem; margin-top: .2rem; }
+.attest code { background: var(--color-bg); padding: .05rem .3rem; border-radius: 3px; }
 .audience { margin: .3rem 0 .9rem; }
 .audience__head { margin: 0 0 .3rem; font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); }
 .audience__list { list-style: none; margin: 0 0 .5rem; padding: 0; display: flex; flex-wrap: wrap; gap: .9rem; font-size: .8125rem; }
