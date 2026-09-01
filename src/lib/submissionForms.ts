@@ -138,20 +138,28 @@ export const FORMS: FormDef[] = [
     table: 'coffee_chat_applications',
     timeColumn: 'submitted_at',
     searchColumns: ['full_name', 'email', 'contact_email', 'phone', 'connection'],
+    // `email` is the address the application came from; `contact_email` is only
+    // filled in when the applicant wants to be reached somewhere else. Showing
+    // the latter in the Email column meant most rows read "—" beside a person
+    // who had in fact given an address.
     sensitive:
       'These applications ask about legal matters and difficult subjects. Treat them as confidential.',
     columns: [
-      t('full_name', 'Name', true), t('contact_email', 'Email', true), t('phone', 'Phone', true),
+      t('full_name', 'Name', true), t('email', 'Email', true),
+      t('contact_email', 'Prefers to be emailed at'), t('phone', 'Phone', true),
       t('connection', 'Connection', true), t('is_18_plus', 'Over 18', false, 'bool'),
-      t('impact_statement', 'Their story'), t('programs_involved', 'Programs'),
+      t('impact_statement', 'Their story'),
+      // These four are stored as JSON arrays and were typed as plain text, so
+      // the inbox would have shown ["Events & Outreach"] rather than the answer.
+      t('programs_involved', 'Programs', false, 'json'),
       t('has_legal_matters', 'Legal matters', false, 'bool'),
       t('sensitive_topics', 'Sensitive topics'),
       t('comfortable_recorded', 'Happy to be recorded', false, 'bool'),
       t('name_display', 'Name shown as'), t('accommodations', 'Accommodations'),
       t('media_release_granted', 'Media release', false, 'bool'),
       t('expectations_confirmed', 'Expectations confirmed', false, 'bool'),
-      t('best_days', 'Best days'), t('best_times', 'Best times'),
-      t('contact_methods', 'Contact by'), t('additional_info', 'Anything else'),
+      t('best_days', 'Best days', false, 'json'), t('best_times', 'Best times', false, 'json'),
+      t('contact_methods', 'Contact by', false, 'json'), t('additional_info', 'Anything else'),
       t('signature', 'Signature'), t('signature_date', 'Signed'),
       t('submitted_at', 'Received', true, 'date'),
     ],
