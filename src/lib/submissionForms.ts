@@ -30,6 +30,13 @@ export interface FormDef {
   /** Shown as a confidentiality note above the table. */
   sensitive?: string;
   /**
+   * The statuses this form's rows can be moved through, in order. Naming them
+   * turns on follow-up tracking in the inbox — no migration needed, because
+   * submission_followups is keyed by (form, row) rather than living on each
+   * table. Omit for a form nobody needs to chase.
+   */
+  followUp?: readonly string[];
+  /**
    * A form that no longer receives submissions. Grouped separately in the
    * inbox so an archive of a retired form is not mistaken for a live queue
    * nobody is answering.
@@ -144,6 +151,10 @@ export const FORMS: FormDef[] = [
     // who had in fact given an address.
     sensitive:
       'These applications ask about legal matters and difficult subjects. Treat them as confidential.',
+    // Booking a guest runs: reach out → agree a time → record it. "Declined"
+    // covers both the guest saying no and us deciding not to schedule, which
+    // the form itself warns can happen where there are legal matters.
+    followUp: ['Contacted', 'Scheduled', 'Recorded', 'Declined'],
     columns: [
       t('full_name', 'Name', true), t('email', 'Email', true),
       t('contact_email', 'Prefers to be emailed at'), t('phone', 'Phone', true),

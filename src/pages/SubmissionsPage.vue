@@ -19,6 +19,10 @@ interface FormSummary {
 interface FormMeta {
   id: string; label: string; description: string; sensitive: string | null;
   columns: Column[]; exportable: boolean; groupColumn: string | null;
+  followUp: string[] | null;
+}
+interface FollowUp {
+  status: string; note: string | null; updatedBy: string; updatedAt: number;
 }
 
 const forms = ref<FormSummary[]>([]);
@@ -31,6 +35,52 @@ const total = ref(0);
 const years = ref<string[]>([]);
 const groups = ref<string[]>([]);
 const opened = ref<number | null>(null);
+
+// Follow-up state, keyed by row id so it survives paging and re-sorting.
+const followUps = ref<Record<string, FollowUp>>({});
+const draftStatus = ref('');
+const draftNote = ref('');
+const saving = ref(false);
+const saveError = ref('');
+
+const rowId = (r: Record<string, unknown>) => String(r.id ?? '');
+const followUpOf = (r: Record<string, unknown>) => followUps.value[rowId(r)] ?? null;
+
+/** Load the saved values into the editor when a row is opened. */
+function openRow(i: number, r: Record<string, unknown>) {
+  if (opened.value === i) { opened.value = null; return; }
+  opened.value = i;
+  saveError.value = '';
+  const fu = followUpOf(r);
+  draftStatus.value = fu?.status ?? '';
+  draftNote.value = fu?.note ?? '';
+}
+
+async function saveFollowUp(r: Record<string, unknown>) {
+  saving.value = true;
+  saveError.value = '';
+  try {
+    const res = await apiFetch('/.netlify/functions/submission-followup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        form: active.value, id: rowId(r),
+        status: draftStatus.value, note: draftNote.value,
+      }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || String(res.status));
+    if (d.cleared) delete followUps.value[rowId(r)];
+    else followUps.value = { ...followUps.value, [rowId(r)]: d.followUp };
+  } catch (e) {
+    saveError.value = e instanceof Error ? e.message : 'Could not save.';
+  } finally {
+    saving.value = false;
+  }
+}
+
+const whenSaved = (t: number) =>
+  new Date(t * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
 const search = ref('');
 const year = ref('');
@@ -88,6 +138,7 @@ async function loadRows() {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
     const d = await res.json();
     meta.value = d.form; rows.value = d.rows; total.value = d.total;
+    followUps.value = d.followUps ?? {};
     years.value = d.years; groups.value = d.groups;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not load submissions.';
@@ -230,7 +281,13 @@ async function exportCsv() {
                   <tr :class="{ 'tbl__row--open': opened === i }">
                     <td v-for="c in primary" :key="c.key">{{ display(c, r[c.key]) }}</td>
                     <td class="tbl__more">
-                      <button type="button" class="linkish" @click="opened = opened === i ? null : i">
+                      <span
+                        v-if="meta?.followUp && followUpOf(r)"
+                        class="chip"
+                        :class="`chip--${followUpOf(r)!.status.toLowerCase()}`"
+                      >{{ followUpOf(r)!.status }}</span>
+                      <span v-else-if="meta?.followUp" class="chip chip--none">Not contacted</span>
+                      <button type="button" class="linkish" @click="openRow(i, r)">
                         {{ opened === i ? 'Close' : 'Open' }}
                       </button>
                     </td>
@@ -243,6 +300,37 @@ async function exportCsv() {
                           <dd>{{ display(c, r[c.key]) }}</dd>
                         </template>
                       </dl>
+
+                      <div v-if="meta?.followUp" class="fu">
+                        <h3 class="fu__title">Follow-up</h3>
+                        <p v-if="followUpOf(r)" class="fu__last">
+                          {{ followUpOf(r)!.status }} by {{ followUpOf(r)!.updatedBy }}
+                          on {{ whenSaved(followUpOf(r)!.updatedAt) }}
+                        </p>
+                        <p v-else class="fu__last fu__last--none">Nobody has recorded contact yet.</p>
+
+                        <div class="fu__row">
+                          <label class="fu__field">
+                            <span>Status</span>
+                            <select v-model="draftStatus">
+                              <option value="">Not contacted</option>
+                              <option v-for="st in meta.followUp" :key="st" :value="st">{{ st }}</option>
+                            </select>
+                          </label>
+                          <label class="fu__field fu__field--wide">
+                            <span>Note</span>
+                            <input
+                              v-model="draftNote"
+                              type="text"
+                              placeholder="What was agreed, or what is still open"
+                            />
+                          </label>
+                          <button type="button" class="btn btn--sm" :disabled="saving" @click="saveFollowUp(r)">
+                            {{ saving ? 'Saving…' : 'Save' }}
+                          </button>
+                        </div>
+                        <p v-if="saveError" class="state state--err" role="alert">{{ saveError }}</p>
+                      </div>
                     </td>
                   </tr>
                 </template>
@@ -289,6 +377,21 @@ async function exportCsv() {
 .tbl td.cell--multi { white-space: pre-line; }
 .tbl__row--open td { background: var(--color-bg); }
 .tbl__more { text-align: right; white-space: nowrap; }
+.chip { display: inline-block; font-size: .7rem; border-radius: 999px; padding: .1rem .5rem; margin-right: .5rem; border: 1px solid var(--color-border); color: var(--color-text-secondary); }
+.chip--none { opacity: .65; }
+.chip--contacted { border-color: #8a5a1f; color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 8%, transparent); }
+.chip--scheduled { border-color: var(--color-primary-strong); color: var(--color-primary-strong); background: color-mix(in srgb, var(--color-primary-strong) 8%, transparent); }
+.chip--recorded { border-color: #1f6b3a; color: #1f6b3a; background: color-mix(in srgb, #1f6b3a 8%, transparent); }
+.chip--declined { border-color: #8a1f1f; color: #8a1f1f; background: color-mix(in srgb, #8a1f1f 8%, transparent); }
+
+.fu { margin-top: 1rem; padding-top: .85rem; border-top: 1px solid var(--color-border); }
+.fu__title { font-family: var(--font-heading); font-size: .7rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); margin: 0 0 .35rem; }
+.fu__last { font-size: .8125rem; margin: 0 0 .6rem; color: var(--color-text); }
+.fu__last--none { color: var(--color-text-secondary); }
+.fu__row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end; }
+.fu__field { display: flex; flex-direction: column; gap: .2rem; font-size: .75rem; color: var(--color-text-secondary); }
+.fu__field--wide { flex: 1 1 18rem; min-width: 0; }
+.fu__field select, .fu__field input { padding: .4rem .5rem; font: inherit; font-size: .8125rem; border: 1px solid var(--color-border); border-radius: var(--border-radius); background: var(--color-surface); color: var(--color-text); }
 .tbl__detail td { background: var(--color-bg); }
 .detail { display: grid; grid-template-columns: minmax(8rem, 12rem) 1fr; gap: .3rem .9rem; margin: 0; }
 .detail dt { font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); }

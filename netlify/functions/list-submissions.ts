@@ -112,7 +112,11 @@ export async function handler(event: {
     const limit = csv ? MAX_ROWS : Math.min(Number(q.limit) || 50, MAX_ROWS);
     const offset = Math.max(Number(q.offset) || 0, 0);
 
-    const select = def.columns.map((c) => c.key).join(', ');
+    // Follow-up is keyed by row id, which is not otherwise one of the display
+    // columns, so it has to come back with the page.
+    const tracksFollowUp = !!def.followUp?.length;
+    const keys = def.columns.map((c) => c.key);
+    const select = (tracksFollowUp && !keys.includes('id') ? ['id', ...keys] : keys).join(', ');
     const [page, counted, years, groups] = await Promise.all([
       db.execute({
         sql: `SELECT ${select} FROM ${def.table}${clause} ORDER BY ${def.timeColumn} DESC LIMIT ? OFFSET ?`,
@@ -128,6 +132,23 @@ export async function handler(event: {
     ]);
 
     const rows = page.rows as unknown as Record<string, unknown>[];
+
+    // One query for the whole page rather than one per row.
+    let followUps: Record<string, unknown> = {};
+    if (tracksFollowUp && rows.length) {
+      const ids = rows.map((r) => String(r.id));
+      const marks = ids.map(() => '?').join(', ');
+      const { rows: fu } = await db.execute({
+        sql: `SELECT row_id, status, note, updated_by, updated_at
+              FROM submission_followups
+              WHERE form_id = ? AND row_id IN (${marks})`,
+        args: [def.id, ...ids],
+      });
+      followUps = Object.fromEntries(fu.map((f) => [String(f.row_id), {
+        status: f.status, note: f.note,
+        updatedBy: f.updated_by, updatedAt: Number(f.updated_at),
+      }]));
+    }
 
     if (csv) {
       // Sensitive forms are readable in the browser but not downloadable: a
@@ -154,8 +175,10 @@ export async function handler(event: {
           id: def.id, label: def.label, description: def.description,
           sensitive: def.sensitive ?? null, columns: def.columns,
           exportable: def.exportable ?? !def.sensitive, groupColumn: def.groupColumn ?? null,
+          followUp: def.followUp ?? null,
         },
         rows,
+        followUps,
         total: Number(counted.rows[0]?.n ?? 0),
         years: years.rows.map((r) => String(r.y)).filter(Boolean),
         groups: groups.rows.map((r) => String(r.g)).filter(Boolean),

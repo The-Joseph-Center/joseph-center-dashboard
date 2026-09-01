@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * One-time Google consent, to get a refresh token for the stats sheet.
+ * One-time Google consent, to get a refresh token for the stats sheet and for
+ * reading free/busy from Mona's calendar.
  *
  * Run once, locally:  node scripts/google-oauth.mjs
  *
@@ -19,7 +20,16 @@ import { createServer } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-const SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
+// Both read-only. calendar.freebusy is the narrowest calendar scope there is:
+// it answers "is this block taken?" and returns no event titles, attendees or
+// descriptions — which is the whole question the scheduler asks, and nothing
+// more. Re-running this after adding a scope REPLACES the stored refresh
+// token, so the new one has to go into the local environment file and Netlify
+// together, or sheet lookups keep working here while failing in production.
+const SCOPE = [
+  'https://www.googleapis.com/auth/spreadsheets.readonly',
+  'https://www.googleapis.com/auth/calendar.freebusy',
+].join(' ');
 const PORT = 8910;
 const REDIRECT = `http://localhost:${PORT}`;
 
