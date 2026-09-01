@@ -47,13 +47,18 @@ export const FORMS: FormDef[] = [
   {
     id: 'contact',
     label: 'Contact messages',
-    description: 'Messages sent from the contact form on the site.',
+    description: 'Messages sent from the contact form, including the archive imported from the previous site (back to September 2022).',
     table: 'contact_messages',
     timeColumn: 'submitted_at',
-    searchColumns: ['name', 'email', 'phone', 'message'],
+    searchColumns: ['name', 'email', 'phone', 'message', 'program'],
     columns: [
       t('name', 'Name', true), t('email', 'Email', true), t('phone', 'Phone'),
-      t('message', 'Message', true), t('submitted_at', 'Received', true, 'date'),
+      t('program', 'About', true), t('message', 'Message', true),
+      // Only ever set on the imported archive: the old form asked, this one
+      // does not. Recorded because it was given, not acted on — see
+      // scripts/import-legacy-contact-messages.ts.
+      t('sms_consent', 'Agreed to texts', false, 'bool'),
+      t('submitted_at', 'Received', true, 'date'),
     ],
   },
   {
