@@ -51,7 +51,7 @@ export const ADMIN_GROUP = 'jc-dashboard-admins';
  * it is written down.
  */
 export type FormId =
-  | 'contact' | 'volunteers' | 'events' | 'letters'
+  | 'contact' | 'volunteers' | 'volunteers-past' | 'events' | 'letters'
   | 'coffee-chat' | 'seasonal' | 'subscribers';
 
 /**
@@ -71,6 +71,9 @@ export const FORM_ACCESS: Record<FormId, string[]> = {
   contact: [DEV, ADMIN_GROUP],
   // The Operational Director manages the volunteers.
   volunteers: [DEV, ADMIN_GROUP, 'Operational Director', 'Social Media Manager'],
+  // The archived applications from the previous site's form. Same people,
+  // same purpose, so the same groups read them.
+  'volunteers-past': [DEV, ADMIN_GROUP, 'Operational Director', 'Social Media Manager'],
   events: [DEV, 'Operational Director', 'Social Media Manager', 'Executive Assistant'],
   // Mona's queue.
   letters: [DEV, 'Executive Director', 'Executive Assistant'],

@@ -24,6 +24,16 @@ const VOLUNTEER_AREAS: Record<string, string> = {
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
 const PARTS = ['morning', 'afternoon', 'evening'] as const;
+
+/**
+ * The previous site's form offered two fixed shifts per day and stored the
+ * chosen one as a single string, where the current form stores three booleans.
+ * Both shapes end up in the same inbox, so both are read here.
+ */
+const SLOTS: Record<string, string> = {
+  '9to12': '9am–12pm',
+  '12to3': '12pm–3pm',
+};
 const title = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** camelCase or snake_case key to something readable: whyJC -> "Why JC". */
@@ -52,7 +62,15 @@ export function formatAvailability(value: unknown): string | null {
   const parts: string[] = [];
   for (const day of DAYS) {
     const slot = v[day];
-    if (!slot || typeof slot !== 'object') continue;
+    if (!slot) continue;
+    // The old form: one shift per day, as a string. "none" is a real stored
+    // value meaning the day was not offered, not a missing key.
+    if (typeof slot === 'string') {
+      if (!slot || slot === 'none') continue;
+      parts.push(`${title(day)} ${SLOTS[slot] ?? slot}`);
+      continue;
+    }
+    if (typeof slot !== 'object') continue;
     const on = PARTS.filter((p) => (slot as Record<string, unknown>)[p] === true);
     if (!on.length) continue;
     parts.push(on.length === PARTS.length ? `${title(day)} all day` : `${title(day)} ${on.join(' & ')}`);
@@ -60,8 +78,20 @@ export function formatAvailability(value: unknown): string | null {
   return parts.length ? parts.join(' · ') : 'No times selected';
 }
 
-/** A list of answers, mapped through the wording the person actually saw. */
+/**
+ * A list of answers, mapped through the wording the person actually saw.
+ *
+ * A list of objects — the previous form's work history is three of them — is
+ * not a comma-joined line; each entry is its own block, or every one renders as
+ * "[object Object]".
+ */
 function formatList(items: unknown[]): string {
+  if (items.some((i) => i && typeof i === 'object' && !Array.isArray(i))) {
+    return items
+      .map((i) => (i && typeof i === 'object' ? formatObject(i as Record<string, unknown>) : String(i ?? '')))
+      .filter(Boolean)
+      .join('\n\n');
+  }
   return items
     .map((i) => (typeof i === 'string' ? VOLUNTEER_AREAS[i] ?? i : String(i)))
     .filter(Boolean)

@@ -74,6 +74,7 @@ export async function handler(event: {
           );
           return {
             id: f.id, label: f.label, description: f.description, sensitive: f.sensitive ?? null,
+            archived: f.archived ?? false,
             total: Number(rows[0]?.total ?? 0),
             latest: rows[0]?.latest == null ? null : Number(rows[0].latest),
           };

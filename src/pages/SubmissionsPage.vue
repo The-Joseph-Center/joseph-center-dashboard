@@ -14,6 +14,7 @@ import { formatSubmissionValue } from '@/lib/submission-display';
 interface FormSummary {
   id: string; label: string; description: string;
   sensitive: string | null; total: number; latest: number | null;
+  archived: boolean;
 }
 interface FormMeta {
   id: string; label: string; description: string; sensitive: string | null;
@@ -21,6 +22,8 @@ interface FormMeta {
 }
 
 const forms = ref<FormSummary[]>([]);
+const liveForms = computed(() => forms.value.filter((f) => !f.archived));
+const pastForms = computed(() => forms.value.filter((f) => f.archived));
 const active = ref<string>('');
 const meta = ref<FormMeta | null>(null);
 const rows = ref<Record<string, unknown>[]>([]);
@@ -64,7 +67,7 @@ async function loadForms() {
     const res = await apiFetch('/.netlify/functions/list-submissions');
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
     forms.value = (await res.json()).forms;
-    const first = forms.value[0];
+    const first = liveForms.value[0] ?? forms.value[0];
     if (first && !active.value) active.value = first.id;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not load the form list.';
@@ -150,10 +153,27 @@ async function exportCsv() {
     <template v-else>
       <nav class="tabs">
         <button
-          v-for="f in forms"
+          v-for="f in liveForms"
           :key="f.id"
           type="button"
           class="tab"
+          :class="{ 'tab--on': f.id === active }"
+          @click="pick(f.id)"
+        >
+          {{ f.label }}
+          <span class="tab__count">{{ f.total }}</span>
+        </button>
+      </nav>
+
+      <!-- Retired forms are kept out of the main row so an archive is not
+           mistaken for a live queue nobody is answering. -->
+      <nav v-if="pastForms.length" class="tabs tabs--past" aria-label="Past forms">
+        <span class="tabs__label">Past forms</span>
+        <button
+          v-for="f in pastForms"
+          :key="f.id"
+          type="button"
+          class="tab tab--past"
           :class="{ 'tab--on': f.id === active }"
           @click="pick(f.id)"
         >
@@ -249,7 +269,10 @@ async function exportCsv() {
 .state--err { color: #8a1f1f; margin-bottom: .75rem; }
 .notice { font-size: .8125rem; color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 8%, transparent); border-radius: var(--border-radius); padding: .5rem .65rem; margin: 0 0 1rem; }
 
-.tabs { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: 1rem; }
+.tabs { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: 1rem; align-items: center; }
+.tabs--past { margin-top: -.5rem; }
+.tabs__label { font-size: .7rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); margin-right: .15rem; }
+.tab--past { border-style: dashed; color: var(--color-text-secondary); }
 .tab { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .4rem .7rem; font: inherit; font-size: .8125rem; cursor: pointer; color: var(--color-text); display: inline-flex; align-items: center; gap: .4rem; }
 .tab--on { border-color: var(--color-primary-strong); color: var(--color-primary-strong); font-weight: 600; }
 .tab__count { font-size: .7rem; color: var(--color-text-secondary); background: var(--color-bg); border-radius: 999px; padding: .05rem .4rem; }

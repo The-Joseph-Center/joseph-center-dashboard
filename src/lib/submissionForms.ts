@@ -30,6 +30,12 @@ export interface FormDef {
   /** Shown as a confidentiality note above the table. */
   sensitive?: string;
   /**
+   * A form that no longer receives submissions. Grouped separately in the
+   * inbox so an archive of a retired form is not mistaken for a live queue
+   * nobody is answering.
+   */
+  archived?: boolean;
+  /**
    * Whether a CSV can be downloaded. Defaults to the opposite of `sensitive`,
    * but the two are separate questions: letter requests carry addresses AND
    * need to be exported, because writing the letters is the job and copying
@@ -72,6 +78,27 @@ export const FORMS: FormDef[] = [
       t('name', 'Name', true), t('email', 'Email', true), t('phone', 'Phone', true),
       t('departments', 'Interested in', true, 'json'), t('availability', 'Availability', false, 'json'),
       t('additional_info', 'Everything else', false, 'json'), t('submitted_at', 'Received', true, 'date'),
+    ],
+  },
+  {
+    id: 'volunteers-past',
+    label: 'Volunteers (previous form)',
+    description: 'Applications from the form on the previous site, November 2022 to August 2026. It asked for a good deal more than the current one — the extra answers are in each row.',
+    archived: true,
+    table: 'legacy_volunteer_applications',
+    timeColumn: 'submitted_at',
+    searchColumns: ['name', 'email', 'phone', 'locations', 'reason', 'qualifications', 'employment'],
+    columns: [
+      t('name', 'Name', true), t('email', 'Email', true), t('phone', 'Phone', true),
+      t('locations', 'Interested in', true, 'json'),
+      t('availability', 'Availability', false, 'json'),
+      t('reason', 'Why they applied'),
+      t('benefit', 'What they hope to gain'),
+      t('qualifications', 'Qualifications'),
+      t('employment', 'Employment summary'),
+      t('work_history', 'Work history', false, 'json'),
+      t('additional', 'Anything else'),
+      t('submitted_at', 'Received', true, 'date'),
     ],
   },
   {
