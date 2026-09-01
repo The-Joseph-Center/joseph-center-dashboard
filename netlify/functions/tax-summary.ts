@@ -38,8 +38,12 @@ const yearWindow = (year: number) => ({
 /**
  * The IRS threshold above which a donor needs a written acknowledgment from the
  * charity to claim the deduction (Publication 1771). Surfaced so the list can
- * be filtered to the letters that must go out, not as tax advice — the
- * bookkeeper confirms the treatment.
+ * be filtered, not as tax advice — the bookkeeper confirms the treatment.
+ *
+ * It is NOT who gets a letter. Mona writes to every donor regardless of amount;
+ * the threshold only marks which of those letters the IRS additionally
+ * requires. The export defaults to everyone and carries the flag as a column so
+ * the required subset can still be filtered out in a spreadsheet.
  */
 const ACKNOWLEDGMENT_THRESHOLD_CENTS = 25000;
 
@@ -154,22 +158,26 @@ export async function handler(event: {
         const s = v == null ? '' : String(v);
         return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
       };
-      const wanted = q.scope === 'letters' ? needsLetter : rows;
+      // 'threshold' narrows to the IRS-required subset; anything else is the
+      // full list, because the full list is the letter list.
+      const wanted = q.scope === 'threshold' ? needsLetter : rows;
       const csv = [
-        ['Name', 'Email', 'Address', 'City', 'State', 'ZIP', 'Gifts', 'Total', 'First gift', 'Last gift', 'Recurring'].join(','),
+        ['Name', 'Email', 'Address', 'City', 'State', 'ZIP', 'Gifts', 'Total',
+         'First gift', 'Last gift', 'Recurring', 'IRS acknowledgment required'].join(','),
         ...wanted.map((r) => [
           r.name, r.email, r.address, r.city, r.state, r.zip, r.gifts,
           (r.totalCents / 100).toFixed(2),
           new Date(r.firstGift * 1000).toISOString().slice(0, 10),
           new Date(r.lastGift * 1000).toISOString().slice(0, 10),
           r.recurring ? 'Yes' : 'No',
+          r.totalCents >= ACKNOWLEDGMENT_THRESHOLD_CENTS ? 'Yes' : 'No',
         ].map(esc).join(',')),
       ].join('\n');
       return {
         statusCode: 200,
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',
-          'Content-Disposition': `attachment; filename="giving-${year}${q.scope === 'letters' ? '-acknowledgments' : ''}.csv"`,
+          'Content-Disposition': `attachment; filename="giving-${year}${q.scope === 'threshold' ? '-acknowledgments' : '-donor-letters'}.csv"`,
         },
         body: csv,
       };

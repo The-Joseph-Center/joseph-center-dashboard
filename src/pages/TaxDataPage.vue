@@ -33,7 +33,7 @@ const error = ref('');
 const exporting = ref('');
 
 const search = ref('');
-const show = ref<'all' | 'letters' | 'noaddress'>('all');
+const show = ref<'all' | 'irs' | 'noaddress'>('all');
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const money = (c: number) => `$${(c / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -43,7 +43,7 @@ const day = (s: number) => new Date(s * 1000).toLocaleDateString(undefined, { mo
 const visible = computed(() => {
   const q = search.value.trim().toLowerCase();
   return donors.value.filter((d) => {
-    if (show.value === 'letters' && d.totalCents < threshold.value) return false;
+    if (show.value === 'irs' && d.totalCents < threshold.value) return false;
     if (show.value === 'noaddress' && d.address) return false;
     if (!q) return true;
     return [d.name, d.email, d.city, d.zip].filter(Boolean).join(' ').toLowerCase().includes(q);
@@ -69,7 +69,7 @@ async function load() {
 onMounted(load);
 watch(year, (v, old) => { if (old !== null && v !== old) load(); });
 
-async function exportCsv(scope: 'all' | 'letters') {
+async function exportCsv(scope: 'all' | 'threshold') {
   exporting.value = scope;
   try {
     const res = await apiFetch(`/.netlify/functions/tax-summary?year=${year.value}&format=csv&scope=${scope}`);
@@ -77,7 +77,7 @@ async function exportCsv(scope: 'all' | 'letters') {
     const url = URL.createObjectURL(new Blob([await res.text()], { type: 'text/csv' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = `giving-${year.value}${scope === 'letters' ? '-acknowledgments' : ''}.csv`;
+    a.download = `giving-${year.value}${scope === 'threshold' ? '-acknowledgments' : '-donor-letters'}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   } catch {
@@ -102,11 +102,11 @@ async function exportCsv(scope: 'all' | 'letters') {
           </select>
         </label>
         <div class="bar__actions">
-          <button type="button" class="btn btn--sm" :disabled="!!exporting" @click="exportCsv('letters')">
-            {{ exporting === 'letters' ? 'Preparing…' : `Acknowledgment letters (${needsLetterCount})` }}
+          <button type="button" class="btn btn--sm" :disabled="!!exporting" @click="exportCsv('all')">
+            {{ exporting === 'all' ? 'Preparing…' : `Letter list (${donors.length})` }}
           </button>
-          <button type="button" class="btn btn--ghost btn--sm" :disabled="!!exporting" @click="exportCsv('all')">
-            {{ exporting === 'all' ? 'Preparing…' : 'All donors' }}
+          <button type="button" class="btn btn--ghost btn--sm" :disabled="!!exporting" @click="exportCsv('threshold')">
+            {{ exporting === 'threshold' ? 'Preparing…' : `IRS acknowledgments only (${needsLetterCount})` }}
           </button>
         </div>
       </div>
@@ -152,15 +152,18 @@ async function exportCsv(scope: 'all' | 'letters') {
       <section class="widget block">
         <h2 class="block__title">Donors ({{ visible.length }})</h2>
         <p class="block__hint">
-          {{ needsLetterCount }} gave {{ money(threshold) }} or more, the point at which a donor needs a written
-          acknowledgment from you to claim the deduction. Worth confirming the treatment with your bookkeeper.
+          Every donor gets a letter. Of these, {{ needsLetterCount }} gave {{ money(threshold) }} or more — the
+          point at which the IRS additionally requires a written acknowledgment for the donor to claim the
+          deduction. Worth confirming the treatment with your bookkeeper.
         </p>
 
         <div class="find">
           <input v-model="search" type="search" class="find__q" placeholder="Search name, email, city or ZIP…" aria-label="Search donors" />
           <div class="seg" role="group" aria-label="Filter donors">
             <button type="button" :class="['seg__b', { 'seg__b--on': show === 'all' }]" @click="show = 'all'">All</button>
-            <button type="button" :class="['seg__b', { 'seg__b--on': show === 'letters' }]" @click="show = 'letters'">Needs a letter</button>
+            <button type="button" :class="['seg__b', { 'seg__b--on': show === 'irs' }]" @click="show = 'irs'">
+              IRS acknowledgment ({{ needsLetterCount }})
+            </button>
             <button type="button" :class="['seg__b', { 'seg__b--on': show === 'noaddress' }]" @click="show = 'noaddress'">
               No address ({{ missingAddress }})
             </button>
@@ -188,7 +191,7 @@ async function exportCsv(scope: 'all' | 'letters') {
                 <td class="num">{{ d.gifts }}</td>
                 <td class="num">
                   <strong>{{ money(d.totalCents) }}</strong>
-                  <span v-if="d.totalCents >= threshold" class="flag flag--letter">letter</span>
+                  <span v-if="d.totalCents >= threshold" class="flag flag--letter">IRS ack</span>
                 </td>
                 <td class="span">
                   {{ day(d.firstGift) }}<template v-if="d.lastGift !== d.firstGift"> – {{ day(d.lastGift) }}</template>
