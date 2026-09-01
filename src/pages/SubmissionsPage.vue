@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import { apiFetch } from '@/lib/api';
 import type { Column } from '@/lib/submissionForms';
+import { formatSubmissionValue } from '@/lib/submission-display';
 
 // Everything the public forms collect, in one place.
 //
@@ -50,14 +51,10 @@ function display(col: Column, value: unknown): string {
   if (value == null || value === '') return '—';
   if (col.type === 'date') return fmtDate(value);
   if (col.type === 'bool') return value ? 'Yes' : 'No';
-  if (col.type === 'json') {
-    try {
-      const obj = JSON.parse(String(value)) as Record<string, unknown>;
-      return Object.entries(obj).map(([k, v]) => `${k}: ${v}`).join(' · ');
-    } catch {
-      return String(value);
-    }
-  }
+  // Stored answers are JSON; people are not. See lib/submission-display —
+  // the volunteer inbox was showing ["whereverNeeded"] and a nested
+  // availability object instead of the wording the person actually chose.
+  if (col.type === 'json') return formatSubmissionValue(value);
   return String(value);
 }
 
@@ -266,12 +263,13 @@ async function exportCsv() {
 .tbl { width: 100%; border-collapse: collapse; font-size: .8125rem; }
 .tbl th { text-align: left; font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); padding: .4rem .5rem; border-bottom: 1px solid var(--color-border); white-space: nowrap; }
 .tbl td { padding: .5rem; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.tbl td.cell--multi { white-space: pre-line; }
 .tbl__row--open td { background: var(--color-bg); }
 .tbl__more { text-align: right; white-space: nowrap; }
 .tbl__detail td { background: var(--color-bg); }
 .detail { display: grid; grid-template-columns: minmax(8rem, 12rem) 1fr; gap: .3rem .9rem; margin: 0; }
 .detail dt { font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); }
-.detail dd { margin: 0; word-break: break-word; }
+.detail dd { margin: 0; word-break: break-word; white-space: pre-line; }
 @media (max-width: 640px) { .detail { grid-template-columns: 1fr; } .detail dd { margin-bottom: .4rem; } }
 
 .pager { display: flex; align-items: center; gap: 1rem; margin-top: .9rem; font-size: .75rem; color: var(--color-text-secondary); }

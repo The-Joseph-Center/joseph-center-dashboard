@@ -65,8 +65,8 @@ export const FORMS: FormDef[] = [
     searchColumns: ['name', 'email', 'phone', 'departments'],
     columns: [
       t('name', 'Name', true), t('email', 'Email', true), t('phone', 'Phone', true),
-      t('departments', 'Interested in', true), t('availability', 'Availability'),
-      t('additional_info', 'Notes'), t('submitted_at', 'Received', true, 'date'),
+      t('departments', 'Interested in', true, 'json'), t('availability', 'Availability', false, 'json'),
+      t('additional_info', 'Everything else', false, 'json'), t('submitted_at', 'Received', true, 'date'),
     ],
   },
   {
