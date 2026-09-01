@@ -79,6 +79,11 @@ async function saveFollowUp(r: Record<string, unknown>) {
   }
 }
 
+// A status with a space in it ("No reply needed") would otherwise emit three
+// class names instead of one, and none of them would match a rule.
+const chipClass = (status: string) =>
+  `chip--${status.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+
 const whenSaved = (t: number) =>
   new Date(t * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
@@ -281,12 +286,16 @@ async function exportCsv() {
                   <tr :class="{ 'tbl__row--open': opened === i }">
                     <td v-for="c in primary" :key="c.key">{{ display(c, r[c.key]) }}</td>
                     <td class="tbl__more">
+                      <!-- Only rows with something recorded get a chip. A
+                           "Not contacted" badge on all 1,353 archived contact
+                           messages would read as an enormous backlog rather
+                           than as history; the open row says so in words when
+                           it actually matters. -->
                       <span
                         v-if="meta?.followUp && followUpOf(r)"
                         class="chip"
-                        :class="`chip--${followUpOf(r)!.status.toLowerCase()}`"
+                        :class="chipClass(followUpOf(r)!.status)"
                       >{{ followUpOf(r)!.status }}</span>
-                      <span v-else-if="meta?.followUp" class="chip chip--none">Not contacted</span>
                       <button type="button" class="linkish" @click="openRow(i, r)">
                         {{ opened === i ? 'Close' : 'Open' }}
                       </button>
@@ -378,11 +387,16 @@ async function exportCsv() {
 .tbl__row--open td { background: var(--color-bg); }
 .tbl__more { text-align: right; white-space: nowrap; }
 .chip { display: inline-block; font-size: .7rem; border-radius: 999px; padding: .1rem .5rem; margin-right: .5rem; border: 1px solid var(--color-border); color: var(--color-text-secondary); }
-.chip--none { opacity: .65; }
 .chip--contacted { border-color: #8a5a1f; color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 8%, transparent); }
 .chip--scheduled { border-color: var(--color-primary-strong); color: var(--color-primary-strong); background: color-mix(in srgb, var(--color-primary-strong) 8%, transparent); }
 .chip--recorded { border-color: #1f6b3a; color: #1f6b3a; background: color-mix(in srgb, #1f6b3a 8%, transparent); }
-.chip--declined { border-color: #8a1f1f; color: #8a1f1f; background: color-mix(in srgb, #8a1f1f 8%, transparent); }
+.chip--declined,
+.chip--not-a-fit { border-color: #8a1f1f; color: #8a1f1f; background: color-mix(in srgb, #8a1f1f 8%, transparent); }
+.chip--working-on-it { border-color: #8a5a1f; color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 8%, transparent); }
+.chip--replied,
+.chip--placed { border-color: #1f6b3a; color: #1f6b3a; background: color-mix(in srgb, #1f6b3a 8%, transparent); }
+.chip--passed-on { border-color: var(--color-primary-strong); color: var(--color-primary-strong); background: color-mix(in srgb, var(--color-primary-strong) 8%, transparent); }
+.chip--no-reply-needed { opacity: .7; }
 
 .fu { margin-top: 1rem; padding-top: .85rem; border-top: 1px solid var(--color-border); }
 .fu__title { font-family: var(--font-heading); font-size: .7rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); margin: 0 0 .35rem; }

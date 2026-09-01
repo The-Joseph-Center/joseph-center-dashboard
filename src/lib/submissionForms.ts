@@ -64,6 +64,13 @@ export const FORMS: FormDef[] = [
     table: 'contact_messages',
     timeColumn: 'submitted_at',
     searchColumns: ['name', 'email', 'phone', 'message', 'program'],
+    // Four years of archive means most of these are long closed, so the
+    // default of "nothing recorded" is not a backlog — it is history. What
+    // matters is the live ones. "No reply needed" is a first-class outcome
+    // here rather than an omission: plenty of what arrives is a notice, or
+    // spam, and marking it closed is the only way the unanswered ones stand
+    // out.
+    followUp: ['Working on it', 'Replied', 'Passed on', 'No reply needed'],
     columns: [
       t('name', 'Name', true), t('email', 'Email', true), t('phone', 'Phone'),
       t('program', 'About', true), t('message', 'Message', true),
@@ -81,6 +88,7 @@ export const FORMS: FormDef[] = [
     table: 'volunteer_submissions',
     timeColumn: 'submitted_at',
     searchColumns: ['name', 'email', 'phone', 'departments'],
+    followUp: ['Contacted', 'Placed', 'Not a fit'],
     columns: [
       t('name', 'Name', true), t('email', 'Email', true), t('phone', 'Phone', true),
       t('departments', 'Interested in', true, 'json'), t('availability', 'Availability', false, 'json'),
