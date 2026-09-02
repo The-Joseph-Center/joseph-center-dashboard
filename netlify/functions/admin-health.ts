@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
 import { requireCapability, denial } from './_lib/verify-okta';
+import { turso } from './_lib/staff-directory';
 
 /**
  * Is each integration actually reachable right now?
@@ -49,9 +50,12 @@ export async function handler(event: { headers: Record<string, string> }) {
 
   const checks = await Promise.all([
     timed('Turso (database)', async () => {
-      const { createClient } = await import('@libsql/client');
-      const db = createClient({ url: need(process.env.TURSO_DATABASE_URL), authToken: need(process.env.TURSO_AUTH_TOKEN) });
-      const r = await db.execute('SELECT COUNT(*) AS n FROM contact_messages');
+      need(process.env.TURSO_DATABASE_URL); need(process.env.TURSO_AUTH_TOKEN);
+      // The shared helper, which uses @libsql/client/web. The default export
+      // pulls a platform-specific native binary that is not in the deployed
+      // bundle, so it bundles cleanly and then fails at runtime with
+      // "Cannot find module '@libsql/linux-x64-gnu'".
+      const r = await turso().execute('SELECT COUNT(*) AS n FROM contact_messages');
       return `reachable · ${Number((r.rows[0] as Record<string, unknown>).n).toLocaleString()} contact messages`;
     }),
 

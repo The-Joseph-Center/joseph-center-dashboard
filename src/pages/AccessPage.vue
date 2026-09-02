@@ -184,10 +184,17 @@ onMounted(() => { load(); loadHealth(); });
       <section v-else-if="view === 'byCapability'" class="widget">
         <div class="tablewrap">
           <table class="tbl">
-            <thead><tr><th>Tool</th><th>Groups</th><th class="num">People</th></tr></thead>
+            <thead><tr><th>What it does</th><th>Groups</th><th class="num">People</th></tr></thead>
             <tbody>
               <tr v-for="c in capabilities" :key="c.id">
-                <td><strong>{{ c.id }}</strong><br /><span class="dim">{{ c.label }}</span></td>
+                <!-- The plain-English description leads. The identifier is
+                     what the code calls it and only matters when cross-checking
+                     against capabilities.ts, so it drops to a quiet monospace
+                     line underneath. -->
+                <td>
+                  <span class="cap__label">{{ c.label }}</span><br />
+                  <code class="cap__id">{{ c.id }}</code>
+                </td>
                 <td>
                   <span v-if="c.everyone" class="dim">Everyone signed in</span>
                   <template v-else>
@@ -251,6 +258,8 @@ onMounted(() => { load(); loadHealth(); });
 .dim { color: var(--color-text-secondary); font-size: .75rem; }
 .pill { display: inline-block; font-size: .75rem; border: 1px solid var(--color-border); border-radius: 999px; padding: .05rem .5rem; margin: 0 .3rem .3rem 0; }
 .flag { font-size: .65rem; text-transform: uppercase; letter-spacing: .04em; color: #8a1f1f; background: color-mix(in srgb, #8a1f1f 10%, transparent); border-radius: 999px; padding: .05rem .4rem; margin-left: .4rem; }
+.cap__label { font-weight: 600; color: var(--color-text); }
+.cap__id { font-size: .7rem; color: var(--color-text-secondary); background: var(--color-bg); border-radius: var(--border-radius); padding: .05rem .3rem; }
 .badge { font-size: .7rem; background: #8a1f1f; color: #fff; border-radius: 999px; padding: .05rem .4rem; margin-left: .35rem; }
 .dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; }
 .dot--ok { background: #1f6b3a; }

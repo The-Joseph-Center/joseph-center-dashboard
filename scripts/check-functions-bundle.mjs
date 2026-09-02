@@ -17,7 +17,7 @@
  * bundles the whole functions directory in well under a second.
  */
 import { build } from 'esbuild';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const DIR = 'netlify/functions';
@@ -28,6 +28,26 @@ const entries = readdirSync(DIR)
 if (!entries.length) {
   console.log('check-functions-bundle: no functions to check.');
   process.exit(0);
+}
+
+// A second, cheaper check for a failure the bundler cannot see. The default
+// @libsql/client entry point loads a platform-specific native binary that is
+// not shipped in the deployed bundle: it compiles, deploys, and then throws
+// "Cannot find module '@libsql/linux-x64-gnu'" the first time it runs. The
+// /web entry point speaks HTTP and has no native dependency.
+const badLibsql = [];
+for (const file of entries) {
+  const src = readFileSync(file, 'utf8');
+  if (/from\s+['"]@libsql\/client['"]|import\(\s*['"]@libsql\/client['"]\s*\)/.test(src)) {
+    badLibsql.push(file);
+  }
+}
+if (badLibsql.length) {
+  console.error('\ncheck-functions-bundle: use @libsql/client/web in Functions.\n');
+  for (const f of badLibsql) console.error(`  ${f}`);
+  console.error('\nThe default entry point needs a native binary that is not deployed;');
+  console.error('it bundles cleanly and fails at runtime.\n');
+  process.exit(1);
 }
 
 try {
