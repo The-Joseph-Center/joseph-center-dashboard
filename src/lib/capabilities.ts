@@ -91,7 +91,10 @@ export const FORM_ACCESS: Record<FormId, string[]> = {
 };
 
 /** '*' means every authenticated staff member. */
-const RULES: Record<Capability, string[] | '*'> = {
+// Exported so the Access page can show the rules rather than restate them.
+// A second copy of this table written out for display is a copy that will
+// eventually disagree with the one being enforced.
+export const RULES: Record<Capability, string[] | '*'> = {
   myCard: '*',
   links: '*',
   support: '*',

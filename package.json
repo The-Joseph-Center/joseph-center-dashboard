@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "netlify dev",
-    "build": "node scripts/check-no-local-paths.mjs && vue-tsc -b && vite build",
+    "build": "node scripts/check-no-local-paths.mjs && node scripts/check-functions-bundle.mjs && vue-tsc -b && vite build",
     "preview": "vite preview",
     "dev:vite": "vite",
     "check:paths": "node scripts/check-no-local-paths.mjs"
