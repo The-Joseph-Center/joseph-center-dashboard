@@ -137,6 +137,45 @@ export async function handler(event: { headers: Record<string, string> }) {
     }),
   ]);
 
+  // Calendars, reported per calendar rather than as one pass/fail. A calendar
+  // the account cannot read is the failure that matters and the one that hides:
+  // freeBusy answers 200 with a per-calendar error, so a naive check would call
+  // it healthy and the scheduler would treat a private calendar as wide open.
+  let calendars: unknown = null;
+  try {
+    const ids = (process.env.GOOGLE_CALENDAR_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (ids.length) {
+      const token = await accessToken();
+      const now = Date.now();
+      const res = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          timeMin: new Date(now).toISOString(),
+          timeMax: new Date(now + 7 * 86400000).toISOString(),
+          timeZone: 'America/Denver',
+          items: ids.map((id) => ({ id })),
+        }),
+      });
+      const data = await res.json() as {
+        calendars?: Record<string, { busy?: unknown[]; errors?: { reason: string }[] }>;
+        error?: { message?: string };
+      };
+      calendars = res.ok
+        ? Object.entries(data.calendars ?? {}).map(([id, c]) => ({
+            id,
+            readable: !c.errors?.length,
+            reason: c.errors?.[0]?.reason ?? null,
+            busyNextWeek: c.busy?.length ?? 0,
+          }))
+        : { error: data.error?.message ?? `HTTP ${res.status}` };
+    } else {
+      calendars = { error: 'GOOGLE_CALENDAR_IDS is not set' };
+    }
+  } catch (err) {
+    calendars = { error: err instanceof Error ? err.message.slice(0, 160) : 'Could not read calendars' };
+  }
+
   // The Stripe webhook, which is not a credential check but is the thing most
   // likely to be quietly pointing somewhere wrong.
   let webhooks: unknown = null;
@@ -156,5 +195,5 @@ export async function handler(event: { headers: Record<string, string> }) {
     }));
   } catch { webhooks = null; }
 
-  return json(200, { checkedAt: Math.floor(Date.now() / 1000), checks, webhooks });
+  return json(200, { checkedAt: Math.floor(Date.now() / 1000), checks, calendars, webhooks });
 }

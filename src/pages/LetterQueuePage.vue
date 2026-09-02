@@ -3,200 +3,272 @@ import { ref, computed, onMounted, watch } from 'vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import { apiFetch } from '@/lib/api';
 
-// Mona's year-end letters, as a list to work down rather than a list to read.
-//
-// The form promises a letter to financial partners at the end of each year, so
-// this is one batch per year written by hand over several sittings. Marking a
-// name written is the whole point: it is what makes the queue resumable.
-
 interface Row {
-  id: string; first_name: string; last_name: string;
-  street: string; city: string; state: string; zip: string; email: string;
-  submitted_at: number; written_at: number | null; written_by: string | null; note: string | null;
-  duplicate: boolean;
-  /** null when the donor lookup could not run — not the same as "never gave". */
-  isDonor: boolean | null;
+  key: string; name: string; email: string;
+  street: string; city: string; state: string; zip: string;
+  totalCents: number; gifts: number; recurring: boolean;
+  requested: boolean; isDonor: boolean;
+  writtenAt: number | null; writtenBy: string | null; note: string | null;
 }
+interface Summary { total: number; written: number; noAddress: number; requested: number; irs: number }
 
-const rows = ref<Row[]>([]);
-const years = ref<string[]>([]);
-const year = ref('');
-const total = ref(0);
-const written = ref(0);
 const loading = ref(true);
 const error = ref('');
-const busyId = ref<string | null>(null);
-const show = ref<'todo' | 'done' | 'all'>('todo');
-const noteFor = ref<string | null>(null);
-const noteText = ref('');
+const rows = ref<Row[]>([]);
+const years = ref<number[]>([]);
+const year = ref<number | null>(null);
+const summary = ref<Summary>({ total: 0, written: 0, noAddress: 0, requested: 0, irs: 0 });
+const threshold = ref(25000);
+const saving = ref('');
+const exporting = ref(false);
 
-const visible = computed(() =>
-  rows.value.filter((r) =>
-    show.value === 'all' ? true : show.value === 'done' ? !!r.written_at : !r.written_at
-  )
+const search = ref('');
+const show = ref<'todo' | 'all' | 'written' | 'noaddress' | 'requested' | 'irs'>('todo');
+
+const money = (c: number) => `$${(c / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const day = (s: number) => new Date(s * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+const remaining = computed(() => summary.value.total - summary.value.written);
+const percent = computed(() =>
+  summary.value.total ? Math.round((summary.value.written / summary.value.total) * 100) : 0
 );
-const remaining = computed(() => total.value - written.value);
-const name = (r: Row) => `${r.first_name} ${r.last_name}`.trim();
 
-const fmt = (s: number | null) =>
-  s ? new Date(s * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+const visible = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  return rows.value.filter((r) => {
+    if (show.value === 'todo' && r.writtenAt) return false;
+    if (show.value === 'written' && !r.writtenAt) return false;
+    if (show.value === 'noaddress' && r.street) return false;
+    if (show.value === 'requested' && !r.requested) return false;
+    if (show.value === 'irs' && r.totalCents < threshold.value) return false;
+    if (!q) return true;
+    return [r.name, r.email, r.city, r.zip].filter(Boolean).join(' ').toLowerCase().includes(q);
+  });
+});
 
 async function load() {
   loading.value = true; error.value = '';
   try {
     const res = await apiFetch(`/.netlify/functions/letter-queue${year.value ? `?year=${year.value}` : ''}`);
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
-    const d = await res.json();
-    rows.value = d.rows; years.value = d.years; year.value = d.year;
-    total.value = d.total; written.value = d.written;
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || String(res.status));
+    year.value = d.year; years.value = d.years; rows.value = d.rows;
+    summary.value = d.summary; threshold.value = d.thresholdCents;
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Could not load the letter queue.';
+    error.value = e instanceof Error ? e.message : 'Could not load the letters.';
   } finally {
     loading.value = false;
   }
 }
 onMounted(load);
-watch(year, (v, old) => { if (old !== '' && v !== old) load(); });
+watch(year, (v, old) => { if (old !== null && v !== old) load(); });
 
-async function post(payload: Record<string, unknown>, id: string) {
-  busyId.value = id; error.value = '';
+async function mark(r: Row, written: boolean) {
+  saving.value = r.key;
   try {
     const res = await apiFetch('/.netlify/functions/letter-queue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, ...payload }),
+      body: JSON.stringify({ year: year.value, key: r.key, written }),
     });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
-    await load();
+    if (!res.ok) throw new Error(String(res.status));
+    // Update in place rather than reloading: the list re-sorts when a row is
+    // ticked, and having the page jump under the cursor mid-run is its own
+    // kind of mistake.
+    r.writtenAt = written ? Math.floor(Date.now() / 1000) : null;
+    r.writtenBy = written ? 'you' : null;
+    summary.value.written += written ? 1 : -1;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not save.';
   } finally {
-    busyId.value = null;
+    saving.value = '';
   }
 }
 
-const toggle = (r: Row) => post({ written: !r.written_at }, r.id);
+async function saveNote(r: Row, value: string) {
+  const note = value.trim();
+  if (note === (r.note ?? '')) return;
+  r.note = note || null;
+  await apiFetch('/.netlify/functions/letter-queue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ year: year.value, key: r.key, note }),
+  });
+}
 
-const printList = () => window.print();
-
-function openNote(r: Row) { noteFor.value = r.id; noteText.value = r.note ?? ''; }
-async function saveNote(r: Row) { await post({ note: noteText.value }, r.id); noteFor.value = null; }
+async function exportCsv() {
+  exporting.value = true;
+  try {
+    const res = await apiFetch(`/.netlify/functions/letter-queue?year=${year.value}&format=csv`);
+    if (!res.ok) throw new Error(String(res.status));
+    const url = URL.createObjectURL(new Blob([await res.text()], { type: 'text/csv' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = `letters-${year.value}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    error.value = 'Could not export.';
+  } finally {
+    exporting.value = false;
+  }
+}
 </script>
 
 <template>
-  <DashboardLayout page-title="Letters from Mona">
+  <DashboardLayout page-title="Year-end letters">
     <p v-if="loading" class="state">Loading…</p>
     <p v-else-if="error" class="state state--err" role="alert">{{ error }}</p>
 
     <template v-else>
-      <div class="widget bar no-print">
-        <div class="bar__left">
-          <label class="bar__year">
-            <span>Year</span>
-            <select v-model="year">
-              <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
-            </select>
-          </label>
-          <p class="bar__count">
-            <strong>{{ remaining }}</strong> to write
-            <span class="bar__sub">· {{ written }} of {{ total }} done</span>
-          </p>
-        </div>
-        <div class="bar__right">
-          <div class="seg" role="group" aria-label="Filter">
-            <button type="button" :class="['seg__b', { 'seg__b--on': show === 'todo' }]" @click="show = 'todo'">To write</button>
-            <button type="button" :class="['seg__b', { 'seg__b--on': show === 'done' }]" @click="show = 'done'">Written</button>
-            <button type="button" :class="['seg__b', { 'seg__b--on': show === 'all' }]" @click="show = 'all'">All</button>
-          </div>
-          <button type="button" class="btn btn--sm" :disabled="!visible.length" @click="printList">Print addresses</button>
-        </div>
+      <div class="widget bar">
+        <label class="bar__year">
+          <span>Year</span>
+          <select v-model.number="year">
+            <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
+          </select>
+        </label>
+        <button type="button" class="btn btn--ghost btn--sm" :disabled="exporting" @click="exportCsv">
+          {{ exporting ? 'Preparing…' : 'Export list' }}
+        </button>
       </div>
 
-      <p v-if="!years.length" class="state">No letter requests yet.</p>
-      <p v-else-if="!visible.length" class="state">
-        {{ show === 'todo' ? 'Every letter for this year is written.' : 'Nothing here.' }}
-      </p>
+      <!-- The one number Mona actually wants: how much is left. -->
+      <div class="widget progress">
+        <div class="progress__head">
+          <p class="progress__lead"><strong>{{ remaining }}</strong> letters left to write</p>
+          <p class="progress__sub">{{ summary.written }} of {{ summary.total }} done</p>
+        </div>
+        <div class="progress__track" role="img" :aria-label="`${percent} percent written`">
+          <div class="progress__fill" :style="{ width: `${percent}%` }"></div>
+        </div>
+        <p v-if="summary.noAddress" class="progress__warn">
+          {{ summary.noAddress }} {{ summary.noAddress === 1 ? 'person has' : 'people have' }} no mailing
+          address, so {{ summary.noAddress === 1 ? 'that letter' : 'those letters' }} cannot be sent.
+        </p>
+      </div>
 
-      <!-- One card per letter: the address as it should be written, and a tick. -->
-      <ol v-else class="queue">
-        <li v-for="r in visible" :key="r.id" class="letter" :class="{ 'letter--done': r.written_at }">
-          <div class="letter__addr">
-            <p class="letter__name">{{ name(r) }}</p>
-            <p class="letter__line">{{ r.street }}</p>
-            <p class="letter__line">{{ r.city }}, {{ r.state }} {{ r.zip }}</p>
-            <p class="letter__meta no-print">
-              {{ r.email }} · asked {{ fmt(r.submitted_at) }}
-              <span v-if="r.isDonor === false" class="flag flag--info">no donation on record</span>
-              <span v-else-if="r.isDonor === null" class="flag flag--info">donor check unavailable</span>
-              <span v-if="r.duplicate" class="flag flag--warn">possible duplicate</span>
-            </p>
-            <p v-if="r.note" class="letter__note">{{ r.note }}</p>
-          </div>
+      <section class="widget block">
+        <h2 class="block__title">Letters ({{ visible.length }})</h2>
+        <p class="block__hint">
+          Everyone who gave in {{ year }}, plus anyone who asked for a letter. Someone in both appears
+          once. Where a request gave an address, that one is used — it was given for this.
+        </p>
 
-          <div class="letter__side no-print">
-            <label class="chk">
-              <input type="checkbox" :checked="!!r.written_at" :disabled="busyId === r.id" @change="toggle(r)" />
-              <span>Written</span>
-            </label>
-            <p v-if="r.written_at" class="letter__by">{{ fmt(r.written_at) }}<br />{{ r.written_by }}</p>
-            <button v-if="noteFor !== r.id" type="button" class="linkish" @click="openNote(r)">
-              {{ r.note ? 'Edit note' : 'Add note' }}
-            </button>
-            <template v-else>
-              <input v-model="noteText" type="text" class="letter__noteinput" placeholder="e.g. returned to sender" />
-              <button type="button" class="linkish" :disabled="busyId === r.id" @click="saveNote(r)">Save</button>
-              <button type="button" class="linkish" @click="noteFor = null">Cancel</button>
-            </template>
+        <div class="find">
+          <input v-model="search" type="search" class="find__q" placeholder="Search name, email, city or ZIP…" aria-label="Search letters" />
+          <div class="seg" role="group" aria-label="Filter letters">
+            <button type="button" :class="['seg__b', { 'seg__b--on': show === 'todo' }]" @click="show = 'todo'">To write ({{ remaining }})</button>
+            <button type="button" :class="['seg__b', { 'seg__b--on': show === 'written' }]" @click="show = 'written'">Written ({{ summary.written }})</button>
+            <button type="button" :class="['seg__b', { 'seg__b--on': show === 'requested' }]" @click="show = 'requested'">Asked ({{ summary.requested }})</button>
+            <button type="button" :class="['seg__b', { 'seg__b--on': show === 'irs' }]" @click="show = 'irs'">IRS ({{ summary.irs }})</button>
+            <button type="button" :class="['seg__b', { 'seg__b--on': show === 'noaddress' }]" @click="show = 'noaddress'">No address ({{ summary.noAddress }})</button>
+            <button type="button" :class="['seg__b', { 'seg__b--on': show === 'all' }]" @click="show = 'all'">All</button>
           </div>
-        </li>
-      </ol>
+        </div>
+
+        <p v-if="!visible.length" class="state">Nothing here.</p>
+
+        <div v-else class="tablewrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th class="tick"><span class="sr">Written</span></th>
+                <th>Who</th><th>Address</th><th class="num">Gave</th><th>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in visible" :key="r.key" :class="{ 'row--done': r.writtenAt }">
+                <td class="tick">
+                  <input
+                    type="checkbox"
+                    :checked="!!r.writtenAt"
+                    :disabled="saving === r.key"
+                    :aria-label="`Mark letter to ${r.name} as written`"
+                    @change="mark(r, ($event.target as HTMLInputElement).checked)"
+                  />
+                </td>
+                <td>
+                  <strong>{{ r.name || '(no name)' }}</strong>
+                  <span v-if="r.requested" class="flag flag--asked">asked for one</span>
+                  <span v-if="!r.isDonor" class="flag">no gift this year</span>
+                  <span v-if="r.totalCents >= threshold" class="flag flag--irs">IRS ack</span>
+                  <br /><span class="dim">{{ r.email || '—' }}</span>
+                  <p v-if="r.writtenAt" class="dim">
+                    Written {{ day(r.writtenAt) }}<template v-if="r.writtenBy"> by {{ r.writtenBy }}</template>
+                  </p>
+                </td>
+                <td>
+                  <template v-if="r.street">
+                    {{ r.street }}<br />{{ r.city }}, {{ r.state }} {{ r.zip }}
+                  </template>
+                  <span v-else class="flag flag--warn">no address</span>
+                </td>
+                <td class="num">
+                  <strong v-if="r.gifts">{{ money(r.totalCents) }}</strong>
+                  <span v-else class="dim">—</span>
+                  <span v-if="r.gifts" class="dim">{{ r.gifts }} {{ r.gifts === 1 ? 'gift' : 'gifts' }}</span>
+                  <span v-if="r.recurring" class="dim">monthly</span>
+                </td>
+                <td>
+                  <input
+                    class="note"
+                    type="text"
+                    :value="r.note ?? ''"
+                    placeholder="—"
+                    :aria-label="`Note about the letter to ${r.name}`"
+                    @change="saveNote(r, ($event.target as HTMLInputElement).value)"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </template>
   </DashboardLayout>
 </template>
 
 <style scoped>
-.widget { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: 1rem 1.25rem; }
 .state { color: var(--color-text-secondary); font-size: .875rem; }
-.state--err { color: #8a1f1f; }
+.state--err { color: #8a1f1f; margin-bottom: .75rem; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
-.bar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
-.bar__left { display: flex; align-items: center; gap: 1.25rem; }
-.bar__right { display: flex; align-items: center; gap: .75rem; }
-.bar__year { display: flex; align-items: center; gap: .4rem; font-size: .75rem; color: var(--color-text-secondary); }
-.bar__year select { padding: .35rem .5rem; font: inherit; font-size: .8125rem; border: 1px solid var(--color-border); border-radius: var(--border-radius); background: var(--color-surface); color: var(--color-text); }
-.bar__count { margin: 0; font-size: .875rem; }
-.bar__sub { color: var(--color-text-secondary); font-size: .8125rem; }
+.bar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; justify-content: space-between; margin-bottom: 1rem; }
+.bar__year { display: flex; flex-direction: column; gap: .2rem; font-size: .75rem; color: var(--color-text-secondary); }
+.bar__year select { padding: .4rem .5rem; font: inherit; font-size: .8125rem; border: 1px solid var(--color-border); border-radius: var(--border-radius); background: var(--color-surface); color: var(--color-text); }
 
-.seg { display: inline-flex; border: 1px solid var(--color-border); border-radius: var(--border-radius); overflow: hidden; }
-.seg__b { background: none; border: 0; padding: .35rem .7rem; font: inherit; font-size: .75rem; cursor: pointer; color: var(--color-text-secondary); }
-.seg__b--on { background: var(--color-primary-strong); color: #fff; font-weight: 600; }
+.progress { margin-bottom: 1rem; }
+.progress__head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; justify-content: space-between; }
+.progress__lead { font-size: 1.05rem; margin: 0; }
+.progress__sub { font-size: .8125rem; color: var(--color-text-secondary); margin: 0; }
+.progress__track { height: .5rem; background: var(--color-bg); border-radius: 999px; overflow: hidden; margin-top: .6rem; }
+.progress__fill { height: 100%; background: var(--color-primary-strong); border-radius: 999px; transition: width .2s ease; }
+.progress__warn { font-size: .8125rem; color: #8a5a1f; margin: .6rem 0 0; }
 
-.queue { list-style: none; margin: 0; padding: 0; display: grid; gap: .75rem; }
-.letter { display: flex; justify-content: space-between; gap: 1.25rem; padding: .9rem 1.1rem; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--border-radius); }
-.letter--done { opacity: .62; }
-.letter__addr { min-width: 0; }
-.letter__name { margin: 0; font-weight: 600; }
-.letter__line { margin: 0; font-size: .875rem; }
-.letter__meta { margin: .35rem 0 0; font-size: .75rem; color: var(--color-text-secondary); display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
-.letter__note { margin: .35rem 0 0; font-size: .8125rem; font-style: italic; color: var(--color-text-secondary); }
-.flag { font-size: .7rem; font-weight: 600; padding: .1rem .45rem; border-radius: 999px; }
-.flag--warn { color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 12%, transparent); }
-.flag--info { color: #1f4f8a; background: color-mix(in srgb, #1f4f8a 12%, transparent); }
-.letter__side { display: flex; flex-direction: column; align-items: flex-end; gap: .35rem; flex-shrink: 0; }
-.letter__by { margin: 0; font-size: .7rem; color: var(--color-text-secondary); text-align: right; }
-.letter__noteinput { padding: .35rem .5rem; font: inherit; font-size: .75rem; border: 1px solid var(--color-border); border-radius: var(--border-radius); background: var(--color-surface); color: var(--color-text); }
-.chk { display: inline-flex; align-items: center; gap: .35rem; font-size: .8125rem; cursor: pointer; }
-.btn { background: var(--color-primary-strong); color: #fff; border: 0; border-radius: var(--border-radius); font-weight: 600; cursor: pointer; }
-.btn--sm { padding: .35rem .8rem; font-size: .8125rem; }
-.btn:disabled { opacity: .6; cursor: not-allowed; }
-.linkish { background: none; border: 0; padding: 0; font: inherit; font-size: .75rem; color: var(--color-text-secondary); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
-.linkish:hover { color: var(--color-text); }
+.block__title { margin-bottom: .1rem; }
+.block__hint { font-size: .8125rem; color: var(--color-text-secondary); margin: 0 0 .9rem; max-width: 70ch; }
 
-/* Printing gives the addresses as a plain list to write from — no chrome, no
-   tick boxes, and whichever filter is on screen is what prints. */
-@media print {
-  .no-print { display: none !important; }
-  .letter { border: 0; padding: 0 0 1.1rem; break-inside: avoid; opacity: 1; }
-  .queue { gap: 0; }
-}
+.find { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
+.find__q { flex: 1 1 14rem; min-width: 0; padding: .45rem .55rem; font: inherit; font-size: .8125rem; border: 1px solid var(--color-border); border-radius: var(--border-radius); background: var(--color-surface); color: var(--color-text); }
+.seg { display: flex; flex-wrap: wrap; gap: .3rem; }
+.seg__b { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .35rem .6rem; font: inherit; font-size: .75rem; cursor: pointer; color: var(--color-text); }
+.seg__b--on { border-color: var(--color-primary-strong); color: var(--color-primary-strong); font-weight: 600; }
+
+.tablewrap { overflow-x: auto; }
+.tbl { width: 100%; border-collapse: collapse; font-size: .8125rem; }
+.tbl th { text-align: left; font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); padding: .4rem .5rem; border-bottom: 1px solid var(--color-border); white-space: nowrap; }
+.tbl td { padding: .55rem .5rem; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.tick { width: 2rem; }
+.tick input { width: 1.05rem; height: 1.05rem; cursor: pointer; }
+.row--done { opacity: .55; }
+.row--done strong { font-weight: 500; }
+.num { text-align: right; white-space: nowrap; }
+.num .dim { display: block; }
+.dim { color: var(--color-text-secondary); font-size: .75rem; margin: 0; }
+.note { width: 100%; min-width: 8rem; padding: .3rem .4rem; font: inherit; font-size: .75rem; border: 1px solid transparent; border-radius: var(--border-radius); background: transparent; color: var(--color-text); }
+.note:hover, .note:focus { border-color: var(--color-border); background: var(--color-surface); }
+
+.flag { font-size: .65rem; text-transform: uppercase; letter-spacing: .04em; border-radius: 999px; padding: .05rem .4rem; margin-left: .35rem; color: var(--color-text-secondary); background: var(--color-bg); }
+.flag--asked { color: var(--color-primary-strong); background: color-mix(in srgb, var(--color-primary-strong) 10%, transparent); }
+.flag--irs { color: #6b5a1f; background: color-mix(in srgb, #6b5a1f 10%, transparent); }
+.flag--warn { color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 10%, transparent); }
 </style>

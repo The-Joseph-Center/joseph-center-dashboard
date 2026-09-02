@@ -19,8 +19,12 @@ const view = ref<'health' | 'byGroup' | 'byCapability' | 'byForm'>('health');
 
 interface Check { name: string; state: 'ok' | 'fail' | 'unconfigured'; detail: string; ms: number }
 interface Hook { url: string; status: string; events: string[]; onExpectedDomain: boolean; expectedHost: string }
+interface Cal { id: string; readable: boolean; reason: string | null; busyNextWeek: number }
 const checks = ref<Check[]>([]);
 const webhooks = ref<Hook[] | null>(null);
+const calendars = ref<Cal[] | { error: string } | null>(null);
+const calList = computed(() => (Array.isArray(calendars.value) ? calendars.value : []));
+const calError = computed(() => (calendars.value && !Array.isArray(calendars.value) ? calendars.value.error : ''));
 const healthLoading = ref(false);
 const healthError = ref('');
 const checkedAt = ref<number | null>(null);
@@ -34,6 +38,7 @@ async function loadHealth() {
     const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d.error || String(res.status));
     checks.value = d.checks; webhooks.value = d.webhooks; checkedAt.value = d.checkedAt;
+    calendars.value = d.calendars;
   } catch (e) {
     healthError.value = e instanceof Error ? e.message : 'Could not run the checks.';
   } finally {
@@ -124,6 +129,28 @@ onMounted(() => { load(); loadHealth(); });
                 <td><strong>{{ c.name }}</strong></td>
                 <td class="dim">{{ c.detail }}</td>
                 <td class="num dim">{{ c.ms }}ms</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="widget">
+          <h2 class="block__title">Calendars</h2>
+          <p class="block__hint">
+            Read as free/busy only — times, never titles or attendees. A calendar that cannot be read
+            is shown as unreadable rather than counted as free, because an empty answer from a
+            calendar nobody shared looks exactly like an open morning.
+          </p>
+          <p v-if="calError" class="state state--err">{{ calError }}</p>
+          <p v-else-if="!calList.length" class="state">No calendars configured.</p>
+          <table v-else class="tbl">
+            <tbody>
+              <tr v-for="c in calList" :key="c.id">
+                <td class="hc"><span class="dot" :class="c.readable ? 'dot--ok' : 'dot--fail'" aria-hidden="true"></span></td>
+                <td><strong>{{ c.id }}</strong></td>
+                <td class="dim">
+                  {{ c.readable ? `${c.busyNextWeek} busy block${c.busyNextWeek === 1 ? '' : 's'} in the next 7 days` : `unreadable — ${c.reason}` }}
+                </td>
               </tr>
             </tbody>
           </table>

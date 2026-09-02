@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import { apiFetch } from '@/lib/api';
+import CoffeeChatScheduler from '@/components/CoffeeChatScheduler.vue';
 import type { Column } from '@/lib/submissionForms';
 import { formatSubmissionValue } from '@/lib/submission-display';
 
@@ -309,6 +310,15 @@ async function exportCsv() {
                           <dd>{{ display(c, r[c.key]) }}</dd>
                         </template>
                       </dl>
+
+                      <!-- Coffee Chat is the one inbox whose next step is
+                           booking a time, so the calendar check lives here
+                           rather than on a page of its own. -->
+                      <CoffeeChatScheduler
+                        v-if="active === 'coffee-chat'"
+                        :days="r.best_days"
+                        :times="r.best_times"
+                      />
 
                       <div v-if="meta?.followUp" class="fu">
                         <h3 class="fu__title">Follow-up</h3>
