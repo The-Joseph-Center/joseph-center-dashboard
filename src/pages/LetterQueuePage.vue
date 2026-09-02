@@ -13,7 +13,9 @@ interface Row {
   id: string; first_name: string; last_name: string;
   street: string; city: string; state: string; zip: string; email: string;
   submitted_at: number; written_at: number | null; written_by: string | null; note: string | null;
-  duplicate: boolean; isDonor: boolean;
+  duplicate: boolean;
+  /** null when the donor lookup could not run — not the same as "never gave". */
+  isDonor: boolean | null;
 }
 
 const rows = ref<Row[]>([]);
@@ -124,7 +126,8 @@ async function saveNote(r: Row) { await post({ note: noteText.value }, r.id); no
             <p class="letter__line">{{ r.city }}, {{ r.state }} {{ r.zip }}</p>
             <p class="letter__meta no-print">
               {{ r.email }} · asked {{ fmt(r.submitted_at) }}
-              <span v-if="!r.isDonor" class="flag flag--info">no donation on record</span>
+              <span v-if="r.isDonor === false" class="flag flag--info">no donation on record</span>
+              <span v-else-if="r.isDonor === null" class="flag flag--info">donor check unavailable</span>
               <span v-if="r.duplicate" class="flag flag--warn">possible duplicate</span>
             </p>
             <p v-if="r.note" class="letter__note">{{ r.note }}</p>

@@ -1,5 +1,42 @@
+import Stripe from 'stripe';
 import { requireCapability, denial } from './_lib/verify-okta';
 import { turso } from './_lib/staff-directory';
+
+/**
+ * Every email that has ever given, read from Stripe.
+ *
+ * This used to come from the Turso `donors` table, which only holds people who
+ * gave through the current website — four rows against roughly a hundred donors
+ * in Stripe. A donor of ten years asking for a letter was shown as having no
+ * donation on record, which is the exact opposite of what the flag is for.
+ *
+ * Harness never populated the customer record on the gifts it created but did
+ * write the donor's email onto the charge, so all three sources are checked.
+ * A failure returns null rather than an empty set: "we could not check" and
+ * "this person has never given" must not look the same.
+ */
+async function donorEmails(): Promise<Set<string> | null> {
+  const config = process.env.JC_STRIPE_CONFIG;
+  if (!config) return null;
+  try {
+    const { secretKey } = JSON.parse(config) as { secretKey: string };
+    const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' });
+    const emails = new Set<string>();
+    for await (const charge of stripe.charges.list({ limit: 100, expand: ['data.customer'] })) {
+      if (charge.status !== 'succeeded' || !charge.paid) continue;
+      const customer = charge.customer && typeof charge.customer === 'object' && !charge.customer.deleted
+        ? charge.customer
+        : null;
+      for (const e of [customer?.email, charge.billing_details?.email, charge.receipt_email, charge.metadata?.donor_email]) {
+        if (typeof e === 'string' && e.trim()) emails.add(e.trim().toLowerCase());
+      }
+    }
+    return emails;
+  } catch (err) {
+    console.error('letter-queue: could not read donors from Stripe:', err);
+    return null;
+  }
+}
 
 /**
  * Mona's year-end letters.
@@ -92,14 +129,13 @@ export async function handler(event: {
       // seeing — not to exclude them, but so it is a decision rather than a
       // surprise. Matched on email, which is what the form asks for and says it
       // uses "to match your donation record".
-      const donorEmails = new Set(
-        (await db.execute("SELECT LOWER(TRIM(email)) AS e FROM donors WHERE email IS NOT NULL AND email != ''"))
-          .rows.map((r) => String(r.e))
-      );
+      const known = rows.length ? await donorEmails() : new Set<string>();
 
       const marked = markDuplicates(rows).map((r) => ({
         ...r,
-        isDonor: donorEmails.has((r.email || '').toLowerCase().trim()),
+        // null means the lookup failed. The page shows "unknown" rather than
+        // asserting they have never given.
+        isDonor: known === null ? null : known.has((r.email || '').toLowerCase().trim()),
       }));
 
       return {

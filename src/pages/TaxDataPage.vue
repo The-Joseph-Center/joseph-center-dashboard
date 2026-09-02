@@ -122,6 +122,13 @@ async function exportCsv(scope: 'all' | 'threshold') {
         <div class="stat"><p class="stat__label">Donors</p><p class="stat__value">{{ org.donorCount.toLocaleString() }}</p></div>
         <div class="stat"><p class="stat__label">Average gift</p><p class="stat__value">{{ money(org.averageCents) }}</p></div>
         <div class="stat"><p class="stat__label">Largest gift</p><p class="stat__value">{{ money(org.largestCents) }}</p></div>
+        <!-- Letters cannot be sent to a donor with no address, so this belongs
+             beside the money rather than buried in a filter. -->
+        <div class="stat" :class="{ 'stat--warn': missingAddress > 0 }">
+          <p class="stat__label">Can be written to</p>
+          <p class="stat__value">{{ donors.length - missingAddress }}<span class="stat__of">/ {{ donors.length }}</span></p>
+          <p class="stat__sub">{{ missingAddress }} with no mailing address</p>
+        </div>
         <div class="stat">
           <p class="stat__label">Recurring</p>
           <p class="stat__value">{{ money(org.recurringCents) }}</p>
@@ -225,6 +232,8 @@ async function exportCsv(scope: 'all' | 'threshold') {
 .stat__label { margin: 0; font-family: var(--font-heading); font-size: .65rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); }
 .stat__value { margin: .2rem 0 0; font-size: 1.35rem; font-weight: 700; }
 .stat--lead .stat__value { font-size: 1.9rem; }
+.stat__of { font-size: .7em; color: var(--color-text-secondary); margin-left: .2rem; }
+.stat--warn .stat__value { color: #8a5a1f; }
 .stat__sub { margin: .1rem 0 0; font-size: .7rem; color: var(--color-text-secondary); }
 @media (max-width: 520px) { .stat--lead { grid-column: span 2; } }
 

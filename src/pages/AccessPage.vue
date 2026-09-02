@@ -15,7 +15,33 @@ const forms = ref<Form[]>([]);
 const groups = ref<Group[]>([]);
 const missing = ref<string[]>([]);
 const empty = ref<string[]>([]);
-const view = ref<'byGroup' | 'byCapability' | 'byForm'>('byGroup');
+const view = ref<'health' | 'byGroup' | 'byCapability' | 'byForm'>('health');
+
+interface Check { name: string; state: 'ok' | 'fail' | 'unconfigured'; detail: string; ms: number }
+interface Hook { url: string; status: string; events: string[]; onExpectedDomain: boolean; expectedHost: string }
+const checks = ref<Check[]>([]);
+const webhooks = ref<Hook[] | null>(null);
+const healthLoading = ref(false);
+const healthError = ref('');
+const checkedAt = ref<number | null>(null);
+
+const failing = computed(() => checks.value.filter((c) => c.state === 'fail'));
+
+async function loadHealth() {
+  healthLoading.value = true; healthError.value = '';
+  try {
+    const res = await apiFetch('/.netlify/functions/admin-health');
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || String(res.status));
+    checks.value = d.checks; webhooks.value = d.webhooks; checkedAt.value = d.checkedAt;
+  } catch (e) {
+    healthError.value = e instanceof Error ? e.message : 'Could not run the checks.';
+  } finally {
+    healthLoading.value = false;
+  }
+}
+
+const when = (t: number) => new Date(t * 1000).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 
 const byName = computed(() => Object.fromEntries(groups.value.map((g) => [g.name.toLowerCase(), g])));
 const membersOf = (name: string) => byName.value[name.toLowerCase()]?.members ?? [];
@@ -41,7 +67,7 @@ async function load() {
     loading.value = false;
   }
 }
-onMounted(load);
+onMounted(() => { load(); loadHealth(); });
 </script>
 
 <template>
@@ -65,13 +91,69 @@ onMounted(load);
       </div>
 
       <nav class="tabs">
+        <button type="button" class="tab" :class="{ 'tab--on': view === 'health' }" @click="view = 'health'">
+          Integrations
+          <span v-if="failing.length" class="badge">{{ failing.length }}</span>
+        </button>
         <button type="button" class="tab" :class="{ 'tab--on': view === 'byGroup' }" @click="view = 'byGroup'">By group</button>
         <button type="button" class="tab" :class="{ 'tab--on': view === 'byCapability' }" @click="view = 'byCapability'">By tool</button>
         <button type="button" class="tab" :class="{ 'tab--on': view === 'byForm' }" @click="view = 'byForm'">By inbox</button>
       </nav>
 
+      <!-- Integrations: every check is a real call, not a variable lookup -->
+      <section v-if="view === 'health'" class="stack">
+        <div class="widget">
+          <h2 class="block__title">
+            Integrations
+            <button type="button" class="linkish" :disabled="healthLoading" @click="loadHealth">
+              {{ healthLoading ? 'Checking…' : 'Re-check' }}
+            </button>
+          </h2>
+          <p class="block__hint">
+            Each row is a live call to the service, not a check that a setting exists. Netlify
+            snapshots environment values into functions at deploy time, so a correct-looking
+            setting and a working one are different questions.
+            <span v-if="checkedAt"> Last checked {{ when(checkedAt) }}.</span>
+          </p>
+          <p v-if="healthError" class="state state--err" role="alert">{{ healthError }}</p>
+          <p v-else-if="healthLoading && !checks.length" class="state">Running checks…</p>
+          <table v-else class="tbl">
+            <tbody>
+              <tr v-for="c in checks" :key="c.name">
+                <td class="hc"><span class="dot" :class="`dot--${c.state}`" aria-hidden="true"></span></td>
+                <td><strong>{{ c.name }}</strong></td>
+                <td class="dim">{{ c.detail }}</td>
+                <td class="num dim">{{ c.ms }}ms</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="widget">
+          <h2 class="block__title">Stripe webhook</h2>
+          <p class="block__hint">
+            Where Stripe delivers donation events. If this is wrong, gifts are taken but nothing
+            downstream happens — no database row, no receipt, no staff notification.
+          </p>
+          <p v-if="!webhooks" class="state">Could not read the webhook configuration.</p>
+          <template v-else>
+            <div v-for="h in webhooks" :key="h.url" class="hook">
+              <p class="hook__url"><code>{{ h.url }}</code></p>
+              <p v-if="!h.onExpectedDomain" class="notice">
+                Not on <code>{{ h.expectedHost }}</code>. This still works, but it is not the
+                address anyone would think to check, and it will keep working unchanged if the
+                custom domain ever moves.
+              </p>
+              <p class="lbl">Events</p>
+              <ul class="grants"><li v-for="e in h.events" :key="e"><code>{{ e }}</code></li></ul>
+              <p class="dim">Status: {{ h.status }}</p>
+            </div>
+          </template>
+        </div>
+      </section>
+
       <!-- By group: what does this department get, and who is in it -->
-      <section v-if="view === 'byGroup'" class="stack">
+      <section v-else-if="view === 'byGroup'" class="stack">
         <div v-for="g in groups" :key="g.name" class="widget">
           <h2 class="block__title">
             {{ g.name }}
@@ -169,6 +251,14 @@ onMounted(load);
 .dim { color: var(--color-text-secondary); font-size: .75rem; }
 .pill { display: inline-block; font-size: .75rem; border: 1px solid var(--color-border); border-radius: 999px; padding: .05rem .5rem; margin: 0 .3rem .3rem 0; }
 .flag { font-size: .65rem; text-transform: uppercase; letter-spacing: .04em; color: #8a1f1f; background: color-mix(in srgb, #8a1f1f 10%, transparent); border-radius: 999px; padding: .05rem .4rem; margin-left: .4rem; }
+.badge { font-size: .7rem; background: #8a1f1f; color: #fff; border-radius: 999px; padding: .05rem .4rem; margin-left: .35rem; }
+.dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; }
+.dot--ok { background: #1f6b3a; }
+.dot--fail { background: #8a1f1f; }
+.dot--unconfigured { background: var(--color-border); }
+.hc { width: 1.4rem; }
+.linkish { background: none; border: 0; padding: 0; font: inherit; font-size: .75rem; color: var(--color-primary-strong); cursor: pointer; margin-left: auto; }
+.hook__url { font-size: .8125rem; margin: 0 0 .5rem; word-break: break-all; }
 .tablewrap { overflow-x: auto; }
 .tbl { width: 100%; border-collapse: collapse; font-size: .8125rem; }
 .tbl th { text-align: left; font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); padding: .4rem .5rem; border-bottom: 1px solid var(--color-border); }
