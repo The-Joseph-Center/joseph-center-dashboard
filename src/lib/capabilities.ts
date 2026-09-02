@@ -69,7 +69,11 @@ export type FormId =
 const DEV = 'Web Developer';
 
 export const FORM_ACCESS: Record<FormId, string[]> = {
-  contact: [DEV, ADMIN_GROUP],
+  // The general inbox, so the people who answer the phone and the door can see
+  // it. All three director groups are named rather than left to ADMIN_GROUP:
+  // Mona and Shawna happen to be dashboard admins today, and access to the
+  // general inbox should not quietly depend on that staying true.
+  contact: [DEV, ADMIN_GROUP, 'Executive Director', 'Operational Director', 'Director', 'Front Desk'],
   // The Operational Director manages the volunteers.
   volunteers: [DEV, ADMIN_GROUP, 'Operational Director', 'Social Media Manager'],
   // The archived applications from the previous site's form. Same people,
