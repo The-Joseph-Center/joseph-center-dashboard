@@ -7,6 +7,7 @@ const DashboardHome = () => import('@/pages/DashboardHome.vue');
 const AnalyticsPage = () => import('@/pages/AnalyticsPage.vue');
 const SupportPage = () => import('@/pages/SupportPage.vue');
 const BillingPage = () => import('@/pages/BillingPage.vue');
+const AccessPage = () => import('@/pages/AccessPage.vue');
 const StaffAdminPage = () => import('@/pages/StaffAdminPage.vue');
 const SubmissionsPage = () => import('@/pages/SubmissionsPage.vue');
 const FormsAdminPage = () => import('@/pages/FormsAdminPage.vue');
@@ -36,6 +37,7 @@ const routes = [
   // Admin-only. The guard below hides it; the billing Functions verify the same
   // group server-side, which is what actually protects it.
   { path: '/billing', name: 'Billing', component: BillingPage, meta: { capability: 'billing' } },
+  { path: '/access', name: 'Access', component: AccessPage, meta: { capability: 'access' } },
 
   // Public — no auth required.
   { path: '/login', name: 'Login', component: LoginPage, meta: { public: true } },

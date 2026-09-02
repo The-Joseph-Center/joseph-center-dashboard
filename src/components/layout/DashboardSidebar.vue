@@ -26,6 +26,7 @@ import {
   Moon,
   ChevronLeft,
   ChevronRight,
+  ShieldCheck,
 } from 'lucide-vue-next';
 import config from '@/config/dashboard';
 
@@ -74,6 +75,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/newsletter', label: 'Newsletter', icon: Send, capability: 'newsletter' },
   { to: '/support', label: 'Support', icon: MessageSquare, capability: 'support' },
   { to: '/billing', label: 'Billing', icon: CreditCard, capability: 'billing' },
+  { to: '/access', label: 'Access', icon: ShieldCheck, capability: 'access' },
 ];
 
 const navItems = computed(() => ALL_NAV.filter((i) => auth.can(i.capability)));

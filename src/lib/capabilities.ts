@@ -28,7 +28,8 @@ export type Capability =
   | 'taxData'     // year-end giving totals for acknowledgments and the 990
   | 'banners'     // the site-wide notice: closures, hours, announcements
   | 'newsletter'  // build the monthly newsletter
-  | 'billing';    // invoices, admin only
+  | 'billing'    // invoices, admin only
+  | 'access';    // who can reach what — Web Developer only
 
 export const ADMIN_GROUP = 'jc-dashboard-admins';
 
@@ -118,6 +119,12 @@ const RULES: Record<Capability, string[] | '*'> = {
   // Same people who write the blog — it is the same job, done monthly.
   newsletter: [DEV, ADMIN_GROUP, 'Social Media Manager', 'Executive Assistant'],
   billing: [ADMIN_GROUP],
+  // Deliberately the narrowest rule in the file, and deliberately NOT the admin
+  // group. This page is the map of who can reach what; showing it to everyone
+  // who administers the dashboard would hand them a survey of every inbox and
+  // every group in the directory, which is a different thing from being able to
+  // use the dashboard.
+  access: [DEV],
 };
 
 const norm = (s: string) => s.trim().toLowerCase();
