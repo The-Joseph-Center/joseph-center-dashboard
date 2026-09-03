@@ -16,6 +16,14 @@ import { turso } from './_lib/staff-directory';
  * and no group, and defaulting those to "everyone" would be the wrong way
  * round.
  *
+ * Holding the capability is necessary but not sufficient: a caller who can see
+ * no duties has no page. The Event Coordinator group can open the list, but no
+ * duty is assigned to it, so the answer is 403 rather than an empty screen —
+ * a menu item leading to nothing is worse than no menu item.
+ *
+ * `?probe=1` answers only whether there is anything to see, so the sidebar can
+ * decide whether to draw the link without pulling the rows to do it.
+ *
  * Reading and editing are separate permissions. Several people can open the
  * list; only `dutiesEdit` can change a status. The list is currently being used
  * to settle who owns what, so until that conversation has happened the statuses
@@ -55,6 +63,7 @@ export async function handler(event: {
   httpMethod: string;
   headers: Record<string, string>;
   body: string | null;
+  queryStringParameters?: Record<string, string> | null;
 }) {
   const auth = await requireCapability(event.headers, 'duties');
   if (!auth.ok) return denial(auth);
@@ -112,8 +121,21 @@ export async function handler(event: {
        FROM marketing_duties`
     );
 
-    const visible = (rows as unknown as Record<string, unknown>[])
-      .filter((r) => canSee(r.access_group == null ? null : String(r.access_group)))
+    const all = rows as unknown as Record<string, unknown>[];
+    const mineRows = all.filter((r) => canSee(r.access_group == null ? null : String(r.access_group)));
+
+    // An editor keeps the page even when it is empty — somebody has to be able
+    // to reach a list in order to fill it.
+    const available = mineRows.length > 0 || canEdit;
+
+    if ((event.queryStringParameters ?? {}).probe) {
+      return json(200, { available, visibleCount: mineRows.length, canEdit });
+    }
+    if (!available) {
+      return json(403, { error: 'No duties are assigned to your account' });
+    }
+
+    const visible = mineRows
       .map((r) => ({
         id: String(r.id),
         task: String(r.task),

@@ -4,6 +4,7 @@
 <script setup lang="ts">
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useMyCardStore } from '@/stores/useMyCardStore';
+import { useDutiesStore } from '@/stores/useDutiesStore';
 import { sillyAvatar } from '@/lib/avatar';
 import type { Capability } from '@/lib/capabilities';
 import { ref, computed, onMounted } from 'vue';
@@ -41,7 +42,13 @@ const auth = useAuthStore();
 // signed in sees themselves rather than a grey silhouette. Falls back to a
 // drawn character keyed to their login — see lib/avatar.
 const myCard = useMyCardStore();
-onMounted(() => myCard.load());
+const duties = useDutiesStore();
+onMounted(() => {
+  myCard.load();
+  // Only ask if the capability is there at all; otherwise the link is already
+  // hidden and the request would be answered with a denial.
+  if (auth.can('duties')) duties.load();
+});
 const avatarSrc = computed(() =>
   myCard.card?.imageUrl
     ? `${myCard.card.imageUrl}?w=96&h=96&fit=crop&crop=focalpoint&auto=format`
@@ -59,7 +66,16 @@ function toggleDarkMode() {
   document.documentElement.setAttribute('data-theme', darkMode.value ? 'dark' : 'light');
 }
 
-interface NavItem { to: string; label: string; icon: unknown; capability: Capability }
+interface NavItem {
+  to: string; label: string; icon: unknown; capability: Capability;
+  /**
+   * An extra condition beyond the capability. Only Duties uses one: holding the
+   * capability lets you open the page, but whether there is anything on it
+   * depends on data, so the link waits for an answer rather than leading
+   * somewhere empty.
+   */
+  when?: () => boolean;
+}
 
 // Every item declares what it needs. The matching Function enforces the same
 // capability, so hiding an item is a courtesy rather than the control.
@@ -76,11 +92,13 @@ const ALL_NAV: NavItem[] = [
   { to: '/newsletter', label: 'Newsletter', icon: Send, capability: 'newsletter' },
   { to: '/support', label: 'Support', icon: MessageSquare, capability: 'support' },
   { to: '/billing', label: 'Billing', icon: CreditCard, capability: 'billing' },
-  { to: '/duties', label: 'Duties', icon: ListChecks, capability: 'duties' },
+  { to: '/duties', label: 'Duties', icon: ListChecks, capability: 'duties', when: () => duties.available === true },
   { to: '/access', label: 'Access', icon: ShieldCheck, capability: 'access' },
 ];
 
-const navItems = computed(() => ALL_NAV.filter((i) => auth.can(i.capability)));
+const navItems = computed(() =>
+  ALL_NAV.filter((i) => auth.can(i.capability) && (i.when ? i.when() : true))
+);
 </script>
 
 <template>

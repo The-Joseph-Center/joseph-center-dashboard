@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import { apiFetch } from '@/lib/api';
+
+const router = useRouter();
 
 interface Duty {
   id: string; task: string; category: string; cadence: string; cadenceRank: number;
@@ -53,6 +56,10 @@ async function load() {
   try {
     const res = await apiFetch('/.netlify/functions/marketing-duties');
     const d = await res.json().catch(() => ({}));
+    // Holding the capability is not enough — a person with no duties assigned
+    // has no page, and typing the URL should not get them a different answer
+    // from the one the missing menu item already gave.
+    if (res.status === 403) { router.replace('/forbidden'); return; }
     if (!res.ok) throw new Error(d.error || String(res.status));
     duties.value = d.duties; statuses.value = d.statuses;
     hiddenCount.value = d.hiddenCount; isAdmin.value = d.isAdmin; canEdit.value = d.canEdit;
