@@ -30,6 +30,13 @@ import { turso } from './_lib/staff-directory';
  * this list was built to expose — so the two are set together and the caller is
  * told when they disagree.
  *
+ * Anyone who can see a duty can put their hand up for it. That is deliberately
+ * a wider permission than editing: the list exists partly so somebody new can
+ * read the shape of the job and say what they could take on, and requiring
+ * edit rights to do that would defeat the purpose. Registering interest changes
+ * nothing — not the owner, not who can see the duty — it is a note for whoever
+ * vets it.
+ *
  * Reading and editing are separate permissions. Several people can open the
  * list; only `dutiesEdit` can change a status. The list is currently being used
  * to settle who owns what, so until that conversation has happened the statuses
@@ -87,16 +94,49 @@ export async function handler(event: {
     const db = turso();
 
     if (event.httpMethod === 'POST') {
-      // Checked before anything is parsed: a reader who can see a row still
-      // may not change it, and that is enforced here rather than by the
-      // interface disabling a dropdown.
-      if (!canEdit) return json(403, { error: 'Changing a status is not available to your account' });
-
       const body = JSON.parse(event.body || '{}') as {
         id?: string; status?: string; ownerNames?: unknown; accessGroup?: unknown;
+        interested?: unknown; note?: unknown;
       };
       const id = (body.id ?? '').trim();
       if (!id) return json(400, { error: 'id is required' });
+
+      // Putting a hand up is open to anyone who can see the duty, so it is
+      // handled before the edit gate rather than behind it.
+      if ('interested' in body) {
+        const seen = await db.execute({
+          sql: 'SELECT access_group FROM marketing_duties WHERE id = ? LIMIT 1',
+          args: [id],
+        });
+        const dutyRow = seen.rows[0] as Record<string, unknown> | undefined;
+        if (!dutyRow) return json(404, { error: 'No such duty' });
+        if (!canSee(dutyRow.access_group == null ? null : String(dutyRow.access_group))) {
+          return json(403, { error: 'Not available to your account' });
+        }
+
+        const who = auth.email ?? 'unknown';
+        if (body.interested) {
+          const name = typeof auth.claims?.name === 'string' ? auth.claims.name : null;
+          const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) || null : null;
+          await db.execute({
+            sql: `INSERT INTO duty_interest (duty_id, person, person_name, note, created_at)
+                  VALUES (?, ?, ?, ?, unixepoch())
+                  ON CONFLICT(duty_id, person) DO UPDATE SET note = excluded.note`,
+            args: [id, who, name, note],
+          });
+        } else {
+          // Withdrawing removes the row. A stored "no" would make never having
+          // looked and having considered it look the same.
+          await db.execute({
+            sql: 'DELETE FROM duty_interest WHERE duty_id = ? AND person = ?',
+            args: [id, who],
+          });
+        }
+        return json(200, { saved: true, interested: !!body.interested });
+      }
+
+      // Everything below changes the duty itself, which is editors only.
+      if (!canEdit) return json(403, { error: 'Changing a duty is not available to your account' });
 
       const settingStatus = typeof body.status === 'string';
       const settingOwner = 'ownerNames' in body || 'accessGroup' in body;
@@ -221,6 +261,17 @@ export async function handler(event: {
       }
     }
 
+    const interestRows = (await db.execute(
+      'SELECT duty_id, person, person_name, note, created_at FROM duty_interest'
+    )).rows as unknown as Record<string, unknown>[];
+    const me = auth.email ?? '';
+    const interestByDuty = new Map<string, Record<string, unknown>[]>();
+    for (const r of interestRows) {
+      const k = String(r.duty_id);
+      if (!interestByDuty.has(k)) interestByDuty.set(k, []);
+      interestByDuty.get(k)!.push(r);
+    }
+
     const all = rows as unknown as Record<string, unknown>[];
     const mineRows = all.filter((r) => canSee(r.access_group == null ? null : String(r.access_group)));
 
@@ -254,6 +305,21 @@ export async function handler(event: {
         statusUpdatedAt: r.status_updated_at == null ? null : Number(r.status_updated_at),
         ownerUpdatedBy: r.owner_updated_by == null ? null : String(r.owner_updated_by),
         ownerUpdatedAt: r.owner_updated_at == null ? null : Number(r.owner_updated_at),
+        // Whether I have put my hand up. Everyone gets their own answer.
+        myInterest: (() => {
+          const mine = (interestByDuty.get(String(r.id)) ?? []).find((x) => String(x.person) === me);
+          return mine ? { note: mine.note == null ? null : String(mine.note) } : null;
+        })(),
+        // Who else has, shown only to whoever vets them.
+        interest: canEdit
+          ? (interestByDuty.get(String(r.id)) ?? []).map((x) => ({
+              person: String(x.person),
+              personName: x.person_name == null ? null : String(x.person_name),
+              note: x.note == null ? null : String(x.note),
+              createdAt: Number(x.created_at),
+            })).sort((a, b) => a.createdAt - b.createdAt)
+          : [],
+        interestCount: canEdit ? (interestByDuty.get(String(r.id)) ?? []).length : 0,
       }));
 
     // Owner, then cadence: the list is read as "what am I meant to be doing",

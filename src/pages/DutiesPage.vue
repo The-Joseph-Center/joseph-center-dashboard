@@ -12,7 +12,11 @@ interface Duty {
   titleRole: string | null; accessGroup: string | null; notes: string | null;
   source: string | null; statusUpdatedBy: string | null; statusUpdatedAt: number | null;
   ownerUpdatedBy: string | null; ownerUpdatedAt: number | null;
+  myInterest: { note: string | null } | null;
+  interest: Interest[];
+  interestCount: number;
 }
+interface Interest { person: string; personName: string | null; note: string | null; createdAt: number }
 interface Assignable { group: string; members: string[] }
 
 const loading = ref(true);
@@ -35,6 +39,46 @@ const people = computed(() => {
   }
   return [...map.entries()].map(([name, groups]) => ({ name, groups })).sort((x, y) => x.name.localeCompare(y.name));
 });
+
+const noting = ref<string | null>(null);
+const draftNote = ref('');
+
+/** Every hand-up across the list, for whoever vets them. */
+const allInterest = computed(() =>
+  duties.value
+    .filter((d) => d.interest.length)
+    .map((d) => ({ duty: d, people: d.interest }))
+);
+const interestedPeople = computed(() =>
+  new Set(allInterest.value.flatMap((r) => r.people.map((p) => p.person))).size
+);
+
+async function setInterest(d: Duty, interested: boolean, note = '') {
+  saving.value = d.id;
+  try {
+    const res = await apiFetch('/.netlify/functions/marketing-duties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: d.id, interested, note }),
+    });
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(r.error || String(res.status));
+    d.myInterest = interested ? { note: note.trim() || null } : null;
+    noting.value = null;
+    // The vetting list is built from what the server returned, so refresh it
+    // rather than guessing at what the other side now holds.
+    if (canEdit.value) await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not save.';
+  } finally {
+    saving.value = '';
+  }
+}
+
+function startNote(d: Duty) {
+  noting.value = d.id;
+  draftNote.value = d.myInterest?.note ?? '';
+}
 
 const editing = ref<string | null>(null);
 const draftOwners = ref<string[]>([]);
@@ -180,6 +224,21 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
         {{ hiddenCount }} {{ hiddenCount === 1 ? 'duty is' : 'duties are' }} not shown to your account.
       </p>
 
+      <div v-if="canEdit && allInterest.length" class="widget hands-summary">
+        <h2 class="block__title">Hands up</h2>
+        <p class="block__hint">
+          {{ interestedPeople }} {{ interestedPeople === 1 ? 'person has' : 'people have' }} offered to
+          take on {{ allInterest.length }} {{ allInterest.length === 1 ? 'duty' : 'duties' }}. Nothing
+          is assigned by this — use <strong>Reassign</strong> on a duty when you have agreed it.
+        </p>
+        <ul class="hands">
+          <li v-for="row in allInterest" :key="row.duty.id">
+            <strong>{{ row.people.map((p) => p.personName || p.person).join(', ') }}</strong>
+            — {{ row.duty.task }}
+          </li>
+        </ul>
+      </div>
+
       <div class="widget bar">
         <p class="bar__count"><strong>{{ visible.length }}</strong> of {{ duties.length }} shown · {{ done }} done</p>
         <div class="bar__filters">
@@ -219,6 +278,52 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
                 <span v-if="!d.accessGroup" class="pri pri--none">unassigned</span>
               </p>
             </div>
+
+            <div class="duty__hand">
+              <button
+                type="button"
+                class="hand"
+                :class="{ 'hand--on': !!d.myInterest }"
+                :disabled="saving === d.id"
+                :aria-pressed="!!d.myInterest"
+                @click="d.myInterest ? setInterest(d, false) : startNote(d)"
+              >
+                {{ d.myInterest ? "You've put your hand up" : 'I can do this' }}
+              </button>
+              <button
+                v-if="d.myInterest"
+                type="button"
+                class="linkish hand__edit"
+                @click="startNote(d)"
+              >{{ d.myInterest.note ? 'edit note' : 'add a note' }}</button>
+              <p v-if="canEdit && d.interestCount" class="hand__count">
+                {{ d.interestCount }} interested
+              </p>
+            </div>
+
+            <div v-if="noting === d.id" class="notebox">
+              <label class="lbl" :for="`note-${d.id}`">Anything worth saying about it? (optional)</label>
+              <input
+                :id="`note-${d.id}`"
+                v-model="draftNote"
+                type="text"
+                placeholder="e.g. I've done this before, or I'd need training on the tool"
+              />
+              <div class="notebox__actions">
+                <button type="button" class="btn btn--sm" :disabled="saving === d.id" @click="setInterest(d, true, draftNote)">
+                  {{ saving === d.id ? 'Saving…' : "Put my hand up" }}
+                </button>
+                <button type="button" class="linkish" @click="noting = null">Cancel</button>
+              </div>
+            </div>
+
+            <ul v-if="canEdit && d.interest.length" class="hands">
+              <li v-for="p in d.interest" :key="p.person">
+                <strong>{{ p.personName || p.person }}</strong>
+                <span v-if="p.note" class="dim"> — {{ p.note }}</span>
+                <span class="dim"> · {{ when(p.createdAt) }}</span>
+              </li>
+            </ul>
 
             <div class="duty__status">
               <select
@@ -323,6 +428,21 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 .notice--quiet { color: var(--color-text-secondary); background: var(--color-bg); }
 .sel--read { display: inline-block; border: 1px solid transparent; background: transparent; }
 .duty__meta { font-size: .75rem; color: var(--color-text-secondary); margin: .15rem 0 0; }
+.duty { grid-template-columns: 1fr auto auto; }
+.duty__hand { text-align: right; }
+.hand { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 999px; padding: .3rem .7rem; font: inherit; font-size: .75rem; cursor: pointer; color: var(--color-text); white-space: nowrap; }
+.hand:hover { border-color: var(--color-primary-strong); color: var(--color-primary-strong); }
+.hand--on { border-color: #1f6b3a; color: #1f6b3a; background: color-mix(in srgb, #1f6b3a 8%, transparent); font-weight: 600; }
+.hand__edit { display: block; margin: .2rem 0 0 auto; }
+.hand__count { font-size: .7rem; color: var(--color-text-secondary); margin: .2rem 0 0; }
+
+.notebox { grid-column: 1 / -1; margin: .5rem 0 .2rem; padding: .6rem .7rem; background: var(--color-bg); border-radius: var(--border-radius); }
+.notebox input { width: 100%; padding: .4rem .5rem; font: inherit; font-size: .8125rem; border: 1px solid var(--color-border); border-radius: var(--border-radius); background: var(--color-surface); color: var(--color-text); }
+.notebox__actions { display: flex; gap: .7rem; align-items: baseline; margin-top: .6rem; }
+
+.hands { grid-column: 1 / -1; list-style: none; margin: .4rem 0 0; padding: 0; font-size: .8125rem; display: grid; gap: .2rem; }
+.hands-summary .hands { margin-top: .5rem; }
+
 .duty__status { text-align: right; }
 .duty__status .dim { font-size: .7rem; color: var(--color-text-secondary); margin: .2rem 0 0; }
 
