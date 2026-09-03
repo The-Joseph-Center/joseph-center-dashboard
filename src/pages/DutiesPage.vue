@@ -201,7 +201,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
           <li v-for="d in list" :key="d.id" class="duty">
             <div class="duty__main">
               <button type="button" class="duty__task" @click="opened = opened === d.id ? null : d.id">
-                <span class="duty__id">{{ d.id }}</span>{{ d.task }}
+                {{ d.task }}
               </button>
               <p v-if="d.notes" class="duty__notes">{{ d.notes }}</p>
               <p v-if="canEdit" class="duty__owner">
@@ -288,7 +288,6 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
               <dt>Who can see this</dt>
               <dd>{{ d.accessGroup || 'Nobody assigned — dashboard admins only' }}</dd>
               <template v-if="d.source"><dt>From</dt><dd>{{ d.source }}</dd></template>
-              <dt>Reference</dt><dd>{{ d.id }}</dd>
             </dl>
           </li>
         </ul>
@@ -320,11 +319,10 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 .duty:first-child { border-top: 0; }
 .duty__task { background: none; border: 0; padding: 0; font: inherit; font-size: .875rem; text-align: left; color: var(--color-text); cursor: pointer; }
 .duty__task:hover { color: var(--color-primary-strong); }
-.duty__id { display: inline-block; min-width: 2.6rem; font-size: .7rem; color: var(--color-text-secondary); }
-.duty__notes { font-size: .75rem; color: var(--color-text-secondary); margin: .2rem 0 0 2.6rem; max-width: 62ch; }
+.duty__notes { font-size: .75rem; color: var(--color-text-secondary); margin: .2rem 0 0; max-width: 62ch; }
 .notice--quiet { color: var(--color-text-secondary); background: var(--color-bg); }
 .sel--read { display: inline-block; border: 1px solid transparent; background: transparent; }
-.duty__meta { font-size: .75rem; color: var(--color-text-secondary); margin: .15rem 0 0 2.6rem; }
+.duty__meta { font-size: .75rem; color: var(--color-text-secondary); margin: .15rem 0 0; }
 .duty__status { text-align: right; }
 .duty__status .dim { font-size: .7rem; color: var(--color-text-secondary); margin: .2rem 0 0; }
 
@@ -340,10 +338,10 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 .pri--low { color: var(--color-text-secondary); background: var(--color-bg); }
 .pri--none { color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 10%, transparent); }
 
-.duty__owner { grid-column: 1 / -1; font-size: .75rem; margin: .25rem 0 0 2.6rem; display: flex; gap: .5rem; align-items: baseline; }
+.duty__owner { grid-column: 1 / -1; font-size: .75rem; margin: .25rem 0 0; display: flex; gap: .5rem; align-items: baseline; }
 .linkish { background: none; border: 0; padding: 0; font: inherit; font-size: .75rem; color: var(--color-primary-strong); cursor: pointer; }
 
-.reassign { grid-column: 1 / -1; margin: .5rem 0 .2rem 2.6rem; padding: .7rem .8rem; background: var(--color-bg); border-radius: var(--border-radius); }
+.reassign { grid-column: 1 / -1; margin: .5rem 0 .2rem; padding: .7rem .8rem; background: var(--color-bg); border-radius: var(--border-radius); }
 .lbl { font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); margin: 0 0 .35rem; }
 .chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .7rem; }
 .chip { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 999px; padding: .2rem .6rem; font: inherit; font-size: .75rem; cursor: pointer; color: var(--color-text); }
