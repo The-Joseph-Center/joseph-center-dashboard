@@ -1,5 +1,5 @@
 import { requireCapability, denial } from './_lib/verify-okta';
-import { isAdmin } from '../../src/lib/capabilities';
+import { isAdmin, hasCapability } from '../../src/lib/capabilities';
 import { turso } from './_lib/staff-directory';
 
 /**
@@ -15,6 +15,11 @@ import { turso } from './_lib/staff-directory';
  * Unassigned must not mean unrestricted — three duties currently have no owner
  * and no group, and defaulting those to "everyone" would be the wrong way
  * round.
+ *
+ * Reading and editing are separate permissions. Several people can open the
+ * list; only `dutiesEdit` can change a status. The list is currently being used
+ * to settle who owns what, so until that conversation has happened the statuses
+ * are one person's record rather than a shared scratchpad.
  */
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const json = (statusCode: number, body: unknown) => ({
@@ -55,6 +60,7 @@ export async function handler(event: {
   if (!auth.ok) return denial(auth);
 
   const admin = isAdmin(auth.groups);
+  const canEdit = hasCapability(auth.groups, 'dutiesEdit');
   const mine = new Set((auth.groups ?? []).map((g) => g.trim().toLowerCase()));
   const canSee = (accessGroup: string | null) =>
     admin || (!!accessGroup && mine.has(accessGroup.trim().toLowerCase()));
@@ -63,6 +69,11 @@ export async function handler(event: {
     const db = turso();
 
     if (event.httpMethod === 'POST') {
+      // Checked before anything is parsed: a reader who can see a row still
+      // may not change it, and that is enforced here rather than by the
+      // interface disabling a dropdown.
+      if (!canEdit) return json(403, { error: 'Changing a status is not available to your account' });
+
       const body = JSON.parse(event.body || '{}') as { id?: string; status?: string };
       const id = (body.id ?? '').trim();
       const status = (body.status ?? '').trim();
@@ -134,6 +145,7 @@ export async function handler(event: {
       statuses: STATUSES,
       hiddenCount: rows.length - visible.length,
       isAdmin: admin,
+      canEdit,
     });
   } catch (err) {
     console.error('marketing-duties:', err);

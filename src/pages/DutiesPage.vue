@@ -16,6 +16,7 @@ const duties = ref<Duty[]>([]);
 const statuses = ref<string[]>([]);
 const hiddenCount = ref(0);
 const isAdmin = ref(false);
+const canEdit = ref(false);
 const saving = ref('');
 const opened = ref<string | null>(null);
 const search = ref('');
@@ -54,7 +55,7 @@ async function load() {
     const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d.error || String(res.status));
     duties.value = d.duties; statuses.value = d.statuses;
-    hiddenCount.value = d.hiddenCount; isAdmin.value = d.isAdmin;
+    hiddenCount.value = d.hiddenCount; isAdmin.value = d.isAdmin; canEdit.value = d.canEdit;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not load the duties.';
   } finally {
@@ -100,6 +101,10 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
         reference — the wording, cadence and owner come from the marketing plan. <strong>Status is
         the one thing you can change</strong>, and it records who changed it.
       </p>
+      <p v-if="!canEdit" class="notice notice--quiet">
+        This list is read-only for your account while ownership is still being decided. If a status
+        looks wrong, say so rather than working around it.
+      </p>
       <p v-if="hiddenCount" class="notice">
         {{ hiddenCount }} {{ hiddenCount === 1 ? 'duty is' : 'duties are' }} not shown to your account.
       </p>
@@ -125,8 +130,9 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
           <li v-for="d in list" :key="d.id" class="duty">
             <div class="duty__main">
               <button type="button" class="duty__task" @click="opened = opened === d.id ? null : d.id">
-                {{ d.task }}
+                <span class="duty__id">{{ d.id }}</span>{{ d.task }}
               </button>
+              <p v-if="d.notes" class="duty__notes">{{ d.notes }}</p>
               <p class="duty__meta">
                 {{ d.cadence }} · {{ d.category }}
                 <span class="pri" :class="`pri--${d.priority.toLowerCase()}`">{{ d.priority }}</span>
@@ -136,6 +142,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 
             <div class="duty__status">
               <select
+                v-if="canEdit"
                 :value="d.status"
                 :disabled="saving === d.id"
                 :aria-label="`Status of ${d.task}`"
@@ -144,6 +151,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
               >
                 <option v-for="s in statuses" :key="s" :value="s">{{ s }}</option>
               </select>
+              <span v-else class="sel sel--read" :class="`sel--${slug(d.status)}`">{{ d.status }}</span>
               <p v-if="d.statusUpdatedAt" class="dim">
                 {{ d.statusUpdatedBy }} · {{ when(d.statusUpdatedAt) }}
               </p>
@@ -190,7 +198,11 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 .duty:first-child { border-top: 0; }
 .duty__task { background: none; border: 0; padding: 0; font: inherit; font-size: .875rem; text-align: left; color: var(--color-text); cursor: pointer; }
 .duty__task:hover { color: var(--color-primary-strong); }
-.duty__meta { font-size: .75rem; color: var(--color-text-secondary); margin: .15rem 0 0; }
+.duty__id { display: inline-block; min-width: 2.6rem; font-size: .7rem; color: var(--color-text-secondary); }
+.duty__notes { font-size: .75rem; color: var(--color-text-secondary); margin: .2rem 0 0 2.6rem; max-width: 62ch; }
+.notice--quiet { color: var(--color-text-secondary); background: var(--color-bg); }
+.sel--read { display: inline-block; border: 1px solid transparent; background: transparent; }
+.duty__meta { font-size: .75rem; color: var(--color-text-secondary); margin: .15rem 0 0 2.6rem; }
 .duty__status { text-align: right; }
 .duty__status .dim { font-size: .7rem; color: var(--color-text-secondary); margin: .2rem 0 0; }
 

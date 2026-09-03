@@ -29,7 +29,8 @@ export type Capability =
   | 'banners'     // the site-wide notice: closures, hours, announcements
   | 'newsletter'  // build the monthly newsletter
   | 'billing'    // invoices, admin only
-  | 'duties'     // the recurring marketing duties list
+  | 'duties'     // read the recurring marketing duties list
+  | 'dutiesEdit' // change a duty's status — Web Developer only for now
   | 'access';    // who can reach what — Web Developer only
 
 export const ADMIN_GROUP = 'jc-dashboard-admins';
@@ -76,19 +77,19 @@ export const FORM_ACCESS: Record<FormId, string[]> = {
   // general inbox should not quietly depend on that staying true.
   contact: [DEV, ADMIN_GROUP, 'Executive Director', 'Operational Director', 'Director', 'Front Desk'],
   // The Operational Director manages the volunteers.
-  volunteers: [DEV, ADMIN_GROUP, 'Operational Director', 'Social Media Manager'],
+  volunteers: [DEV, ADMIN_GROUP, 'Operational Director', 'Social Media & Content'],
   // The archived applications from the previous site's form. Same people,
   // same purpose, so the same groups read them.
-  'volunteers-past': [DEV, ADMIN_GROUP, 'Operational Director', 'Social Media Manager'],
-  events: [DEV, 'Operational Director', 'Social Media Manager', 'Executive Assistant'],
+  'volunteers-past': [DEV, ADMIN_GROUP, 'Operational Director', 'Social Media & Content'],
+  events: [DEV, 'Operational Director', 'Social Media & Content', 'Executive Assistant'],
   // Mona's queue.
   letters: [DEV, 'Executive Director', 'Executive Assistant'],
   // Guest applications for the podcast — booked and coordinated by the people
   // who make the episodes.
-  'coffee-chat': [DEV, 'Social Media Manager', 'Executive Assistant'],
+  'coffee-chat': [DEV, 'Social Media & Content', 'Executive Assistant'],
   seasonal: [DEV, 'Operational Director', 'Executive Assistant', 'Event Coordinator'],
   // The Executive Assistant helps with social.
-  subscribers: [DEV, 'Social Media Manager', 'Executive Assistant'],
+  subscribers: [DEV, 'Social Media & Content', 'Executive Assistant'],
 };
 
 /** '*' means every authenticated staff member. */
@@ -101,8 +102,8 @@ export const RULES: Record<Capability, string[] | '*'> = {
   support: '*',
   // Deliberately not everyone. Site performance is the concern of the people
   // who act on it.
-  analytics: [ADMIN_GROUP, 'Social Media Manager'],
-  content: [DEV, ADMIN_GROUP, 'Social Media Manager', 'Executive Assistant'],
+  analytics: [ADMIN_GROUP, 'Social Media & Content'],
+  content: [DEV, ADMIN_GROUP, 'Social Media & Content', 'Executive Assistant'],
   // Its own capability rather than folding into billing, so onboarding can be
   // delegated later without also handing over the invoices.
   staffAdmin: [ADMIN_GROUP],
@@ -125,7 +126,7 @@ export const RULES: Record<Capability, string[] | '*'> = {
   // organization says publicly.
   banners: [DEV, ADMIN_GROUP, 'Operational Director', 'Executive Assistant'],
   // Same people who write the blog — it is the same job, done monthly.
-  newsletter: [DEV, ADMIN_GROUP, 'Social Media Manager', 'Executive Assistant'],
+  newsletter: [DEV, ADMIN_GROUP, 'Social Media & Content', 'Executive Assistant'],
   billing: [ADMIN_GROUP],
   // Reaching the page. WHICH rows are visible is decided per row by the duty's
   // access_group, which is data rather than code — so this list must contain
@@ -133,7 +134,14 @@ export const RULES: Record<Capability, string[] | '*'> = {
   // script fails if the data names a group that is missing here, because a duty
   // assigned to a group that cannot open the page is invisible to everyone but
   // an admin and nothing would otherwise say so.
-  duties: [DEV, ADMIN_GROUP, 'Social Media Manager'],
+  //
+  // Social Media & Content is who the list is for. The other three are there so
+  // leadership and the events side can look without having to ask.
+  duties: [DEV, ADMIN_GROUP, 'Social Media & Content', 'Event Coordinator'],
+  // Changing a duty's status. Deliberately narrower than reading it: the list
+  // is settling who owns what, and until that conversation has happened the
+  // statuses are one person's record rather than a shared scratchpad.
+  dutiesEdit: [DEV],
   // Deliberately the narrowest rule in the file, and deliberately NOT the admin
   // group. This page is the map of who can reach what; showing it to everyone
   // who administers the dashboard would hand them a survey of every inbox and
