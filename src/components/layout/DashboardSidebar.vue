@@ -27,6 +27,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
+  ListChecks,
 } from 'lucide-vue-next';
 import config from '@/config/dashboard';
 
@@ -75,6 +76,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/newsletter', label: 'Newsletter', icon: Send, capability: 'newsletter' },
   { to: '/support', label: 'Support', icon: MessageSquare, capability: 'support' },
   { to: '/billing', label: 'Billing', icon: CreditCard, capability: 'billing' },
+  { to: '/duties', label: 'Duties', icon: ListChecks, capability: 'duties' },
   { to: '/access', label: 'Access', icon: ShieldCheck, capability: 'access' },
 ];
 

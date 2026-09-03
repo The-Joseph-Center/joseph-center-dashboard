@@ -29,6 +29,7 @@ export type Capability =
   | 'banners'     // the site-wide notice: closures, hours, announcements
   | 'newsletter'  // build the monthly newsletter
   | 'billing'    // invoices, admin only
+  | 'duties'     // the recurring marketing duties list
   | 'access';    // who can reach what — Web Developer only
 
 export const ADMIN_GROUP = 'jc-dashboard-admins';
@@ -126,6 +127,13 @@ export const RULES: Record<Capability, string[] | '*'> = {
   // Same people who write the blog — it is the same job, done monthly.
   newsletter: [DEV, ADMIN_GROUP, 'Social Media Manager', 'Executive Assistant'],
   billing: [ADMIN_GROUP],
+  // Reaching the page. WHICH rows are visible is decided per row by the duty's
+  // access_group, which is data rather than code — so this list must contain
+  // every group that appears as an access_group in the seed file. The seeding
+  // script fails if the data names a group that is missing here, because a duty
+  // assigned to a group that cannot open the page is invisible to everyone but
+  // an admin and nothing would otherwise say so.
+  duties: [DEV, ADMIN_GROUP, 'Social Media Manager'],
   // Deliberately the narrowest rule in the file, and deliberately NOT the admin
   // group. This page is the map of who can reach what; showing it to everyone
   // who administers the dashboard would hand them a survey of every inbox and
