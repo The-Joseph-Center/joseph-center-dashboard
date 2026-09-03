@@ -279,28 +279,6 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
               </p>
             </div>
 
-            <div class="duty__hand">
-              <button
-                type="button"
-                class="hand"
-                :class="{ 'hand--on': !!d.myInterest }"
-                :disabled="saving === d.id"
-                :aria-pressed="!!d.myInterest"
-                @click="d.myInterest ? setInterest(d, false) : startNote(d)"
-              >
-                {{ d.myInterest ? "You've put your hand up" : 'I can do this' }}
-              </button>
-              <button
-                v-if="d.myInterest"
-                type="button"
-                class="linkish hand__edit"
-                @click="startNote(d)"
-              >{{ d.myInterest.note ? 'edit note' : 'add a note' }}</button>
-              <p v-if="canEdit && d.interestCount" class="hand__count">
-                {{ d.interestCount }} interested
-              </p>
-            </div>
-
             <div v-if="noting === d.id" class="notebox">
               <label class="lbl" :for="`note-${d.id}`">Anything worth saying about it? (optional)</label>
               <input
@@ -340,6 +318,28 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
               <p v-if="d.statusUpdatedAt" class="dim">
                 {{ d.statusUpdatedBy }} · {{ when(d.statusUpdatedAt) }}
               </p>
+
+              <div class="duty__hand">
+                <button
+                  type="button"
+                  class="hand"
+                  :class="{ 'hand--on': !!d.myInterest }"
+                  :disabled="saving === d.id"
+                  :aria-pressed="!!d.myInterest"
+                  @click="d.myInterest ? setInterest(d, false) : startNote(d)"
+                >
+                  {{ d.myInterest ? "You've put your hand up" : 'I can do this' }}
+                </button>
+                <button
+                  v-if="d.myInterest"
+                  type="button"
+                  class="linkish hand__edit"
+                  @click="startNote(d)"
+                >{{ d.myInterest.note ? 'edit note' : 'add a note' }}</button>
+                <p v-if="canEdit && d.interestCount" class="hand__count">
+                  {{ d.interestCount }} interested
+                </p>
+              </div>
             </div>
 
             <div v-if="editing === d.id" class="reassign">
@@ -428,8 +428,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 .notice--quiet { color: var(--color-text-secondary); background: var(--color-bg); }
 .sel--read { display: inline-block; border: 1px solid transparent; background: transparent; }
 .duty__meta { font-size: .75rem; color: var(--color-text-secondary); margin: .15rem 0 0; }
-.duty { grid-template-columns: 1fr auto auto; }
-.duty__hand { text-align: right; }
+.duty__hand { margin-top: .5rem; }
 .hand { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 999px; padding: .3rem .7rem; font: inherit; font-size: .75rem; cursor: pointer; color: var(--color-text); white-space: nowrap; }
 .hand:hover { border-color: var(--color-primary-strong); color: var(--color-primary-strong); }
 .hand--on { border-color: #1f6b3a; color: #1f6b3a; background: color-mix(in srgb, #1f6b3a 8%, transparent); font-weight: 600; }
@@ -443,7 +442,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 .hands { grid-column: 1 / -1; list-style: none; margin: .4rem 0 0; padding: 0; font-size: .8125rem; display: grid; gap: .2rem; }
 .hands-summary .hands { margin-top: .5rem; }
 
-.duty__status { text-align: right; }
+.duty__status { text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
 .duty__status .dim { font-size: .7rem; color: var(--color-text-secondary); margin: .2rem 0 0; }
 
 .sel { padding: .3rem .45rem; font: inherit; font-size: .75rem; border: 1px solid var(--color-border); border-radius: var(--border-radius); background: var(--color-surface); color: var(--color-text); }
