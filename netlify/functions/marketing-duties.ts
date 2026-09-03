@@ -1,5 +1,5 @@
 import { requireCapability, denial } from './_lib/verify-okta';
-import { isAdmin, hasCapability } from '../../src/lib/capabilities';
+import { isAdmin, hasCapability, RULES } from '../../src/lib/capabilities';
 import { turso } from './_lib/staff-directory';
 
 /**
@@ -24,6 +24,12 @@ import { turso } from './_lib/staff-directory';
  * `?probe=1` answers only whether there is anything to see, so the sidebar can
  * decide whether to draw the link without pulling the rows to do it.
  *
+ * Two things are editable, and they are one decision rather than two: who owns
+ * a duty, and which group can see it. Assigning a duty to someone who is not in
+ * its access_group hands them work they cannot open, which is the exact gap
+ * this list was built to expose — so the two are set together and the caller is
+ * told when they disagree.
+ *
  * Reading and editing are separate permissions. Several people can open the
  * list; only `dutiesEdit` can change a status. The list is currently being used
  * to settle who owns what, so until that conversation has happened the statuses
@@ -47,6 +53,9 @@ export const STATUSES = [
   'Not Started', 'In Progress', 'Ongoing', 'Ongoing (manual)', 'Ongoing (owned)',
   'Needs Decision', 'Needs Improvement', 'Done',
 ] as const;
+
+/** The groups a duty may be assigned to — exactly those that can open the page. */
+const ASSIGNABLE = (RULES.duties === '*' ? [] : RULES.duties).filter((g) => g !== 'jc-dashboard-admins');
 
 const CADENCE_RANK: [RegExp, number][] = [
   [/daily/i, 1], [/\d\s*[-–]\s*\d\s*x\s*\/?\s*week/i, 2], [/week/i, 3],
@@ -83,12 +92,38 @@ export async function handler(event: {
       // interface disabling a dropdown.
       if (!canEdit) return json(403, { error: 'Changing a status is not available to your account' });
 
-      const body = JSON.parse(event.body || '{}') as { id?: string; status?: string };
+      const body = JSON.parse(event.body || '{}') as {
+        id?: string; status?: string; ownerNames?: unknown; accessGroup?: unknown;
+      };
       const id = (body.id ?? '').trim();
+      if (!id) return json(400, { error: 'id is required' });
+
+      const settingStatus = typeof body.status === 'string';
+      const settingOwner = 'ownerNames' in body || 'accessGroup' in body;
+      if (!settingStatus && !settingOwner) {
+        return json(400, { error: 'Nothing to change' });
+      }
+
       const status = (body.status ?? '').trim();
-      if (!id || !status) return json(400, { error: 'id and status are required' });
-      if (!(STATUSES as readonly string[]).includes(status)) {
+      if (settingStatus && !(STATUSES as readonly string[]).includes(status)) {
         return json(400, { error: 'Unknown status' });
+      }
+
+      let ownerNames: string[] = [];
+      let accessGroup: string | null = null;
+      if (settingOwner) {
+        const raw = Array.isArray(body.ownerNames) ? body.ownerNames : [];
+        ownerNames = raw
+          .map((n) => String(n).trim())
+          .filter(Boolean)
+          .slice(0, 5);
+        const ag = body.accessGroup == null ? null : String(body.accessGroup).trim();
+        // Only a group that can open the page may own a duty. Anything else
+        // would assign work to people who cannot see it, silently.
+        if (ag && !ASSIGNABLE.some((g) => g.toLowerCase() === ag.toLowerCase())) {
+          return json(400, { error: 'That group cannot open the duties list' });
+        }
+        accessGroup = ag || null;
       }
 
       // Re-read the row's access_group rather than trusting anything sent, so
@@ -104,22 +139,87 @@ export async function handler(event: {
       }
 
       const now = Math.floor(Date.now() / 1000);
-      await db.execute({
-        sql: `UPDATE marketing_duties
-              SET status = ?, status_updated_by = ?, status_updated_at = ?
-              WHERE id = ?`,
-        args: [status, auth.email ?? 'unknown', now, id],
+      const by = auth.email ?? 'unknown';
+
+      if (settingStatus) {
+        await db.execute({
+          sql: `UPDATE marketing_duties
+                SET status = ?, status_updated_by = ?, status_updated_at = ?
+                WHERE id = ?`,
+          args: [status, by, now, id],
+        });
+      }
+      if (settingOwner) {
+        await db.execute({
+          sql: `UPDATE marketing_duties
+                SET owner = ?, owner_names = ?, access_group = ?,
+                    owner_updated_by = ?, owner_updated_at = ?
+                WHERE id = ?`,
+          args: [
+            // The display string is derived rather than typed, so it cannot
+            // drift from the list it summarises.
+            ownerNames.length ? ownerNames.join(' / ') : null,
+            JSON.stringify(ownerNames),
+            accessGroup,
+            by, now, id,
+          ],
+        });
+      }
+
+      return json(200, {
+        saved: true,
+        updatedBy: by,
+        updatedAt: now,
+        ...(settingOwner ? { owner: ownerNames.length ? ownerNames.join(' / ') : null, ownerNames, accessGroup } : {}),
       });
-      return json(200, { saved: true, statusUpdatedBy: auth.email ?? 'unknown', statusUpdatedAt: now });
     }
 
     if (event.httpMethod !== 'GET') return json(405, { error: 'Method not allowed' });
 
     const { rows } = await db.execute(
       `SELECT id, task, category, cadence, priority, status, owner, owner_names,
-              title_role, access_group, notes, source, status_updated_by, status_updated_at
+              title_role, access_group, notes, source,
+              status_updated_by, status_updated_at, owner_updated_by, owner_updated_at
        FROM marketing_duties`
     );
+
+    // For editors only: who the duties can be handed to, and which group each
+    // person is in. Offered as a list rather than a text box because the source
+    // spreadsheet already carries "TBD", "Leslie / Khira" and "Eric (final
+    // sign-off)" as owner values, and free text is how that happens.
+    let assignable: { group: string; members: string[] }[] | null = null;
+    if (canEdit) {
+      try {
+        const org = process.env.VITE_OKTA_ISSUER;
+        const token = process.env.OKTA_API_TOKEN;
+        if (org && token) {
+          const base = new URL(org).origin;
+          const headers = { Authorization: `SSWS ${token}`, Accept: 'application/json' };
+          const oktaGroups = await (await fetch(`${base}/api/v1/groups?limit=200`, { headers })).json() as
+            { id: string; profile: { name: string } }[];
+          assignable = [];
+          for (const name of ASSIGNABLE) {
+            const g = oktaGroups.find((x) => x.profile.name.toLowerCase() === name.toLowerCase());
+            if (!g) { assignable.push({ group: name, members: [] }); continue; }
+            const members = await (await fetch(`${base}/api/v1/groups/${g.id}/users?limit=200`, { headers })).json() as
+              { status?: string; profile?: { firstName?: string; lastName?: string } }[];
+            assignable.push({
+              group: g.profile.name,
+              members: members
+                .filter((m) => m.status === 'ACTIVE')
+                .map((m) => (m.profile?.firstName ?? '').trim())
+                .filter(Boolean)
+                .sort(),
+            });
+          }
+        }
+      } catch (err) {
+        // The list still works without it; the picker falls back to what the
+        // duties already name.
+        console.error('marketing-duties: could not read assignable people:', err);
+        assignable = null;
+      }
+    }
 
     const all = rows as unknown as Record<string, unknown>[];
     const mineRows = all.filter((r) => canSee(r.access_group == null ? null : String(r.access_group)));
@@ -152,6 +252,8 @@ export async function handler(event: {
         source: r.source == null ? null : String(r.source),
         statusUpdatedBy: r.status_updated_by == null ? null : String(r.status_updated_by),
         statusUpdatedAt: r.status_updated_at == null ? null : Number(r.status_updated_at),
+        ownerUpdatedBy: r.owner_updated_by == null ? null : String(r.owner_updated_by),
+        ownerUpdatedAt: r.owner_updated_at == null ? null : Number(r.owner_updated_at),
       }));
 
     // Owner, then cadence: the list is read as "what am I meant to be doing",
@@ -168,6 +270,7 @@ export async function handler(event: {
       hiddenCount: rows.length - visible.length,
       isAdmin: admin,
       canEdit,
+      assignable,
     });
   } catch (err) {
     console.error('marketing-duties:', err);

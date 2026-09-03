@@ -11,7 +11,9 @@ interface Duty {
   priority: string; status: string; owner: string | null; ownerNames: string[];
   titleRole: string | null; accessGroup: string | null; notes: string | null;
   source: string | null; statusUpdatedBy: string | null; statusUpdatedAt: number | null;
+  ownerUpdatedBy: string | null; ownerUpdatedAt: number | null;
 }
+interface Assignable { group: string; members: string[] }
 
 const loading = ref(true);
 const error = ref('');
@@ -20,6 +22,67 @@ const statuses = ref<string[]>([]);
 const hiddenCount = ref(0);
 const isAdmin = ref(false);
 const canEdit = ref(false);
+const assignable = ref<Assignable[] | null>(null);
+
+/** Every person who could own a duty, with the group that would let them see it. */
+const people = computed(() => {
+  const map = new Map<string, string[]>();
+  for (const a of assignable.value ?? []) {
+    for (const m of a.members) {
+      if (!map.has(m)) map.set(m, []);
+      map.get(m)!.push(a.group);
+    }
+  }
+  return [...map.entries()].map(([name, groups]) => ({ name, groups })).sort((x, y) => x.name.localeCompare(y.name));
+});
+
+const editing = ref<string | null>(null);
+const draftOwners = ref<string[]>([]);
+const draftGroup = ref<string>('');
+
+function startEdit(d: Duty) {
+  editing.value = d.id;
+  draftOwners.value = d.ownerNames.filter((n) => n && n !== 'TBD');
+  draftGroup.value = d.accessGroup ?? '';
+}
+function toggleOwner(name: string) {
+  const i = draftOwners.value.indexOf(name);
+  if (i === -1) draftOwners.value.push(name); else draftOwners.value.splice(i, 1);
+}
+
+/**
+ * Owners who would not be able to see the duty under the chosen group. This is
+ * the whole reason owner and visibility are set together.
+ */
+const strandedOwners = computed(() => {
+  if (!draftOwners.value.length) return [];
+  const group = draftGroup.value;
+  return draftOwners.value.filter((n) => {
+    const p = people.value.find((x) => x.name === n);
+    if (!p) return false;
+    return !group || !p.groups.includes(group);
+  });
+});
+
+async function saveOwner(d: Duty) {
+  saving.value = d.id;
+  try {
+    const res = await apiFetch('/.netlify/functions/marketing-duties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: d.id, ownerNames: draftOwners.value, accessGroup: draftGroup.value || null }),
+    });
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(r.error || String(res.status));
+    d.owner = r.owner; d.ownerNames = r.ownerNames; d.accessGroup = r.accessGroup;
+    d.ownerUpdatedBy = r.updatedBy; d.ownerUpdatedAt = r.updatedAt;
+    editing.value = null;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not save the owner.';
+  } finally {
+    saving.value = '';
+  }
+}
 const saving = ref('');
 const opened = ref<string | null>(null);
 const search = ref('');
@@ -63,6 +126,7 @@ async function load() {
     if (!res.ok) throw new Error(d.error || String(res.status));
     duties.value = d.duties; statuses.value = d.statuses;
     hiddenCount.value = d.hiddenCount; isAdmin.value = d.isAdmin; canEdit.value = d.canEdit;
+    assignable.value = d.assignable ?? null;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not load the duties.';
   } finally {
@@ -140,6 +204,15 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
                 <span class="duty__id">{{ d.id }}</span>{{ d.task }}
               </button>
               <p v-if="d.notes" class="duty__notes">{{ d.notes }}</p>
+              <p v-if="canEdit" class="duty__owner">
+                <button type="button" class="linkish" @click="editing === d.id ? (editing = null) : startEdit(d)">
+                  {{ editing === d.id ? 'Cancel' : 'Reassign' }}
+                </button>
+                <span class="dim">
+                  {{ d.owner || 'Unassigned' }}<template v-if="d.accessGroup"> · seen by {{ d.accessGroup }}</template>
+                  <template v-else> · admins only</template>
+                </span>
+              </p>
               <p class="duty__meta">
                 {{ d.cadence }} · {{ d.category }}
                 <span class="pri" :class="`pri--${d.priority.toLowerCase()}`">{{ d.priority }}</span>
@@ -162,6 +235,48 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
               <p v-if="d.statusUpdatedAt" class="dim">
                 {{ d.statusUpdatedBy }} · {{ when(d.statusUpdatedAt) }}
               </p>
+            </div>
+
+            <div v-if="editing === d.id" class="reassign">
+              <p class="lbl">Owner</p>
+              <p v-if="!people.length" class="dim">Could not read the staff list — try again shortly.</p>
+              <div v-else class="chips">
+                <button
+                  v-for="p in people"
+                  :key="p.name"
+                  type="button"
+                  class="chip"
+                  :class="{ 'chip--on': draftOwners.includes(p.name) }"
+                  @click="toggleOwner(p.name)"
+                >{{ p.name }}</button>
+              </div>
+
+              <p class="lbl">Who can see it</p>
+              <select v-model="draftGroup" class="sel" aria-label="Group that can see this duty">
+                <option value="">Nobody assigned — dashboard admins only</option>
+                <option v-for="a in assignable ?? []" :key="a.group" :value="a.group">
+                  {{ a.group }} ({{ a.members.length }})
+                </option>
+              </select>
+
+              <p v-if="strandedOwners.length" class="warn">
+                {{ strandedOwners.join(' and ') }}
+                {{ strandedOwners.length === 1 ? 'is' : 'are' }} not in
+                {{ draftGroup || 'any group that can open this list' }}, so
+                {{ strandedOwners.length === 1 ? 'they' : 'they' }} would own a duty
+                {{ strandedOwners.length === 1 ? 'they' : 'they' }} cannot see. Pick a group
+                {{ strandedOwners.length === 1 ? 'they are' : 'they are all' }} in, or add
+                {{ strandedOwners.length === 1 ? 'them' : 'them' }} to it in Okta first.
+              </p>
+
+              <div class="reassign__actions">
+                <button type="button" class="btn btn--sm" :disabled="saving === d.id" @click="saveOwner(d)">
+                  {{ saving === d.id ? 'Saving…' : 'Save owner' }}
+                </button>
+                <span v-if="d.ownerUpdatedAt" class="dim">
+                  last changed by {{ d.ownerUpdatedBy }} · {{ when(d.ownerUpdatedAt) }}
+                </span>
+              </div>
             </div>
 
             <dl v-if="opened === d.id" class="detail">
@@ -224,6 +339,17 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 .pri--medium { color: #6b5a1f; background: color-mix(in srgb, #6b5a1f 10%, transparent); }
 .pri--low { color: var(--color-text-secondary); background: var(--color-bg); }
 .pri--none { color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 10%, transparent); }
+
+.duty__owner { grid-column: 1 / -1; font-size: .75rem; margin: .25rem 0 0 2.6rem; display: flex; gap: .5rem; align-items: baseline; }
+.linkish { background: none; border: 0; padding: 0; font: inherit; font-size: .75rem; color: var(--color-primary-strong); cursor: pointer; }
+
+.reassign { grid-column: 1 / -1; margin: .5rem 0 .2rem 2.6rem; padding: .7rem .8rem; background: var(--color-bg); border-radius: var(--border-radius); }
+.lbl { font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); margin: 0 0 .35rem; }
+.chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .7rem; }
+.chip { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 999px; padding: .2rem .6rem; font: inherit; font-size: .75rem; cursor: pointer; color: var(--color-text); }
+.chip--on { border-color: var(--color-primary-strong); color: var(--color-primary-strong); font-weight: 600; }
+.warn { font-size: .75rem; color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 10%, transparent); border-radius: var(--border-radius); padding: .4rem .55rem; margin: .6rem 0 0; }
+.reassign__actions { display: flex; gap: .6rem; align-items: baseline; margin-top: .7rem; }
 
 .detail { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(7rem, 10rem) 1fr; gap: .25rem .9rem; margin: .5rem 0 .2rem; padding: .6rem .7rem; background: var(--color-bg); border-radius: var(--border-radius); font-size: .8125rem; }
 .detail dt { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--color-text-secondary); }
