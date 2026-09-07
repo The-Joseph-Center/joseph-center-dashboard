@@ -6,7 +6,7 @@
  * `["whereverNeeded"]` and a nested availability object rather than "Wherever
  * I'm needed" and the days someone can actually come in.
  *
- * Three shapes turn up, so three treatments. Anything unrecognised falls
+ * Three shapes turn up, so three treatments. Anything unrecognized falls
  * through to the raw string rather than being mangled — a value nobody
  * anticipated is better shown as-is than silently reformatted into nonsense.
  */

@@ -69,7 +69,7 @@ const CADENCE_RANK: [RegExp, number][] = [
   [/month|quarter/i, 4], [/per piece/i, 5], [/ongoing/i, 6],
   [/ad hoc|as available|tbd/i, 7],
 ];
-/** Sort order for a cadence written in prose. Unrecognised sorts last. */
+/** Sort order for a cadence written in prose. Unrecognized sorts last. */
 function cadenceRank(cadence: string): number {
   for (const [re, rank] of CADENCE_RANK) if (re.test(cadence)) return rank;
   return 8;
@@ -197,7 +197,7 @@ export async function handler(event: {
                 WHERE id = ?`,
           args: [
             // The display string is derived rather than typed, so it cannot
-            // drift from the list it summarises.
+            // drift from the list it summarizes.
             ownerNames.length ? ownerNames.join(' / ') : null,
             JSON.stringify(ownerNames),
             accessGroup,

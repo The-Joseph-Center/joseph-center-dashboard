@@ -7,8 +7,8 @@ import { requireCapability, denial } from './_lib/verify-okta';
  * never be fabricated or estimated. Typing them by hand is precisely how they
  * stop matching, so they are read from the source instead.
  *
- * Shorts are labelled by duration rather than guessed at — the document notes
- * that shorts are often older footage and must be labelled accurately, and a
+ * Shorts are labeled by duration rather than guessed at — the document notes
+ * that shorts are often older footage and must be labeled accurately, and a
  * minute is the line YouTube itself draws.
  */
 
@@ -83,7 +83,7 @@ export async function handler(event: {
       pageToken = res.nextPageToken;
     }
 
-    // One extra call for durations, so shorts are labelled rather than guessed.
+    // One extra call for durations, so shorts are labeled rather than guessed.
     let durations: Record<string, number> = {};
     if (found.length) {
       const details = await (await fetch(

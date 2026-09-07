@@ -11,7 +11,7 @@ import { accessToken, googleAuthMode } from './_lib/google-sheets';
  * eleven; they do not need to see what she is doing instead.
  *
  * Calendars come from GOOGLE_CALENDAR_IDS, comma-separated. Anything the
- * authorised account cannot see is reported back as unreadable rather than
+ * authorized account cannot see is reported back as unreadable rather than
  * silently treated as free — an empty answer from a calendar nobody shared is
  * indistinguishable from a genuinely open morning, and that is exactly the
  * mistake that double-books someone.

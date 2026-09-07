@@ -8,7 +8,7 @@ import { BRAND_REFERENCE } from './_lib/brand-reference';
  * Deliberately not a writer. The Joseph Center's brand reference is explicit
  * that content must not invent program details and must frame people with
  * dignity rather than as case studies, and a model handed a blank page and a
- * topic will do both. Given a finished draft it is only reading and labelling,
+ * topic will do both. Given a finished draft it is only reading and labeling,
  * which is the part that is genuinely tedious and where being wrong is visible
  * and cheap to fix.
  *

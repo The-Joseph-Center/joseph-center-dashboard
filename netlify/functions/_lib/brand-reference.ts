@@ -13,7 +13,7 @@
  */
 
 /**
- * For labelling and reviewing — six of the thirteen sections.
+ * For labeling and reviewing — six of the thirteen sections.
  *
  * Dropped: logo and color specifications, office addresses, CTA link targets,
  * social hashtags, impact statistics, the approval process and the staff list.
@@ -26,7 +26,7 @@ export const BRAND_REFERENCE = "## 2. Mission, Vision & Values\n\n### Mission St
 /**
  * For writing a draft — the whole document.
  *
- * Composing prose needs the parts labelling does not: the CTA table, so a call
+ * Composing prose needs the parts labeling does not: the CTA table, so a call
  * to action points at the right page rather than an invented one; the approved
  * impact statistics, so a figure that does appear is one that has been signed
  * off; and the rule that staff are referred to by first name only. Leaving

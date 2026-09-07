@@ -11,7 +11,7 @@
  *
  * The hard requirement is fidelity. These convert existing posts for editing
  * and convert them back on save, so anything the parser cannot represent is
- * content someone loses. Two defences:
+ * content someone loses. Two defenses:
  *
  *   1. Images survive as an opaque placeholder line carrying their asset ref,
  *      so a body with images in the middle of it round-trips exactly.

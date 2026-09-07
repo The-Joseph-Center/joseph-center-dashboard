@@ -157,7 +157,7 @@ const MONTHS = ['january','february','march','april','may','june','july','august
  * name and matched loosely enough that a stray space or a year suffix does not
  * break it. There is no year in the tab names, so the sheet is assumed to cover
  * the current year; a tab named "August 2027" would still match, which is the
- * behaviour to want if they ever start labelling them.
+ * behavior to want if they ever start labeling them.
  */
 export function findMonthTab(tabs: string[], month: string): string | null {
   const [year, m] = month.split('-').map(Number);
@@ -183,7 +183,7 @@ export interface Metric { row: number; department: string; category: string; lab
  * and carries down over the rows beneath it. So "Front Desk" followed by a blank
  * department and "Individuals Served" is one metric, and it is only meaningful
  * as the pair — "Individuals Served" alone appears under more than one
- * department, and picking the wrong one silently reports the wrong programme.
+ * department, and picking the wrong one silently reports the wrong program.
  */
 export function flattenMetrics(grid: string[][]): Metric[] {
   const out: Metric[] = [];

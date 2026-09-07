@@ -12,7 +12,7 @@ import { requireCapability, denial } from './_lib/verify-okta';
  *
  * Every charge in this account is a gift — checked, not assumed. The
  * descriptions span "(no description)", "Subscription update", "Harness Custom
- * Donation" and one 2024 charge labelled "Payment for Invoice", whose invoice
+ * Donation" and one 2024 charge labeled "Payment for Invoice", whose invoice
  * line reads "Giving Amount". Recurring gifts bill through Stripe invoices, so
  * being invoice-linked says nothing about whether something is a donation. If a
  * non-gift payment is ever taken through this account, this is the assumption
