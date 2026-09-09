@@ -22,6 +22,12 @@ import { turso } from './_lib/staff-directory';
  * was on the card. That is the one case where the newer, more deliberate
  * answer should beat the transactional one.
  *
+ * People can also be added by hand — one at a time, or in bulk from a file.
+ * Those land in letter_requests with source 'manual', so they merge, key and
+ * mark exactly like a form submission. An address is required because a letter
+ * without one cannot be posted; an email is not, because Mona often will not
+ * have one for someone she is adding from memory.
+ *
  * The $250 threshold is shown but decides nothing. It is an IRS rule about
  * which acknowledgments are additionally required, not about who is worth
  * thanking — see tax-summary.ts.
@@ -50,8 +56,10 @@ interface Recipient {
   totalCents: number;
   gifts: number;
   recurring: boolean;
-  /** They filled in the "personal letter from Mona" form. */
+  /** They filled in the "personal letter from Mona" form, or were added by hand. */
   requested: boolean;
+  /** 'manual' when somebody typed or imported them rather than them asking. */
+  addedManually: boolean;
   /** They gave money this year. Someone can be a requester and not a donor. */
   isDonor: boolean;
   writtenAt: number | null;
@@ -124,6 +132,77 @@ export async function handler(event: {
 
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
+
+      if (body.action === 'add' || body.action === 'addBulk') {
+        const incoming: unknown[] = body.action === 'add' ? [body.person] : (Array.isArray(body.people) ? body.people : []);
+        if (!incoming.length) return json(400, { error: 'Nothing to add' });
+        if (incoming.length > 500) return json(400, { error: 'Too many rows at once — split the file' });
+
+        const by = auth.email ?? 'unknown';
+        const clean = (v: unknown, max = 120) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+
+        const ready: Record<string, string>[] = [];
+        const rejected: { row: number; reason: string }[] = [];
+
+        incoming.forEach((raw, i) => {
+          const p = (raw ?? {}) as Record<string, unknown>;
+          const person = {
+            first_name: clean(p.firstName), last_name: clean(p.lastName),
+            street: clean(p.street), city: clean(p.city),
+            state: clean(p.state, 2).toUpperCase() || 'CO', zip: clean(p.zip, 10),
+            email: clean(p.email, 200).toLowerCase(),
+          };
+          // A name and a postable address, or it is not a letter.
+          const missing = (['first_name', 'last_name', 'street', 'city', 'zip'] as const)
+            .filter((k) => !person[k]);
+          if (missing.length) {
+            rejected.push({ row: i + 1, reason: `missing ${missing.join(', ').replace(/_/g, ' ')}` });
+            return;
+          }
+          ready.push(person);
+        });
+
+        if (!ready.length) return json(400, { error: 'No usable rows', rejected });
+
+        // Someone already on this year's list should not be added twice.
+        const year = Number(body.year) || new Date(Date.now() - MST_OFFSET * 1000).getUTCFullYear();
+        const existing = await db.execute({
+          sql: `SELECT LOWER(first_name) f, LOWER(last_name) l, LOWER(street) s, zip, LOWER(email) e
+                FROM letter_requests WHERE ${LOCAL_YEAR} = ?`,
+          args: [String(year)],
+        });
+        const seen = new Set<string>();
+        for (const r of existing.rows as unknown as Record<string, unknown>[]) {
+          seen.add(`${r.f}|${r.l}|${r.zip}`);
+          if (r.e) seen.add(`e:${r.e}`);
+        }
+
+        const added: Record<string, string>[] = [];
+        const duplicates: string[] = [];
+        for (const p of ready) {
+          const nameKey = `${p.first_name.toLowerCase()}|${p.last_name.toLowerCase()}|${p.zip}`;
+          const mailKey = p.email ? `e:${p.email}` : '';
+          if (seen.has(nameKey) || (mailKey && seen.has(mailKey))) {
+            duplicates.push(`${p.first_name} ${p.last_name}`);
+            continue;
+          }
+          seen.add(nameKey);
+          if (mailKey) seen.add(mailKey);
+          added.push(p);
+        }
+
+        if (added.length) {
+          await db.batch(added.map((p) => ({
+            sql: `INSERT INTO letter_requests
+                    (first_name, last_name, street, city, state, zip, email, source, added_by)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?)`,
+            args: [p.first_name, p.last_name, p.street, p.city, p.state, p.zip, p.email, by],
+          })), 'write');
+        }
+
+        return json(200, { added: added.length, duplicates, rejected });
+      }
+
       const year = Number(body.year);
       const key = clean(body.key, 128);
       if (!year || !key) return json(400, { error: 'year and key are required' });
@@ -171,7 +250,8 @@ export async function handler(event: {
     const [donors, requestRows, logRows] = await Promise.all([
       donorsForYear(year),
       db.execute({
-        sql: `SELECT id, first_name, last_name, street, city, state, zip, email, submitted_at
+        sql: `SELECT id, first_name, last_name, street, city, state, zip, email,
+                     submitted_at, source, added_by
               FROM letter_requests WHERE ${LOCAL_YEAR} = ? ORDER BY submitted_at`,
         args: [String(year)],
       }),
@@ -188,6 +268,7 @@ export async function handler(event: {
 
       if (existing) {
         existing.requested = true;
+        if (str(raw.source) === 'manual') existing.addedManually = true;
         // The requested address was given as "send my letter here"; the Stripe
         // one is whatever was on the card.
         if (str(raw.street)) {
@@ -206,6 +287,7 @@ export async function handler(event: {
         street: str(raw.street), city: str(raw.city), state: str(raw.state), zip: str(raw.zip),
         totalCents: 0, gifts: 0, recurring: false,
         requested: true, isDonor: false,
+        addedManually: str(raw.source) === 'manual',
         writtenAt: null, writtenBy: null, note: null,
       };
       donors.set(key, rec);
