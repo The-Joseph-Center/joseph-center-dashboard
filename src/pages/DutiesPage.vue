@@ -306,6 +306,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
                 >
                   {{ d.myInterest ? "You've put your hand up" : 'I can do this' }}
                 </button>
+                <p v-if="d.myInterest?.note" class="hand__note">“{{ d.myInterest.note }}”</p>
                 <button
                   v-if="d.myInterest"
                   type="button"
@@ -328,7 +329,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
               />
               <div class="notebox__actions">
                 <button type="button" class="btn btn--sm" :disabled="saving === d.id" @click="setInterest(d, true, draftNote)">
-                  {{ saving === d.id ? 'Saving…' : "Put my hand up" }}
+                  {{ saving === d.id ? 'Saving…' : 'Save note' }}
                 </button>
                 <button type="button" class="linkish" @click="noting = null">Cancel</button>
               </div>
@@ -433,6 +434,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 .hand:hover { border-color: var(--color-primary-strong); color: var(--color-primary-strong); }
 .hand--on { border-color: #1f6b3a; color: #1f6b3a; background: color-mix(in srgb, #1f6b3a 8%, transparent); font-weight: 600; }
 .hand__edit { display: block; margin: .2rem 0 0 auto; }
+.hand__note { font-size: .75rem; color: var(--color-text); font-style: italic; margin: .3rem 0 0; max-width: 16rem; text-align: right; }
 .hand__count { font-size: .7rem; color: var(--color-text-secondary); margin: .2rem 0 0; }
 
 .notebox { grid-column: 1 / -1; margin: .5rem 0 .2rem; padding: .6rem .7rem; background: var(--color-bg); border-radius: var(--border-radius); }
