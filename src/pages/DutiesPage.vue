@@ -279,30 +279,6 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
               </p>
             </div>
 
-            <div v-if="noting === d.id" class="notebox">
-              <label class="lbl" :for="`note-${d.id}`">Anything worth saying about it? (optional)</label>
-              <input
-                :id="`note-${d.id}`"
-                v-model="draftNote"
-                type="text"
-                placeholder="e.g. I've done this before, or I'd need training on the tool"
-              />
-              <div class="notebox__actions">
-                <button type="button" class="btn btn--sm" :disabled="saving === d.id" @click="setInterest(d, true, draftNote)">
-                  {{ saving === d.id ? 'Saving…' : "Put my hand up" }}
-                </button>
-                <button type="button" class="linkish" @click="noting = null">Cancel</button>
-              </div>
-            </div>
-
-            <ul v-if="canEdit && d.interest.length" class="hands">
-              <li v-for="p in d.interest" :key="p.person">
-                <strong>{{ p.personName || p.person }}</strong>
-                <span v-if="p.note" class="dim"> — {{ p.note }}</span>
-                <span class="dim"> · {{ when(p.createdAt) }}</span>
-              </li>
-            </ul>
-
             <div class="duty__status">
               <select
                 v-if="canEdit"
@@ -326,7 +302,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
                   :class="{ 'hand--on': !!d.myInterest }"
                   :disabled="saving === d.id"
                   :aria-pressed="!!d.myInterest"
-                  @click="d.myInterest ? setInterest(d, false) : startNote(d)"
+                  @click="setInterest(d, !d.myInterest, d.myInterest?.note ?? '')"
                 >
                   {{ d.myInterest ? "You've put your hand up" : 'I can do this' }}
                 </button>
@@ -341,6 +317,30 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
                 </p>
               </div>
             </div>
+
+            <div v-if="noting === d.id" class="notebox">
+              <label class="lbl" :for="`note-${d.id}`">Anything worth saying about it? (optional)</label>
+              <input
+                :id="`note-${d.id}`"
+                v-model="draftNote"
+                type="text"
+                placeholder="e.g. I've done this before, or I'd need training on the tool"
+              />
+              <div class="notebox__actions">
+                <button type="button" class="btn btn--sm" :disabled="saving === d.id" @click="setInterest(d, true, draftNote)">
+                  {{ saving === d.id ? 'Saving…' : "Put my hand up" }}
+                </button>
+                <button type="button" class="linkish" @click="noting = null">Cancel</button>
+              </div>
+            </div>
+
+            <ul v-if="canEdit && d.interest.length" class="hands">
+              <li v-for="p in d.interest" :key="p.person">
+                <strong>{{ p.personName || p.person }}</strong>
+                <span v-if="p.note" class="dim"> — {{ p.note }}</span>
+                <span class="dim"> · {{ when(p.createdAt) }}</span>
+              </li>
+            </ul>
 
             <div v-if="editing === d.id" class="reassign">
               <p class="lbl">Owner</p>
