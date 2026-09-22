@@ -44,8 +44,16 @@ const transcriptOpen = ref(false);
 const transcript = ref('');
 const drafting = ref(false);
 const draftQuotes = ref<string[]>([]);
-const draftGaps = ref<string[]>([]);
+const draftGaps = ref<{ question: string; answer: string; dropped: boolean }[]>([]);
 const appendedBridge = ref(false);
+
+// What the writer brings that the transcript cannot — what to focus on, what
+// to leave alone. Kept between redrafts so it keeps applying.
+const notes = ref('');
+const instruction = ref('');
+const hasDrafted = ref(false);
+// Every draft, so a redraft that goes the wrong way is one click back.
+const draftHistory = ref<{ label: string; text: string; at: string }[]>([]);
 
 // Caption exports come one file per microphone; the filename names the
 // speaker, so they can be dropped in as they are and stitched back together.
@@ -63,24 +71,72 @@ async function loadTranscriptFiles(list: FileList | null | undefined) {
   transcriptFiles.value = files.map((f) => ({ name: f.name, ...describeFile(f.name) }));
 }
 
-async function draftSection1() {
+/**
+ * Where a quotation sits in the transcript, with the turns either side of it.
+ * A quotation that cannot be found is the one worth seeing: it means the
+ * wording drifted, and the writer needs to know before it goes out.
+ */
+const flatten = (t: string) => t.toLowerCase().replace(/[\u2018\u2019\u201c\u201d]/g, "'").replace(/[^a-z0-9']+/g, ' ').trim();
+
+function quoteContext(quote: string): { found: boolean; text: string } {
+  const turns = transcript.value.split(/\n\n+/);
+  const needle = flatten(quote);
+  if (!needle) return { found: false, text: '' };
+  const i = turns.findIndex((t) => flatten(t).includes(needle));
+  if (i === -1) return { found: false, text: '' };
+  return { found: true, text: turns.slice(Math.max(0, i - 1), i + 2).join('\n\n') };
+}
+
+const openQuote = ref(-1);
+
+function keepVersion(label: string) {
+  const text = draft.value?.section1?.trim();
+  if (!text) return;
+  if (draftHistory.value[0]?.text === text) return;
+  draftHistory.value.unshift({ label, text, at: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) });
+  draftHistory.value = draftHistory.value.slice(0, 10);
+}
+
+function restoreVersion(v: { text: string }) {
   if (!draft.value) return;
-  drafting.value = true; error.value = ''; draftQuotes.value = []; draftGaps.value = [];
+  keepVersion('Before restoring');
+  draft.value.section1 = v.text;
+}
+
+/**
+ * First pass and every redraft after it. A redraft sends back the section as
+ * it stands — hand edits included — so the writer's own wording survives
+ * rather than being replaced by a fresh start.
+ */
+async function draftSection1(redraft = false) {
+  if (!draft.value) return;
+  drafting.value = true; error.value = '';
+  const answered = draftGaps.value.filter((g) => g.answer.trim() && !g.dropped);
   try {
     const res = await apiFetch('/.netlify/functions/newsletter-draft', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         transcript: transcript.value, guestName: draft.value.guestName,
         monthName: draft.value.monthName, frame: draft.value.guestFrame, program: draft.value.program,
+        notes: notes.value,
+        ...(redraft ? {
+          previousDraft: draft.value.section1,
+          instruction: instruction.value,
+          answers: answered.map((g) => ({ question: g.question, answer: g.answer })),
+        } : {}),
       }),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d.error || String(res.status));
-    if (draft.value.section1.trim() && !window.confirm('Replace what is already in Section 1?')) return;
+    if (!redraft && draft.value.section1.trim() && !window.confirm('Replace what is already in Section 1?')) return;
+    keepVersion(redraft ? 'Before this redraft' : 'Before drafting');
+    draftQuotes.value = []; draftGaps.value = [];
     draft.value.section1 = d.draft;
     draftQuotes.value = d.quotes ?? [];
-    draftGaps.value = d.gaps ?? [];
+    draftGaps.value = (d.gaps ?? []).map((q: string) => ({ question: q, answer: '', dropped: false }));
     appendedBridge.value = !!d.appendedBridgeLine;
+    instruction.value = '';
+    hasDrafted.value = true;
     transcriptOpen.value = false;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not draft from the transcript.';
@@ -426,8 +482,17 @@ function videoBlock() {
             </li>
           </ul>
           <textarea v-model="transcript" rows="8" class="body" placeholder="…or paste it here."></textarea>
+
+          <label class="notes__label" for="draft-notes">Your notes on this conversation <span class="hint">— optional</span></label>
+          <p class="block__hint">
+            What to focus on, what to leave alone, anything the recording does not say. Treated as true and
+            followed, but never quoted as something anyone said. Kept for every redraft.
+          </p>
+          <textarea id="draft-notes" v-model="notes" rows="3" class="body"
+            placeholder="Focus on the sister, not the nephew. Don't mention the funeral."></textarea>
+
           <div class="actions">
-            <button type="button" class="btn btn--sm" :disabled="drafting || transcript.trim().length < 400 || !draft.guestName" @click="draftSection1">
+            <button type="button" class="btn btn--sm" :disabled="drafting || transcript.trim().length < 400 || !draft.guestName" @click="draftSection1(false)">
               {{ drafting ? 'Reading the transcript…' : `Draft the ${draft.guestFrame === 'calling' ? 'partner' : 'guest'} story` }}
             </button>
             <span v-if="!draft.guestName" class="hint">Set the guest name first.</span>
@@ -439,12 +504,53 @@ function videoBlock() {
 
         <p v-if="appendedBridge" class="hint hint--warn">The bridge line was missing from the draft and has been added at the end — check it reads naturally there.</p>
         <div v-if="draftQuotes.length" class="quotes">
-          <p class="quotes__head">Quotations used — check each against the transcript:</p>
-          <ul><li v-for="(q, i) in draftQuotes" :key="i">&ldquo;{{ q }}&rdquo;</li></ul>
+          <p class="quotes__head">Quotations used — open one to see it in the transcript:</p>
+          <ul>
+            <li v-for="(q, i) in draftQuotes" :key="i">
+              <button type="button" class="linkish quotes__q" @click="openQuote = openQuote === i ? -1 : i">
+                &ldquo;{{ q }}&rdquo;
+              </button>
+              <span v-if="!quoteContext(q).found" class="hint hint--warn"> — not found in the transcript, check the wording</span>
+              <pre v-if="openQuote === i && quoteContext(q).found" class="quotes__context">{{ quoteContext(q).text }}</pre>
+            </li>
+          </ul>
         </div>
-        <div v-if="draftGaps.length" class="gaps">
-          <p class="gaps__head">The transcript did not settle these:</p>
-          <ul><li v-for="(g, i) in draftGaps" :key="i">{{ g }}</li></ul>
+
+        <div v-if="hasDrafted" class="refine">
+          <div v-if="draftGaps.length" class="gaps">
+            <p class="gaps__head">The transcript did not settle these — answer what you can:</p>
+            <div v-for="(g, i) in draftGaps" :key="i" class="gap" :class="{ 'gap--dropped': g.dropped }">
+              <p class="gap__q">{{ g.question }}</p>
+              <div class="gap__row">
+                <input v-model="g.answer" type="text" class="gap__a" :disabled="g.dropped"
+                  placeholder="What you know — left blank, it stays out" />
+                <button type="button" class="btn btn--ghost btn--sm" @click="g.dropped = !g.dropped">
+                  {{ g.dropped ? 'Put back' : 'Leave it out' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <label class="notes__label" for="draft-instruction">What should change?</label>
+          <textarea id="draft-instruction" v-model="instruction" rows="2" class="body"
+            placeholder="Shorter. Lead with the grief quote. Less about the nephew."></textarea>
+          <div class="actions">
+            <button type="button" class="btn btn--sm" :disabled="drafting" @click="draftSection1(true)">
+              {{ drafting ? 'Redrafting…' : 'Redraft' }}
+            </button>
+            <span class="hint">Works from the section as it stands, so your own edits are kept.</span>
+          </div>
+        </div>
+
+        <div v-if="draftHistory.length" class="versions">
+          <p class="versions__head">Earlier versions</p>
+          <ul>
+            <li v-for="(v, i) in draftHistory" :key="i">
+              <button type="button" class="linkish" @click="restoreVersion(v)">Restore</button>
+              <span class="versions__meta">{{ v.label }}, {{ v.at }}</span>
+              <span class="versions__peek">{{ v.text.slice(0, 80) }}…</span>
+            </li>
+          </ul>
         </div>
       </section>
 
@@ -769,6 +875,21 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .dropzone--over { border-color: var(--color-primary); background: var(--color-surface); }
 .dropzone__input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .dropzone__files { margin: 0 0 .6rem; padding-left: 1.1rem; font-size: .85rem; }
+.quotes__q { text-align: left; }
+.quotes__context { white-space: pre-wrap; font-size: .8rem; background: var(--color-bg); border-left: 3px solid var(--color-border); padding: .5rem .6rem; margin: .3rem 0 .6rem; max-height: 14rem; overflow: auto; font-family: inherit; }
+.notes__label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: .2rem; }
+.refine { border-top: 1px solid var(--color-border); margin-top: .8rem; padding-top: .8rem; }
+.gap { margin-bottom: .6rem; }
+.gap--dropped { opacity: .55; }
+.gap__q { margin: 0 0 .25rem; font-size: .9rem; }
+.gap__row { display: flex; gap: .4rem; align-items: center; }
+.gap__a { flex: 1; min-width: 0; padding: .4rem .5rem; border: 1px solid var(--color-border); border-radius: var(--border-radius); background: var(--color-bg); color: var(--color-text); }
+.versions { margin-top: .8rem; font-size: .85rem; }
+.versions__head { font-weight: 600; margin: 0 0 .3rem; }
+.versions ul { list-style: none; margin: 0; padding: 0; }
+.versions li { display: flex; gap: .5rem; align-items: baseline; padding: .15rem 0; }
+.versions__meta { color: var(--color-text-secondary); white-space: nowrap; }
+.versions__peek { color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
 .hint { font-size: .75rem; color: var(--color-text-secondary); margin: .4rem 0 0; }
 .hint--warn { color: #8a5a1f; }

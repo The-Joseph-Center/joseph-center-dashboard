@@ -71,6 +71,20 @@ export async function handler(event: {
     const frame = body.frame === 'calling' ? 'calling' : 'guest';
     const program = String(body.program ?? '').trim().slice(0, 120);
 
+    // Everything the writer brings that the transcript cannot: what to focus
+    // on, what to leave alone, and answers to what the last pass could not
+    // settle. Their own words, not the guest's — the prompt keeps that line.
+    const notes = String(body.notes ?? '').trim().slice(0, 4000);
+    const instruction = String(body.instruction ?? '').trim().slice(0, 2000);
+    const previousDraft = String(body.previousDraft ?? '').trim().slice(0, 20000);
+    const answers = (Array.isArray(body.answers) ? body.answers : [])
+      .slice(0, 5)
+      .map((a: { question?: unknown; answer?: unknown }) => ({
+        question: String(a?.question ?? '').trim().slice(0, 400),
+        answer: String(a?.answer ?? '').trim().slice(0, 1000),
+      }))
+      .filter((a: { question: string; answer: string }) => a.question && a.answer);
+
     if (transcript.length < 400) {
       return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Paste the transcript first — both sides of the conversation, and the bonus content if there is any.' }) };
     }
@@ -100,7 +114,35 @@ Requirements:
 
 ${bridgeLine(monthName)}
 
+The writer may add notes, answer your questions or ask for a change. Treat what they tell you as true and use it, but it is their account, not the guest's — never put it in quotation marks and never attribute it to anyone as speech. Only the transcript can be quoted. Where a note and the transcript disagree about emphasis, the note wins; where they disagree about fact, raise it in gaps rather than choosing.
+
 Call draft_section.`;
+
+    /**
+     * The conversation so far. A first pass is the transcript alone; a redraft
+     * hands back what was drafted and what the writer said about it, so the
+     * next pass is a revision rather than a fresh start that loses their edits.
+     */
+    const buildMessages = () => {
+      const opening = [
+        `Coffee Chat transcript:\n\n${transcript}`,
+        notes && `Notes from the writer — true, and to be followed, but not quotable as anyone's speech:\n\n${notes}`,
+      ].filter(Boolean).join('\n\n');
+
+      const messages: { role: 'user' | 'assistant'; content: string }[] = [{ role: 'user', content: opening }];
+      if (!previousDraft) return messages;
+
+      messages.push({ role: 'assistant', content: previousDraft });
+      const followUp = [
+        answers.length
+          ? `Answers to what you said the transcript did not settle:\n\n${answers.map((a: { question: string; answer: string }) => `Q: ${a.question}\nA: ${a.answer}`).join('\n\n')}`
+          : '',
+        instruction && `What to change:\n\n${instruction}`,
+        'Redraft the section with this in mind. Keep what is working; change what was asked for. The requirements and the closing line still hold.',
+      ].filter(Boolean).join('\n\n');
+      messages.push({ role: 'user', content: followUp });
+      return messages;
+    };
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -116,7 +158,7 @@ Call draft_section.`;
         system: SYSTEM,
         tools: [DRAFT_TOOL],
         tool_choice: { type: 'tool', name: DRAFT_TOOL.name },
-        messages: [{ role: 'user', content: `Coffee Chat transcript:\n\n${transcript}` }],
+        messages: buildMessages(),
       }),
     });
 
