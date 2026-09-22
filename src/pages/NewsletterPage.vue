@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
+import { assembleTranscript, describeFile, isCaptionExport } from '@/lib/transcript';
 import { apiFetch } from '@/lib/api';
 
 // The monthly newsletter, built in one place.
@@ -45,6 +46,22 @@ const drafting = ref(false);
 const draftQuotes = ref<string[]>([]);
 const draftGaps = ref<string[]>([]);
 const appendedBridge = ref(false);
+
+// Caption exports come one file per microphone; the filename names the
+// speaker, so they can be dropped in as they are and stitched back together.
+const transcriptFiles = ref<{ name: string; speaker: string; bonus: boolean }[]>([]);
+const dragging = ref(false);
+
+async function loadTranscriptFiles(list: FileList | null | undefined) {
+  const picked = Array.from(list ?? []).filter((f) => /\.(txt|srt|vtt)$/i.test(f.name));
+  if (!picked.length) return;
+  const files = await Promise.all(picked.map(async (f) => ({ name: f.name, text: await f.text() })));
+  const captions = files.filter((f) => isCaptionExport(f.text));
+  const plain = files.filter((f) => !isCaptionExport(f.text));
+  transcript.value = [captions.length ? assembleTranscript(captions) : '', ...plain.map((f) => f.text.trim())]
+    .filter(Boolean).join('\n\n');
+  transcriptFiles.value = files.map((f) => ({ name: f.name, ...describeFile(f.name) }));
+}
 
 async function draftSection1() {
   if (!draft.value) return;
@@ -390,10 +407,25 @@ function videoBlock() {
 
         <div v-if="transcriptOpen" class="transcript">
           <p class="block__hint">
-            Paste both sides of the conversation, plus the bonus content if there is any. The transcript is the
-            only thing it works from — anything it cannot settle comes back as a question rather than a guess.
+            Drop in the caption files as they come from the edit — one per speaker, bonus included. The speaker
+            is read from the end of each filename, so nothing needs marking up. The transcript is the only thing
+            it works from — anything it cannot settle comes back as a question rather than a guess.
           </p>
-          <textarea v-model="transcript" rows="8" class="body" placeholder="MONA: …&#10;GUEST: …"></textarea>
+          <label
+            class="dropzone" :class="{ 'dropzone--over': dragging }"
+            @dragover.prevent="dragging = true" @dragleave="dragging = false"
+            @drop.prevent="dragging = false; loadTranscriptFiles($event.dataTransfer?.files)"
+          >
+            <input type="file" accept=".txt,.srt,.vtt" multiple class="dropzone__input"
+              @change="loadTranscriptFiles(($event.target as HTMLInputElement).files); ($event.target as HTMLInputElement).value = ''" />
+            <span>Drop the transcript files here, or <u>choose files</u></span>
+          </label>
+          <ul v-if="transcriptFiles.length" class="dropzone__files">
+            <li v-for="f in transcriptFiles" :key="f.name">
+              {{ f.name }} → <strong>{{ f.speaker }}</strong><span v-if="f.bonus"> · bonus</span>
+            </li>
+          </ul>
+          <textarea v-model="transcript" rows="8" class="body" placeholder="…or paste it here."></textarea>
           <div class="actions">
             <button type="button" class="btn btn--sm" :disabled="drafting || transcript.trim().length < 400 || !draft.guestName" @click="draftSection1">
               {{ drafting ? 'Reading the transcript…' : `Draft the ${draft.guestFrame === 'calling' ? 'partner' : 'guest'} story` }}
@@ -733,6 +765,10 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .warn { font-size: .8125rem; color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 8%, transparent); border-radius: var(--border-radius); padding: .6rem .7rem; margin: 0 0 .7rem; line-height: 1.5; }
 .transcript { border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .8rem; margin-bottom: .8rem; background: var(--color-bg); }
 .transcript .body { margin-bottom: .6rem; }
+.dropzone { position: relative; display: block; border: 2px dashed var(--color-border); border-radius: var(--border-radius); padding: 1rem; text-align: center; cursor: pointer; margin-bottom: .6rem; font-size: .9rem; }
+.dropzone--over { border-color: var(--color-primary); background: var(--color-surface); }
+.dropzone__input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.dropzone__files { margin: 0 0 .6rem; padding-left: 1.1rem; font-size: .85rem; }
 .actions { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
 .hint { font-size: .75rem; color: var(--color-text-secondary); margin: .4rem 0 0; }
 .hint--warn { color: #8a5a1f; }
