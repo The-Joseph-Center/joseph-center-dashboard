@@ -19,8 +19,49 @@ import { bridgeLine } from './_lib/newsletter';
  */
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
-const MODEL = 'claude-sonnet-5';
+// Opus, not Sonnet: an hour of conversation with four people in it, told out
+// of order, is where the smaller model mixes up who was where and when.
+const MODEL = 'claude-opus-5';
 const MAX_TOKENS = 4096;
+
+// Approximate list price per token, for the running cost shown in the tool.
+const PRICE_IN = 15e-6;
+const PRICE_OUT = 75e-6;
+const priceOf = (usage?: { input_tokens: number; output_tokens: number }) =>
+  usage ? Number((usage.input_tokens * PRICE_IN + usage.output_tokens * PRICE_OUT).toFixed(4)) : null;
+
+/**
+ * The reading pass. Before any prose, work out who is in the story and what
+ * happened in what order, as plain lines the writer can correct. A wrong line
+ * here is obvious and takes seconds to fix; the same error inside finished
+ * paragraphs is what gets missed.
+ */
+const FACTS_TOOL = {
+  name: 'read_transcript',
+  description: 'Who is in this conversation and what happened, in the order it happened.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      people: {
+        type: 'array', maxItems: 10, items: { type: 'string' },
+        description: 'One line each: name or description, and their relationship to the guest. E.g. "Renee — the guest\'s sister, came to the Family Center with her son".',
+      },
+      timeline: {
+        type: 'array', maxItems: 14, items: { type: 'string' },
+        description: 'What happened, earliest first, one event per line. The order events happened in, NOT the order they were mentioned. Say who each event happened to by name.',
+      },
+      programs: {
+        type: 'array', maxItems: 6, items: { type: 'string' },
+        description: 'Joseph Center programs named in the conversation, and who was served by each.',
+      },
+      uncertain: {
+        type: 'array', maxItems: 6, items: { type: 'string' },
+        description: 'Anything the transcript leaves genuinely unclear, especially who a "she" or "he" refers to. Empty if none.',
+      },
+    },
+    required: ['people', 'timeline', 'programs', 'uncertain'],
+  },
+};
 
 const DRAFT_TOOL = {
   name: 'draft_section',
@@ -75,6 +116,8 @@ export async function handler(event: {
     // on, what to leave alone, and answers to what the last pass could not
     // settle. Their own words, not the guest's — the prompt keeps that line.
     const notes = String(body.notes ?? '').trim().slice(0, 4000);
+    const facts = String(body.facts ?? '').trim().slice(0, 8000);
+    const action = body.action === 'facts' ? 'facts' : 'draft';
     const instruction = String(body.instruction ?? '').trim().slice(0, 2000);
     const previousDraft = String(body.previousDraft ?? '').trim().slice(0, 20000);
     const answers = (Array.isArray(body.answers) ? body.answers : [])
@@ -90,6 +133,63 @@ export async function handler(event: {
     }
     if (!guest || !monthName) {
       return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Set the guest name and the month before drafting.' }) };
+    }
+
+    const callAnthropic = (payload: Record<string, unknown>) => fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json',
+        ...(process.env.ANTHROPIC_WORKSPACE_ID ? { 'anthropic-workspace-id': process.env.ANTHROPIC_WORKSPACE_ID } : {}),
+      },
+      body: JSON.stringify({ model: MODEL, max_tokens: MAX_TOKENS, ...payload }),
+    });
+
+    const toolInput = (data: { content?: { type: string; name?: string; input?: Record<string, unknown> }[] }, name: string) =>
+      (data.content ?? []).find((c) => c.type === 'tool_use' && c.name === name)?.input ?? {};
+
+    const lines = (v: unknown, max: number) =>
+      (Array.isArray(v) ? v : typeof v === 'string' ? v.split('\n') : [])
+        .filter((x): x is string => typeof x === 'string')
+        .map((x) => x.trim()).filter(Boolean).slice(0, max);
+
+    if (action === 'facts') {
+      const res = await callAnthropic({
+        system: `You read a Coffee Chat transcript for The Joseph Center and report what is in it. You do not write prose and you do not interpret.
+
+${guest} is the guest. Work out who else appears, how each is related, and the order events actually happened in — the conversation jumps around, so the order things are mentioned is not the order they occurred. Timestamps are on each turn; a later timestamp is later in the conversation, not necessarily later in the story.
+
+Be precise about who a thing happened to. Where the speaker's "she" or "he" is genuinely ambiguous, do not guess — say so in uncertain.
+
+Use only the transcript.${notes ? ` The writer has also given you notes; treat them as true.` : ''}
+
+Call read_transcript.`,
+        tools: [FACTS_TOOL],
+        tool_choice: { type: 'tool', name: FACTS_TOOL.name },
+        messages: [{ role: 'user', content: [`Coffee Chat transcript:\n\n${transcript}`, notes && `Notes from the writer:\n\n${notes}`].filter(Boolean).join('\n\n') }],
+      });
+
+      if (!res.ok) {
+        console.error('newsletter-draft (facts): Anthropic returned', res.status, (await res.text()).slice(0, 300));
+        return { statusCode: 502, headers: JSON_HEADERS, body: JSON.stringify({ error: 'The reading service did not answer. Try again in a moment.' }) };
+      }
+      const data = await res.json() as {
+        usage?: { input_tokens: number; output_tokens: number };
+        content?: { type: string; name?: string; input?: Record<string, unknown> }[];
+      };
+      const out = toolInput(data, FACTS_TOOL.name);
+      return {
+        statusCode: 200,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          people: lines(out.people, 10),
+          timeline: lines(out.timeline, 14),
+          programs: lines(out.programs, 6),
+          uncertain: lines(out.uncertain, 6),
+          cost: priceOf(data.usage),
+        }),
+      };
     }
 
     const arc = frame === 'calling'
@@ -114,7 +214,11 @@ Requirements:
 
 ${bridgeLine(monthName)}
 
-The writer may add notes, answer your questions or ask for a change. Treat what they tell you as true and use it, but it is their account, not the guest's — never put it in quotation marks and never attribute it to anyone as speech. Only the transcript can be quoted. Where a note and the transcript disagree about emphasis, the note wins; where they disagree about fact, raise it in gaps rather than choosing.
+${facts ? `The writer has checked who is in this story and what happened in what order. This is settled — where it differs from your own reading of the transcript, it is right and you are wrong:
+
+${facts}
+
+` : ''}The writer may add notes, answer your questions or ask for a change. Treat what they tell you as true and use it, but it is their account, not the guest's — never put it in quotation marks and never attribute it to anyone as speech. Only the transcript can be quoted. Where a note and the transcript disagree about emphasis, the note wins; where they disagree about fact, raise it in gaps rather than choosing.
 
 Call draft_section.`;
 
@@ -144,22 +248,11 @@ Call draft_section.`;
       return messages;
     };
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json',
-        ...(process.env.ANTHROPIC_WORKSPACE_ID ? { 'anthropic-workspace-id': process.env.ANTHROPIC_WORKSPACE_ID } : {}),
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: MAX_TOKENS,
-        system: SYSTEM,
-        tools: [DRAFT_TOOL],
-        tool_choice: { type: 'tool', name: DRAFT_TOOL.name },
-        messages: buildMessages(),
-      }),
+    const res = await callAnthropic({
+      system: SYSTEM,
+      tools: [DRAFT_TOOL],
+      tool_choice: { type: 'tool', name: DRAFT_TOOL.name },
+      messages: buildMessages(),
     });
 
     if (!res.ok) {
@@ -176,16 +269,11 @@ Call draft_section.`;
       return { statusCode: 502, headers: JSON_HEADERS, body: JSON.stringify({ error: 'The draft ran out of room. Try a shorter transcript, or the interview half on its own.' }) };
     }
 
-    const input = (data.content ?? []).find((c) => c.type === 'tool_use' && c.name === DRAFT_TOOL.name)?.input ?? {};
+    const input = toolInput(data, DRAFT_TOOL.name);
     const draft = typeof input.draft === 'string' ? input.draft.trim() : '';
     if (!draft) {
       return { statusCode: 502, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Nothing came back. Try again.' }) };
     }
-    const list = (v: unknown, max: number) =>
-      (Array.isArray(v) ? v : typeof v === 'string' ? v.split('\n') : [])
-        .filter((x): x is string => typeof x === 'string')
-        .map((x) => x.trim()).filter(Boolean).slice(0, max);
-
     // The bridge line is required and the model occasionally paraphrases it.
     // Appending is safer than trusting: the review would flag its absence
     // anyway, and a paraphrase is the harder error to notice.
@@ -197,10 +285,10 @@ Call draft_section.`;
       headers: JSON_HEADERS,
       body: JSON.stringify({
         draft: withBridge,
-        quotes: list(input.quotes, 4),
-        gaps: list(input.gaps, 5),
+        quotes: lines(input.quotes, 4),
+        gaps: lines(input.gaps, 5),
         appendedBridgeLine: !draft.includes('hope has an address'),
-        cost: data.usage ? Number((data.usage.input_tokens * 2e-6 + data.usage.output_tokens * 1e-5).toFixed(4)) : null,
+        cost: priceOf(data.usage),
       }),
     };
   } catch (err) {

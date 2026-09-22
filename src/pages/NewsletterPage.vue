@@ -51,6 +51,19 @@ const appendedBridge = ref(false);
 // to leave alone. Kept between redrafts so it keeps applying.
 const notes = ref('');
 const instruction = ref('');
+// The reading pass: who is in the story and what happened in what order,
+// as plain lines the writer corrects before a word of prose is written.
+const reading = ref(false);
+const factsOpen = ref(false);
+const factPeople = ref('');
+const factTimeline = ref('');
+const factPrograms = ref('');
+const factUncertain = ref<string[]>([]);
+const factSheet = computed(() => [
+  factPeople.value.trim() && `Who is in this story:\n${factPeople.value.trim()}`,
+  factTimeline.value.trim() && `What happened, in order:\n${factTimeline.value.trim()}`,
+  factPrograms.value.trim() && `Programs:\n${factPrograms.value.trim()}`,
+].filter(Boolean).join('\n\n'));
 const hasDrafted = ref(false);
 // Every draft, so a redraft that goes the wrong way is one click back.
 const draftHistory = ref<{ label: string; text: string; at: string }[]>([]);
@@ -103,6 +116,32 @@ function restoreVersion(v: { text: string }) {
   draft.value.section1 = v.text;
 }
 
+async function readTranscript() {
+  if (!draft.value) return;
+  reading.value = true; error.value = '';
+  try {
+    const res = await apiFetch('/.netlify/functions/newsletter-draft', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'facts', transcript: transcript.value, notes: notes.value,
+        guestName: draft.value.guestName, monthName: draft.value.monthName,
+        frame: draft.value.guestFrame, program: draft.value.program,
+      }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || String(res.status));
+    factPeople.value = (d.people ?? []).join('\n');
+    factTimeline.value = (d.timeline ?? []).join('\n');
+    factPrograms.value = (d.programs ?? []).join('\n');
+    factUncertain.value = d.uncertain ?? [];
+    factsOpen.value = true;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not read the transcript.';
+  } finally {
+    reading.value = false;
+  }
+}
+
 /**
  * First pass and every redraft after it. A redraft sends back the section as
  * it stands — hand edits included — so the writer's own wording survives
@@ -118,7 +157,7 @@ async function draftSection1(redraft = false) {
       body: JSON.stringify({
         transcript: transcript.value, guestName: draft.value.guestName,
         monthName: draft.value.monthName, frame: draft.value.guestFrame, program: draft.value.program,
-        notes: notes.value,
+        notes: notes.value, facts: factSheet.value,
         ...(redraft ? {
           previousDraft: draft.value.section1,
           instruction: instruction.value,
@@ -490,6 +529,31 @@ function videoBlock() {
           </p>
           <textarea id="draft-notes" v-model="notes" rows="3" class="body"
             placeholder="Focus on the sister, not the nephew. Don't mention the funeral."></textarea>
+
+          <div class="actions">
+            <button type="button" class="btn btn--ghost btn--sm"
+              :disabled="reading || transcript.trim().length < 400 || !draft.guestName" @click="readTranscript">
+              {{ reading ? 'Reading…' : factsOpen ? 'Read it again' : 'Read the transcript first' }}
+            </button>
+            <span class="hint">Check who is who and what happened when, before it writes.</span>
+          </div>
+
+          <div v-if="factsOpen" class="facts">
+            <p class="block__hint">
+              Correct anything wrong here and it is treated as settled — the draft follows this, not its own
+              reading of the recording.
+            </p>
+            <label class="notes__label" for="fact-people">Who is in this story</label>
+            <textarea id="fact-people" v-model="factPeople" rows="4" class="body"></textarea>
+            <label class="notes__label" for="fact-timeline">What happened, in order</label>
+            <textarea id="fact-timeline" v-model="factTimeline" rows="7" class="body"></textarea>
+            <label class="notes__label" for="fact-programs">Programs, and who they served</label>
+            <textarea id="fact-programs" v-model="factPrograms" rows="3" class="body"></textarea>
+            <div v-if="factUncertain.length" class="gaps">
+              <p class="gaps__head">It could not tell from the recording:</p>
+              <ul><li v-for="(u, i) in factUncertain" :key="i">{{ u }}</li></ul>
+            </div>
+          </div>
 
           <div class="actions">
             <button type="button" class="btn btn--sm" :disabled="drafting || transcript.trim().length < 400 || !draft.guestName" @click="draftSection1(false)">
@@ -877,6 +941,7 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .dropzone__files { margin: 0 0 .6rem; padding-left: 1.1rem; font-size: .85rem; }
 .quotes__q { text-align: left; }
 .quotes__context { white-space: pre-wrap; font-size: .8rem; background: var(--color-bg); border-left: 3px solid var(--color-border); padding: .5rem .6rem; margin: .3rem 0 .6rem; max-height: 14rem; overflow: auto; font-family: inherit; }
+.facts { border-top: 1px solid var(--color-border); margin-top: .6rem; padding-top: .6rem; }
 .notes__label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: .2rem; }
 .refine { border-top: 1px solid var(--color-border); margin-top: .8rem; padding-top: .8rem; }
 .gap { margin-bottom: .6rem; }

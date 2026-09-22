@@ -44,19 +44,43 @@ function parseCues(text: string, speaker: string): Cue[] {
   return cues;
 }
 
+/** A listener's "yeah" over the top of someone else's answer, not a turn of its own. */
+const BACKCHANNEL = /^(?:(?:yeah|yes|yep|no|okay|ok|right|wow|mhm|uh[- ]?huh|sure|exactly|amen|oh|absolutely|correct|true|got it|i know|i get it|of course|yes ma'?am|no ma'?am|thank you|nice|good|great|wonderful|beautiful|really|hmm)[\s.,!?]*)+$/i;
+
+/** Minutes and seconds, for a reader who needs to know what happened when. */
+function clock(timecode: string): string {
+  const [hh = '0', mm = '00', ss = '00'] = timecode.split(':');
+  const hours = Number(hh);
+  return hours ? `${hours}:${mm}:${ss}` : `${Number(mm)}:${ss}`;
+}
+
 function interleave(files: TranscriptFile[]): string {
   const cues = files
     .flatMap((f) => parseCues(f.text, describeFile(f.name).speaker))
     // Fixed-width timecodes sort correctly as strings; ties keep file order.
     .sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
 
-  const turns: { speaker: string; text: string }[] = [];
+  const turns: { speaker: string; start: string; text: string; asides: string[] }[] = [];
   for (const c of cues) {
     const last = turns[turns.length - 1];
-    if (last && last.speaker === c.speaker) last.text += ` ${c.text}`;
-    else turns.push({ speaker: c.speaker, text: c.text });
+    if (last && last.speaker === c.speaker) { last.text += ` ${c.text}`; continue; }
+    // An interjection while someone else is answering is recorded beside their
+    // turn rather than splitting it, so the answer stays one continuous thought.
+    const aside = BACKCHANNEL.test(c.text.trim());
+    if (last && aside) { last.asides.push(`${c.speaker}: ${c.text.trim()}`); continue; }
+    if (aside && !last) continue;
+    // Fold an earlier turn back together when only an aside came between.
+    const prior = turns[turns.length - 2];
+    if (last && prior && prior.speaker === c.speaker && !last.text.trim()) { prior.text += ` ${c.text}`; continue; }
+    turns.push({ speaker: c.speaker, start: c.start, text: c.text, asides: [] });
   }
-  return turns.map((t) => `${t.speaker.toUpperCase()}: ${t.text.replace(/\s+/g, ' ').trim()}`).join('\n\n');
+
+  return turns
+    .map((t) => {
+      const said = `[${clock(t.start)}] ${t.speaker.toUpperCase()}: ${t.text.replace(/\s+/g, ' ').trim()}`;
+      return t.asides.length ? `${said}\n(${t.asides.join(' / ')})` : said;
+    })
+    .join('\n\n');
 }
 
 /** True when a file looks like a caption export rather than an already-written transcript. */
