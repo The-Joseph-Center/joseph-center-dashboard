@@ -115,6 +115,7 @@ export async function handler(event: {
             months: all.map((r) => ({
               month: r.month, monthName: monthName(r.month), status: r.status,
               guest: r.guest_name, program: r.program, aweberTag: r.aweber_tag,
+              previewText: r.preview_text,
               sentAt: r.sent_at, updatedAt: r.updated_at, updatedBy: r.updated_by,
             })),
             tiers: TIERS.map((t) => ({ id: t.id, label: t.label, tag: t.aweberTag, excludes: t.excludes, signature: t.signature })),

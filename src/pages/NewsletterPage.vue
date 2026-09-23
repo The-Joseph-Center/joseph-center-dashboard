@@ -30,7 +30,7 @@ interface Draft {
 
 const months = ref<{
   month: string; monthName: string; status: string; guest: string | null; program: string | null;
-  aweberTag: string | null; sentAt: number | null; updatedAt: number; updatedBy: string | null;
+  aweberTag: string | null; previewText: string | null; sentAt: number | null; updatedAt: number; updatedBy: string | null;
 }[]>([]);
 const month = ref('');
 const draft = ref<Draft | null>(null);
@@ -379,6 +379,17 @@ const dirty = ref(false);
 let autosave: ReturnType<typeof setTimeout> | undefined;
 const openVersion = ref<string>('community-friend');
 
+// The preview lines already used, most recent first, so a month can reuse the
+// one that fits rather than inventing a new sentence every time.
+const pastPreviews = computed(() => {
+  const seen = new Set<string>();
+  return months.value
+    .filter((m) => m.month !== month.value && (m.previewText ?? '').trim())
+    .map((m) => ({ month: m.month, text: (m.previewText ?? '').trim() }))
+    .filter((p) => (seen.has(p.text) ? false : seen.add(p.text)))
+    .slice(0, 4);
+});
+
 const musts = computed(() => issues.value.filter((i) => i.severity === 'must'));
 const shoulds = computed(() => issues.value.filter((i) => i.severity === 'should'));
 
@@ -615,7 +626,31 @@ function videoBlock() {
           </label>
         </div>
         <label class="f"><span>Section 2 program or theme</span><input v-model="draft.program" type="text" placeholder="Day Shelter, Food Pantry, IFS, The Golden Girls Project, Family Center…" /></label>
-        <label class="f"><span>Preview text — one evocative sentence</span><input v-model="draft.previewText" type="text" maxlength="200" /></label>
+        <label class="f">
+          <span>Preview text — the line that follows the subject in the inbox</span>
+          <input v-model="draft.previewText" type="text" maxlength="200" placeholder="This is what a second chance looks like at The Joseph Center" />
+        </label>
+        <p class="block__hint">
+          Recorded here so it travels with the month, but the tool does not put it in the email — set it in AWeber
+          beside the subject line. This is how each version will read in an inbox:
+        </p>
+        <ul class="inbox">
+          <li v-for="v in versions" :key="v.id">
+            <span class="inbox__who">{{ v.label }}</span>
+            <span class="inbox__line">
+              <strong>{{ v.subject }}</strong>
+              <span class="inbox__preview"> — {{ draft.previewText || 'no preview text set' }}</span>
+            </span>
+            <button type="button" class="linkish" @click="copy(`${v.subject}`, `subject-${v.id}`)">
+              {{ copied === `subject-${v.id}` ? 'Copied' : 'copy subject' }}
+            </button>
+          </li>
+        </ul>
+        <p v-if="pastPreviews.length" class="block__hint">
+          Used before:
+          <button v-for="(p, i) in pastPreviews" :key="i" type="button" class="linkish inbox__past"
+            @click="draft.previewText = p.text">{{ p.text }}</button>
+        </p>
 
         <details v-if="history.length" class="rotation">
           <summary>What has already run ({{ history.length }})</summary>
@@ -1111,7 +1146,7 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .plan dd { margin: 0; }
 .plan code { background: var(--color-bg); padding: .05rem .3rem; border-radius: 3px; }
 
-.tools { margin-bottom: .7rem; }
+.tools { margin: .9rem 0; }
 .sheet { border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .8rem; margin-bottom: .9rem; background: var(--color-bg); }
 .sheet__head { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin-bottom: .7rem; }
 .f--inline { display: flex; align-items: center; gap: .4rem; margin: 0; }
@@ -1123,12 +1158,18 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .warn { font-size: .8125rem; color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 8%, transparent); border-radius: var(--border-radius); padding: .6rem .7rem; margin: 0 0 .7rem; line-height: 1.5; }
 .transcript { border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .8rem; margin-bottom: .8rem; background: var(--color-bg); }
 .transcript .body { margin-bottom: .6rem; }
-.dropzone { position: relative; display: block; border: 2px dashed var(--color-border); border-radius: var(--border-radius); padding: 1rem; text-align: center; cursor: pointer; margin-bottom: .6rem; font-size: .9rem; }
+.dropzone { position: relative; display: block; margin-top: .6rem; border: 2px dashed var(--color-border); border-radius: var(--border-radius); padding: 1rem; text-align: center; cursor: pointer; margin-bottom: .6rem; font-size: .9rem; }
 .dropzone--over { border-color: var(--color-primary); background: var(--color-surface); }
 .dropzone__input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .dropzone__files { margin: 0 0 .6rem; padding-left: 1.1rem; font-size: .85rem; }
 .quotes__q { text-align: left; }
 .quotes__context { white-space: pre-wrap; font-size: .8rem; background: var(--color-bg); border-left: 3px solid var(--color-border); padding: .5rem .6rem; margin: .3rem 0 .6rem; max-height: 14rem; overflow: auto; font-family: inherit; }
+.inbox { list-style: none; margin: 0 0 .8rem; padding: 0; font-size: .85rem; }
+.inbox li { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; padding: .2rem 0; }
+.inbox__who { color: var(--color-text-secondary); min-width: 9rem; }
+.inbox__line { flex: 1; min-width: 0; }
+.inbox__preview { color: var(--color-text-secondary); }
+.inbox__past { display: block; text-align: left; margin-top: .2rem; }
 .past { list-style: none; margin: .4rem 0 0; padding: 0; font-size: .9rem; }
 .past li { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; padding: .25rem 0; border-bottom: 1px solid var(--color-border); }
 .past--current { font-weight: 600; }
@@ -1152,7 +1193,7 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .versions li { display: flex; gap: .5rem; align-items: baseline; padding: .15rem 0; }
 .versions__meta { color: var(--color-text-secondary); white-space: nowrap; }
 .versions__peek { color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.actions { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+.actions { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; margin: .9rem 0; }
 .hint { font-size: .75rem; color: var(--color-text-secondary); margin: .4rem 0 0; }
 .hint--warn { color: #8a5a1f; }
 .quotes, .gaps { margin-top: .7rem; padding: .6rem .8rem; border-radius: var(--border-radius); }
