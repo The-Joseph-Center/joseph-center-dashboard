@@ -19,14 +19,17 @@ import { bridgeLine } from './_lib/newsletter';
  */
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
-// Opus, not Sonnet: an hour of conversation with four people in it, told out
-// of order, is where the smaller model mixes up who was where and when.
-const MODEL = 'claude-opus-5';
+// Sonnet. Opus was tried for the reading and drafting passes and did not earn
+// its keep on this material once the transcript carried timestamps and the
+// fact sheet was being corrected by hand — the reading pass is doing the work
+// the bigger model was brought in for. NEWSLETTER_MODEL overrides it without a
+// deploy if that is ever worth retesting.
+const MODEL = process.env.NEWSLETTER_MODEL || 'claude-sonnet-5';
 const MAX_TOKENS = 4096;
 
 // Approximate list price per token, for the running cost shown in the tool.
-const PRICE_IN = 15e-6;
-const PRICE_OUT = 75e-6;
+const PRICE_IN = 2e-6;
+const PRICE_OUT = 1e-5;
 const priceOf = (usage?: { input_tokens: number; output_tokens: number }) =>
   usage ? Number((usage.input_tokens * PRICE_IN + usage.output_tokens * PRICE_OUT).toFixed(4)) : null;
 
