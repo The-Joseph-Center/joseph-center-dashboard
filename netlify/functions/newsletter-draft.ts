@@ -87,6 +87,32 @@ const DRAFT_TOOL = {
   },
 };
 
+/**
+ * Section 2 has a fixed shape — header, hook, what we provide, the month's
+ * figures, the bridge closing line, then the referral CTA — and the program
+ * facts are all in the brand reference. What it cannot know is what happened
+ * this month, so anything the writer has not supplied is asked for rather
+ * than filled in.
+ */
+const SPOTLIGHT_TOOL = {
+  name: 'draft_spotlight',
+  description: 'Return the drafted program spotlight and anything you had to leave out.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      draft: {
+        type: 'string',
+        description: 'The spotlight in Markdown, in the required order, ending with the referral CTA.',
+      },
+      gaps: {
+        type: 'array', maxItems: 5, items: { type: 'string' },
+        description: 'What you needed and did not have, as questions for the writer — this month\'s figures above all. Empty if none.',
+      },
+    },
+    required: ['draft', 'gaps'],
+  },
+};
+
 export async function handler(event: {
   httpMethod: string;
   headers: Record<string, string>;
@@ -117,7 +143,7 @@ export async function handler(event: {
     // settle. Their own words, not the guest's — the prompt keeps that line.
     const notes = String(body.notes ?? '').trim().slice(0, 4000);
     const facts = String(body.facts ?? '').trim().slice(0, 8000);
-    const action = body.action === 'facts' ? 'facts' : 'draft';
+    const action = body.action === 'facts' ? 'facts' : body.action === 'section2' ? 'section2' : 'draft';
     const instruction = String(body.instruction ?? '').trim().slice(0, 2000);
     const previousDraft = String(body.previousDraft ?? '').trim().slice(0, 20000);
     const answers = (Array.isArray(body.answers) ? body.answers : [])
@@ -127,13 +153,6 @@ export async function handler(event: {
         answer: String(a?.answer ?? '').trim().slice(0, 1000),
       }))
       .filter((a: { question: string; answer: string }) => a.question && a.answer);
-
-    if (transcript.length < 400) {
-      return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Paste the transcript first — both sides of the conversation, and the bonus content if there is any.' }) };
-    }
-    if (!guest || !monthName) {
-      return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Set the guest name and the month before drafting.' }) };
-    }
 
     const callAnthropic = (payload: Record<string, unknown>) => fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -153,6 +172,91 @@ export async function handler(event: {
       (Array.isArray(v) ? v : typeof v === 'string' ? v.split('\n') : [])
         .filter((x): x is string => typeof x === 'string')
         .map((x) => x.trim()).filter(Boolean).slice(0, max);
+
+    if (action === 'section2') {
+      if (!program) {
+        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Set the Section 2 program or theme first.' }) };
+      }
+
+      const SPOTLIGHT_SYSTEM = `You draft Section 2 of The Joseph Center's monthly newsletter: the program spotlight. This month's spotlight is ${program}.
+
+${BRAND_REFERENCE_FULL}
+
+Write it in this order, and nothing else:
+1. A header, as "## " followed by a title naming the program.
+2. One or two sentences of hook — the reason a reader should care this month, not a definition.
+3. A short paragraph describing what the program is and who it is for.
+4. "**What we provide:**" followed by bullets, drawn from the program's entry in the reference above.
+5. A short paragraph on this month's figures. Use ONLY figures the writer has given you. If they have given none, leave this paragraph out and ask for them in gaps — never estimate, never reuse a headline statistic as though it were this month's.
+6. The closing line, exactly this shape, with the blank filled in so it reads naturally for this program:
+
+Every person who [action, e.g. "walks through the door for a hot lunch"] is walking across the bridge. Where they go from there depends on what they need — but they never walk alone.
+
+7. The referral CTA: a single line inviting a reader who knows someone in need to [Complete a Referral Form →](josephcentergj.com).
+
+Requirements:
+- Do not invent a program detail. If it is not in the reference above or in the writer's notes, it does not go in.
+- ${/\bIFS\b|integrated financial services/i.test(program) ? 'This is IFS: say "the people we serve", never "guests" and never "clients".' : 'Say "guests", never "clients".'}
+- Temporary housing, never transitional housing. "100% community and foundation funded" in full, or not at all.
+- The Joseph Center IS the bridge; donors sustain it. Never "build a bridge".
+- First names only, for everyone.${/golden girls/i.test(program) ? '\n- The first mention must be "The Golden Girls Project" in full; "Golden Girls" is fine after that.' : ''}
+- Warm and direct. No pity, no urgency tactics, no exaggerated claims.
+
+The writer may add notes or ask for a change. Treat what they tell you as true and use it.
+
+Call draft_spotlight.`;
+
+      const opening = [
+        `The spotlight this month is ${program}${monthName ? `, for the ${monthName} newsletter` : ''}.`,
+        notes && `Notes from the writer — what happened this month, and anything else that is true:\n\n${notes}`,
+      ].filter(Boolean).join('\n\n');
+
+      const messages: { role: 'user' | 'assistant'; content: string }[] = [{ role: 'user', content: opening }];
+      if (previousDraft) {
+        messages.push({ role: 'assistant', content: previousDraft });
+        messages.push({
+          role: 'user',
+          content: [
+            answers.length ? `Answers to what you asked for:\n\n${answers.map((a: { question: string; answer: string }) => `Q: ${a.question}\nA: ${a.answer}`).join('\n\n')}` : '',
+            instruction && `What to change:\n\n${instruction}`,
+            'Redraft the spotlight with this in mind. Keep what is working; change what was asked for. The required order and the closing line still hold.',
+          ].filter(Boolean).join('\n\n'),
+        });
+      }
+
+      const res = await callAnthropic({
+        system: SPOTLIGHT_SYSTEM,
+        tools: [SPOTLIGHT_TOOL],
+        tool_choice: { type: 'tool', name: SPOTLIGHT_TOOL.name },
+        messages,
+      });
+      if (!res.ok) {
+        console.error('newsletter-draft (section2): Anthropic returned', res.status, (await res.text()).slice(0, 300));
+        return { statusCode: 502, headers: JSON_HEADERS, body: JSON.stringify({ error: 'The drafting service did not answer. Try again in a moment.' }) };
+      }
+      const data = await res.json() as {
+        stop_reason?: string;
+        usage?: { input_tokens: number; output_tokens: number };
+        content?: { type: string; name?: string; input?: Record<string, unknown> }[];
+      };
+      const out = toolInput(data, SPOTLIGHT_TOOL.name);
+      const spotlight = typeof out.draft === 'string' ? out.draft.trim() : '';
+      if (!spotlight) {
+        return { statusCode: 502, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Nothing came back. Try again.' }) };
+      }
+      return {
+        statusCode: 200,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ draft: spotlight, gaps: lines(out.gaps, 5), cost: priceOf(data.usage) }),
+      };
+    }
+
+    if (transcript.length < 400) {
+      return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Paste the transcript first — both sides of the conversation, and the bonus content if there is any.' }) };
+    }
+    if (!guest || !monthName) {
+      return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Set the guest name and the month before drafting.' }) };
+    }
 
     if (action === 'facts') {
       const res = await callAnthropic({

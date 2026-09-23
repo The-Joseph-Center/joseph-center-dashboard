@@ -66,7 +66,7 @@ const factSheet = computed(() => [
 ].filter(Boolean).join('\n\n'));
 const hasDrafted = ref(false);
 // Every draft, so a redraft that goes the wrong way is one click back.
-const draftHistory = ref<{ label: string; text: string; at: string }[]>([]);
+const draftHistory = ref<{ label: string; text: string; which: 'section1' | 'section2'; at: string }[]>([]);
 
 // Caption exports come one file per microphone; the filename names the
 // speaker, so they can be dropped in as they are and stitched back together.
@@ -102,18 +102,60 @@ function quoteContext(quote: string): { found: boolean; text: string } {
 
 const openQuote = ref(-1);
 
-function keepVersion(label: string) {
-  const text = draft.value?.section1?.trim();
-  if (!text) return;
-  if (draftHistory.value[0]?.text === text) return;
-  draftHistory.value.unshift({ label, text, at: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) });
-  draftHistory.value = draftHistory.value.slice(0, 10);
+// ── Section 2 from the program and what the writer knows ──
+const spotlightOpen = ref(false);
+const spotlightNotes = ref('');
+const spotlightInstruction = ref('');
+const spotlightGaps = ref<{ question: string; answer: string; dropped: boolean }[]>([]);
+const spotlightDrafting = ref(false);
+const spotlightDrafted = ref(false);
+
+async function draftSection2(redraft = false) {
+  if (!draft.value) return;
+  spotlightDrafting.value = true; error.value = '';
+  const answered = spotlightGaps.value.filter((g) => g.answer.trim() && !g.dropped);
+  try {
+    const res = await apiFetch('/.netlify/functions/newsletter-draft', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'section2', program: draft.value.program, monthName: draft.value.monthName,
+        notes: spotlightNotes.value,
+        ...(redraft ? {
+          previousDraft: draft.value.section2,
+          instruction: spotlightInstruction.value,
+          answers: answered.map((g) => ({ question: g.question, answer: g.answer })),
+        } : {}),
+      }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || String(res.status));
+    if (!redraft && draft.value.section2.trim() && !window.confirm('Replace what is already in Section 2?')) return;
+    keepVersion(redraft ? 'before this redraft' : 'before drafting', 'section2');
+    draft.value.section2 = d.draft;
+    spotlightGaps.value = (d.gaps ?? []).map((q: string) => ({ question: q, answer: '', dropped: false }));
+    spotlightInstruction.value = '';
+    spotlightDrafted.value = true;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not draft the spotlight.';
+  } finally {
+    spotlightDrafting.value = false;
+  }
 }
 
-function restoreVersion(v: { text: string }) {
+function keepVersion(label: string, which: 'section1' | 'section2' = 'section1') {
+  const text = (which === 'section2' ? draft.value?.section2 : draft.value?.section1)?.trim();
+  if (!text) return;
+  if (draftHistory.value.find((v) => v.which === which)?.text === text) return;
+  const named = `${which === 'section2' ? 'Section 2' : 'Section 1'} — ${label}`;
+  draftHistory.value.unshift({ label: named, text, which, at: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) });
+  draftHistory.value = draftHistory.value.slice(0, 12);
+}
+
+function restoreVersion(v: { text: string; which: 'section1' | 'section2' }) {
   if (!draft.value) return;
-  keepVersion('Before restoring');
-  draft.value.section1 = v.text;
+  keepVersion('before restoring', v.which);
+  if (v.which === 'section2') draft.value.section2 = v.text;
+  else draft.value.section1 = v.text;
 }
 
 async function readTranscript() {
@@ -168,7 +210,7 @@ async function draftSection1(redraft = false) {
     const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d.error || String(res.status));
     if (!redraft && draft.value.section1.trim() && !window.confirm('Replace what is already in Section 1?')) return;
-    keepVersion(redraft ? 'Before this redraft' : 'Before drafting');
+    keepVersion(redraft ? 'before this redraft' : 'before drafting');
     draftQuotes.value = []; draftGaps.value = [];
     draft.value.section1 = d.draft;
     draftQuotes.value = d.quotes ?? [];
@@ -621,7 +663,55 @@ function videoBlock() {
       <section class="widget block">
         <h2 class="block__title">Section 2 — Program spotlight</h2>
         <p class="block__hint">Header, hook, description, "What we provide" bullets, the month's stat paragraph, the bridge closing line, then the referral CTA.</p>
+        <div class="tools">
+          <button type="button" class="btn btn--ghost btn--sm" @click="spotlightOpen = !spotlightOpen">
+            {{ spotlightOpen ? 'Close' : 'Draft the program spotlight' }}
+          </button>
+        </div>
+
+        <div v-if="spotlightOpen" class="transcript">
+          <p class="block__hint">
+            It knows what {{ draft.program || 'the program' }} provides from the brand reference. What it cannot
+            know is this month — figures, a new partnership, something that changed. Tell it here, and it asks
+            for anything else it needs rather than estimating.
+          </p>
+          <textarea v-model="spotlightNotes" rows="3" class="body"
+            placeholder="41 food boxes went out in August. The Marillac clinic now runs twice a month."></textarea>
+          <div class="actions">
+            <button type="button" class="btn btn--sm" :disabled="spotlightDrafting || !draft.program" @click="draftSection2(false)">
+              {{ spotlightDrafting ? 'Drafting…' : 'Draft the spotlight' }}
+            </button>
+            <span v-if="!draft.program" class="hint">Set the Section 2 program or theme first.</span>
+          </div>
+        </div>
+
         <textarea v-model="draft.section2" rows="10" class="body"></textarea>
+
+        <div v-if="spotlightDrafted" class="refine">
+          <div v-if="spotlightGaps.length" class="gaps">
+            <p class="gaps__head">It needed these and did not have them:</p>
+            <div v-for="(g, i) in spotlightGaps" :key="i" class="gap" :class="{ 'gap--dropped': g.dropped }">
+              <p class="gap__q">{{ g.question }}</p>
+              <div class="gap__row">
+                <input v-model="g.answer" type="text" class="gap__a" :disabled="g.dropped"
+                  placeholder="What you know — left blank, it stays out" />
+                <button type="button" class="btn btn--ghost btn--sm" @click="g.dropped = !g.dropped">
+                  {{ g.dropped ? 'Put back' : 'Leave it out' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <label class="notes__label" for="spotlight-instruction">What should change?</label>
+          <textarea id="spotlight-instruction" v-model="spotlightInstruction" rows="2" class="body"
+            placeholder="Shorter. Lead with the clinic. Fewer bullets."></textarea>
+          <div class="actions">
+            <button type="button" class="btn btn--sm" :disabled="spotlightDrafting" @click="draftSection2(true)">
+              {{ spotlightDrafting ? 'Redrafting…' : 'Redraft' }}
+            </button>
+            <span class="hint">Works from the section as it stands, so your own edits are kept.</span>
+          </div>
+        </div>
       </section>
 
       <!-- Section 3 -->

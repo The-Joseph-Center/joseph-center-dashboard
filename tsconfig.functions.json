@@ -15,7 +15,6 @@
     "strict": false,
     "noImplicitAny": false,
     "noUncheckedIndexedAccess": false,
-    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./src/*"
