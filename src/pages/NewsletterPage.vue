@@ -28,7 +28,10 @@ interface Draft {
   updatedBy: string | null; updatedAt: number;
 }
 
-const months = ref<{ month: string; monthName: string; status: string; guest: string | null }[]>([]);
+const months = ref<{
+  month: string; monthName: string; status: string; guest: string | null; program: string | null;
+  aweberTag: string | null; sentAt: number | null; updatedAt: number; updatedBy: string | null;
+}[]>([]);
 const month = ref('');
 const draft = ref<Draft | null>(null);
 const issues = ref<Issue[]>([]);
@@ -371,10 +374,18 @@ const loading = ref(true);
 const saving = ref(false);
 const error = ref('');
 const saved = ref(false);
+// Unsaved work, and the timer that puts it away by itself.
+const dirty = ref(false);
+let autosave: ReturnType<typeof setTimeout> | undefined;
 const openVersion = ref<string>('community-friend');
 
 const musts = computed(() => issues.value.filter((i) => i.severity === 'must'));
 const shoulds = computed(() => issues.value.filter((i) => i.severity === 'should'));
+
+/** Unix seconds as a plain date. */
+function when(seconds: number) {
+  return new Date(seconds * 1000).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 function thisMonth() {
   const d = new Date();
@@ -397,6 +408,8 @@ async function load() {
     plan.value = d.plan; section3Header.value = d.section3Header; bridge.value = d.bridgeLine;
     partnerHistory.value = d.partners ?? []; history.value = d.history ?? [];
     carriedPartners.value = !!d.carriedPartners;
+    applyWorkbench(d.draft?.workbench);
+    dirty.value = false;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not load the newsletter.';
   } finally {
@@ -409,26 +422,95 @@ onMounted(async () => {
   month.value = months.value[0]?.status === 'draft' ? months.value[0].month : thisMonth();
   await load();
 });
-watch(month, (v, old) => { if (old && v !== old) load(); });
+watch(month, async (v, old) => {
+  if (!old || v === old) return;
+  // Put the month being left away before loading the next one.
+  clearTimeout(autosave);
+  if (dirty.value) { try { await save(old); } catch { /* the error is already on screen */ } }
+  await load();
+});
 
-async function save() {
+
+/**
+ * The materials the draft was built from. Saved with the newsletter so a
+ * half-finished month can be put down and picked up — the transcript above all,
+ * which is four files and a stitch-together to reproduce.
+ */
+const workbench = computed(() => ({
+  transcript: transcript.value,
+  transcriptFiles: transcriptFiles.value,
+  notes: notes.value,
+  facts: { people: factPeople.value, timeline: factTimeline.value, programs: factPrograms.value, uncertain: factUncertain.value },
+  factsOpen: factsOpen.value,
+  spotlightNotes: spotlightNotes.value,
+}));
+
+function applyWorkbench(w: Record<string, unknown> | undefined) {
+  const wb = (w ?? {}) as {
+    transcript?: string; notes?: string; spotlightNotes?: string; factsOpen?: boolean;
+    transcriptFiles?: { name: string; speaker: string; bonus: boolean }[];
+    facts?: { people?: string; timeline?: string; programs?: string; uncertain?: string[] };
+  };
+  transcript.value = wb.transcript ?? '';
+  transcriptFiles.value = wb.transcriptFiles ?? [];
+  notes.value = wb.notes ?? '';
+  spotlightNotes.value = wb.spotlightNotes ?? '';
+  factPeople.value = wb.facts?.people ?? '';
+  factTimeline.value = wb.facts?.timeline ?? '';
+  factPrograms.value = wb.facts?.programs ?? '';
+  factUncertain.value = wb.facts?.uncertain ?? [];
+  factsOpen.value = !!wb.factsOpen && !!(wb.facts?.people || wb.facts?.timeline);
+  // A redraft needs a draft behind it; those are per-sitting and start empty.
+  draftQuotes.value = []; draftGaps.value = []; spotlightGaps.value = [];
+  hasDrafted.value = false; spotlightDrafted.value = false; draftHistory.value = [];
+}
+
+/**
+ * The month is passed in rather than read at the last moment: an autosave that
+ * fires just after the month picker moves would otherwise write this month's
+ * work into next month's row.
+ */
+async function save(target = month.value) {
   if (!draft.value) return;
   saving.value = true; error.value = ''; saved.value = false;
   try {
     const res = await apiFetch('/.netlify/functions/admin-newsletter', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...draft.value, month: month.value }),
+      body: JSON.stringify({ ...draft.value, month: target, workbench: workbench.value }),
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
     saved.value = true;
+    dirty.value = false;
     await loadIndex();
-    await load();
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not save.';
   } finally {
     saving.value = false;
   }
 }
+
+/**
+ * A newsletter is built over several sittings, and the work that hurts to lose
+ * is the transcript and the fact sheet rather than the prose. So every change
+ * marks the page dirty and saves itself a few seconds later, with the Save
+ * button still there for anyone who would rather press it.
+ */
+watch([draft, workbench], () => {
+  if (loading.value || !draft.value) return;
+  dirty.value = true;
+  const target = month.value;
+  clearTimeout(autosave);
+  autosave = setTimeout(() => {
+    if (dirty.value && !saving.value && month.value === target) save(target);
+  }, 4000);
+}, { deep: true });
+
+// Belt and braces: a close or a reload with something still unsaved.
+window.addEventListener('beforeunload', (e) => {
+  if (!dirty.value) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 /** Last month's videos, from the channel — titles have to match exactly. */
 async function pullVideos() {
@@ -498,10 +580,26 @@ function videoBlock() {
         <span class="bar__status" :class="`bar__status--${draft.status}`">{{ draft.status === 'sent' ? 'Sent' : 'Draft' }}</span>
         <span v-if="draft.updatedBy" class="bar__meta">last edited by {{ draft.updatedBy }}</span>
         <span class="bar__spacer"></span>
-        <button type="button" class="btn btn--sm" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</button>
-        <span v-if="saved" class="ok">Saved</span>
+        <button type="button" class="btn btn--sm" :disabled="saving" @click="save()">{{ saving ? 'Saving…' : 'Save' }}</button>
+        <span v-if="saving" class="bar__meta">Saving…</span>
+        <span v-else-if="dirty" class="bar__meta">Unsaved</span>
+        <span v-else-if="saved" class="ok">Saved</span>
       </div>
       <p v-if="error" class="state state--err" role="alert">{{ error }}</p>
+
+      <section v-if="months.length" class="widget block">
+        <details>
+          <summary class="block__title block__title--summary">Past newsletters ({{ months.length }})</summary>
+          <ul class="past">
+            <li v-for="m in months" :key="m.month" :class="{ 'past--current': m.month === month }">
+              <button type="button" class="linkish past__open" @click="month = m.month">{{ m.monthName }}</button>
+              <span class="past__status" :class="`past__status--${m.status}`">{{ m.status === 'sent' ? 'Sent' : 'Draft' }}</span>
+              <span class="past__meta">{{ m.guest || 'no guest' }} · {{ m.program || 'no program' }}</span>
+              <span class="past__when">{{ m.sentAt ? `sent ${when(m.sentAt)}` : m.updatedAt ? `edited ${when(m.updatedAt)}` : '' }}</span>
+            </li>
+          </ul>
+        </details>
+      </section>
 
       <!-- This month -->
       <section class="widget block">
@@ -1031,6 +1129,15 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .dropzone__files { margin: 0 0 .6rem; padding-left: 1.1rem; font-size: .85rem; }
 .quotes__q { text-align: left; }
 .quotes__context { white-space: pre-wrap; font-size: .8rem; background: var(--color-bg); border-left: 3px solid var(--color-border); padding: .5rem .6rem; margin: .3rem 0 .6rem; max-height: 14rem; overflow: auto; font-family: inherit; }
+.past { list-style: none; margin: .4rem 0 0; padding: 0; font-size: .9rem; }
+.past li { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; padding: .25rem 0; border-bottom: 1px solid var(--color-border); }
+.past--current { font-weight: 600; }
+.past__open { font-weight: 600; }
+.past__status { font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; color: var(--color-text-secondary); }
+.past__status--sent { color: var(--color-primary-strong); }
+.past__meta, .past__when { color: var(--color-text-secondary); }
+.past__when { margin-left: auto; white-space: nowrap; }
+.block__title--summary { cursor: pointer; }
 .facts { border-top: 1px solid var(--color-border); margin-top: .6rem; padding-top: .6rem; }
 .notes__label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: .2rem; }
 .refine { border-top: 1px solid var(--color-border); margin-top: .8rem; padding-top: .8rem; }

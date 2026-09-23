@@ -74,6 +74,7 @@ interface Row {
   program: string | null; aweber_tag: string | null; section1: string | null; section2: string | null;
   stats: string | null; videos: string | null; partners: string | null; preview_text: string | null;
   status: string; sent_at: number | null; updated_by: string | null; updated_at: number;
+  workbench: string | null;
 }
 
 const shape = (r: Row) => ({
@@ -85,6 +86,8 @@ const shape = (r: Row) => ({
   videos: parse<{ title: string; url: string }[]>(r.videos, []),
   partners: parse<{ name: string; url: string }[]>(r.partners, []),
   previewText: r.preview_text ?? '',
+  // The materials the draft was built from — transcript, notes, fact sheet.
+  workbench: parse<Record<string, unknown>>(r.workbench, {}),
   status: r.status, sentAt: r.sent_at, updatedBy: r.updated_by, updatedAt: r.updated_at,
 });
 
@@ -109,7 +112,11 @@ export async function handler(event: {
           statusCode: 200,
           headers: JSON_HEADERS,
           body: JSON.stringify({
-            months: all.map((r) => ({ month: r.month, monthName: monthName(r.month), status: r.status, guest: r.guest_name })),
+            months: all.map((r) => ({
+              month: r.month, monthName: monthName(r.month), status: r.status,
+              guest: r.guest_name, program: r.program, aweberTag: r.aweber_tag,
+              sentAt: r.sent_at, updatedAt: r.updated_at, updatedBy: r.updated_by,
+            })),
             tiers: TIERS.map((t) => ({ id: t.id, label: t.label, tag: t.aweberTag, excludes: t.excludes, signature: t.signature })),
           }),
         };
@@ -134,7 +141,7 @@ export async function handler(event: {
         stats: { 'Meals served': '', 'Individuals welcomed': '', 'Families served': '', 'Program spotlight stat': '', 'IFS financial stability': '' },
         videos: [],
         partners: previous ? parse<{ name: string; url: string }[]>(previous.partners, []) : [],
-        previewText: '', status: 'draft', sentAt: null, updatedBy: null, updatedAt: 0,
+        previewText: '', workbench: {}, status: 'draft', sentAt: null, updatedBy: null, updatedAt: 0,
       };
 
       const usedTags = all.filter((r) => r.month !== month).map((r) => r.aweber_tag ?? '').filter(Boolean);
@@ -253,15 +260,22 @@ export async function handler(event: {
       return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ status: 'sent' }) };
     }
 
-    await db.execute({
+    /**
+     * The workbench column arrives with migration 019. Until that has been
+     * applied the same write is made without it, so saving never depends on
+     * the order a deploy and a migration happen in — losing a month's work to
+     * that would be a poor trade for one column.
+     */
+    const upsert = (withWorkbench: boolean) => db.execute({
       sql: `INSERT INTO newsletters
-              (month, guest_name, guest_frame, program, aweber_tag, section1, section2, stats, videos, partners, preview_text, updated_by, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,unixepoch())
+              (month, guest_name, guest_frame, program, aweber_tag, section1, section2, stats, videos, partners, preview_text${withWorkbench ? ', workbench' : ''}, updated_by, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,${withWorkbench ? '?,' : ''}?,unixepoch())
             ON CONFLICT(month) DO UPDATE SET
               guest_name=excluded.guest_name, guest_frame=excluded.guest_frame, program=excluded.program,
               aweber_tag=excluded.aweber_tag, section1=excluded.section1, section2=excluded.section2,
               stats=excluded.stats, videos=excluded.videos, partners=excluded.partners,
-              preview_text=excluded.preview_text, updated_by=excluded.updated_by, updated_at=unixepoch()`,
+              preview_text=excluded.preview_text,${withWorkbench ? ' workbench=excluded.workbench,' : ''}
+              updated_by=excluded.updated_by, updated_at=unixepoch()`,
       args: [
         month,
         clean(body.guestName, 120),
@@ -279,9 +293,20 @@ export async function handler(event: {
         JSON.stringify(body.videos ?? []),
         JSON.stringify(body.partners ?? []),
         clean(body.previewText, 300),
+        // Capped: a transcript is the big one, and an hour of conversation is
+        // around 20k characters.
+        JSON.stringify(body.workbench ?? {}).slice(0, 200000),
         auth.email ?? 'unknown',
-      ],
+      ].filter((_, i) => withWorkbench || i !== 11),
     });
+
+    try {
+      await upsert(true);
+    } catch (err) {
+      if (!/no such column: workbench/i.test(String(err))) throw err;
+      console.warn('admin-newsletter: workbench column missing — migration 019 has not been applied');
+      await upsert(false);
+    }
 
     return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ saved: true }) };
   } catch (err) {
