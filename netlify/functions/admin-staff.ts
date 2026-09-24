@@ -1,7 +1,8 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import {
   fetchOktaUsers, fetchServiceAccountLogins, fetchNoCard, ensureNoCardTable,
-  ensureIdentityTable, oktaLogin, DEPARTED_STATUSES, turso, type OktaUser,
+  ensureIdentityTable, oktaLogin, DEPARTED_STATUSES, turso, fetchMutes, ensureMuteTable,
+  type OktaUser, type MuteKind,
 } from './_lib/staff-directory';
 
 /**
@@ -200,6 +201,7 @@ export async function handler(event: {
           departments: DEPARTMENTS,
           reasons: REASONS,
           notStaff: dismissed.map((d) => ({ ...d, name: nameFor.get(d.login) ?? '' })),
+          mutes: await fetchMutes(turso()),
           serviceAccounts: [...serviceAccounts].sort(),
         }),
       };
@@ -237,6 +239,34 @@ export async function handler(event: {
         args: [login, reason, clean(body.note, 300), auth.email ?? 'unknown'],
       });
       return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ dismissed: true }) };
+    }
+
+    /**
+     * Say that a card is fine as it is, so the weekly report stops raising it.
+     * Two kinds: this person will never have an Okta login, or they are
+     * deliberately off the website while still employed. Neither changes what
+     * anyone can access, and a departure still unpublishes the card.
+     */
+    if (action === 'mute' || action === 'unmute') {
+      const id = clean(body._id, 120);
+      const kind = clean(body.kind, 30) as MuteKind;
+      if (!id || (kind !== 'no-okta-account' && kind !== 'hidden-ok')) {
+        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Missing card or kind' }) };
+      }
+      const db = turso();
+      await ensureMuteTable(db);
+      if (action === 'unmute') {
+        await db.execute({ sql: 'DELETE FROM staff_reconcile_mutes WHERE kind = ? AND staff_id = ?', args: [kind, id] });
+        return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ unmuted: true }) };
+      }
+      await db.execute({
+        sql: `INSERT INTO staff_reconcile_mutes (kind, staff_id, note, muted_by, muted_at)
+              VALUES (?, ?, ?, ?, unixepoch())
+              ON CONFLICT(kind, staff_id) DO UPDATE SET
+                note=excluded.note, muted_by=excluded.muted_by, muted_at=excluded.muted_at`,
+        args: [kind, id, clean(body.note, 300), auth.email ?? 'unknown'],
+      });
+      return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ muted: true }) };
     }
 
     const name = clean(body.name, 120);

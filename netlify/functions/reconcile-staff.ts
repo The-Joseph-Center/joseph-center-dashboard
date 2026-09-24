@@ -1,11 +1,17 @@
 import { Resend } from 'resend';
 import {
   fetchOktaUsers, fetchStaffCards, fetchServiceAccountLogins, fetchNoCard, matchAll, oktaLogin,
-  DEPARTED_STATUSES, turso, ensureIdentityTable, unpublishCard, type OktaUser,
+  DEPARTED_STATUSES, turso, ensureIdentityTable, unpublishCard, fetchMutes, type OktaUser,
 } from './_lib/staff-directory';
 
 /**
- * Daily reconciliation between Okta and the public staff page.
+ * Reconciliation between Okta and the public staff page.
+ *
+ * Runs daily, writes daily, but only emails weekly. Acting daily is what keeps
+ * a departure off the website within a day; emailing daily meant the same
+ * settled list arriving every morning, which is how a report stops being read.
+ * Anything that actually changed the public site, or that blocked a write,
+ * still emails the moment it happens.
  *
  * ONE DIRECTION ONLY. Leaving Okta takes someone off the website; nothing here
  * ever puts anyone back. A reactivated account is reported so a human decides
@@ -31,7 +37,7 @@ interface Report {
   accountsWithoutCard: string[];
 }
 
-function renderEmail(r: Report) {
+function renderEmail(r: Report, kind: 'now' | 'weekly') {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const section = (title: string, items: string[], tone = '#5C5C5C') =>
     items.length
@@ -42,7 +48,9 @@ function renderEmail(r: Report) {
   const html = `
 <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#262626;max-width:640px;">
   <h2 style="font-size:17px;margin:0 0 4px;">Staff page — Okta reconciliation</h2>
-  <p style="margin:0;color:#5C5C5C;font-size:14px;">Changes are one-way: leaving Okta unpublishes a card, nothing here republishes one.</p>
+  <p style="margin:0;color:#5C5C5C;font-size:14px;">${kind === 'weekly'
+    ? 'The week\'s standing picture. Checks run daily; this goes out on Mondays, and anything that changes the site emails the same day.'
+    : 'Something changed on the site today.'} Changes are one-way: leaving Okta unpublishes a card, nothing here republishes one.</p>
   ${section('Unpublished from the website', r.unpublished.map((u) => `${u.name} (${u.login}) — ${u.reason}`), '#8a1f1f')}
   ${section('Needs your attention', r.needsAttention.map((u) => `${u.name} (${u.login}) — ${u.note}`), '#8a5a1f')}
   ${section('Newly linked to an Okta account', r.newLinks.map((u) => `${u.name} → ${u.login} (matched by ${u.via})`), '#1D5F55')}
@@ -65,8 +73,11 @@ function renderEmail(r: Report) {
     ? `${r.unpublished.length} unpublished`
     : r.needsAttention.length
       ? `${r.needsAttention.length} needing attention`
-      : `${r.newLinks.length} newly linked`;
-  return { subject: `Staff page reconciliation — ${headline}`, html, text };
+      : r.newLinks.length
+        ? `${r.newLinks.length} newly linked`
+        : `${r.cardsWithoutAccount.length + r.accountsWithoutCard.length} to look at`;
+  const prefix = kind === 'weekly' ? 'Staff page, this week' : 'Staff page';
+  return { subject: `${prefix} — ${headline}`, html, text };
 }
 
 export async function handler() {
@@ -103,7 +114,22 @@ export async function handler() {
       )
     );
 
-    const matches = matchAll(cards, users);
+    const mutes = await fetchMutes(db);
+    const mutedNoAccount = new Set(mutes.filter((m) => m.kind === 'no-okta-account').map((m) => m.staffId));
+    const mutedHidden = new Set(mutes.filter((m) => m.kind === 'hidden-ok').map((m) => m.staffId));
+
+    /**
+     * A link someone made by hand outranks the name and email guesswork.
+     * "Tricia" on the website and "Patricia" in Okta is one person, and without
+     * this she is reported twice every run — her card as having no account, her
+     * account as having no card — however many times the link is made.
+     */
+    const matches = matchAll(cards, users).map((m) => {
+      if (m.user) return m;
+      const linked = existing.get(m.card._id);
+      const user = linked ? byLogin.get(linked) : undefined;
+      return user ? { ...m, user, via: 'linked by hand' as const } : m;
+    });
 
     // Refuse to write anything if two cards resolved to one account.
     const claimed = new Map<string, string[]>();
@@ -127,13 +153,15 @@ export async function handler() {
       const name = card.name ?? card._id;
 
       if (!m.user) {
-        if (!collisions.length) report.cardsWithoutAccount.push(`${name}${card.title ? ` — ${card.title}` : ''}`);
+        if (!collisions.length && !mutedNoAccount.has(card._id)) {
+          report.cardsWithoutAccount.push(`${name}${card.title ? ` — ${card.title}` : ''}`);
+        }
         continue;
       }
       const login = oktaLogin(m.user);
       linkedLogins.add(login);
 
-      if (!collisions.length && existing.get(card._id) !== login) {
+      if (!collisions.length && existing.get(card._id) !== login && m.via !== 'linked by hand') {
         if (!DRY) {
           await db.execute({
             sql: `INSERT INTO staff_identity (sanity_staff_id, okta_login, okta_user_id, matched_by, updated_at)
@@ -151,7 +179,7 @@ export async function handler() {
       if (departed && !card.hidden) {
         if (!DRY) await unpublishCard(PROJECT, DATASET, SANITY, card._id);
         report.unpublished.push({ name, login, reason: `Okta status ${m.user.status}` });
-      } else if (!departed && card.hidden) {
+      } else if (!departed && card.hidden && !mutedHidden.has(card._id)) {
         // Never republished automatically — reported so a person decides.
         report.needsAttention.push({ name, login, note: 'active in Okta but hidden on the site — republish only if intended' });
       }
@@ -174,13 +202,43 @@ export async function handler() {
       }
     }
 
-    const actionable = report.unpublished.length + report.needsAttention.length + report.newLinks.length;
     console.log('reconcile-staff:', JSON.stringify({ ...report, dryRun: DRY }));
 
-    // Only email when something happened. A daily "nothing to report" is a mail
-    // rule waiting to happen, and then the one that matters is filtered too.
-    if (actionable > 0 && !DRY) {
-      const rendered = renderEmail(report);
+    /**
+     * Two reasons to write, and only two.
+     *
+     * Something changed the public site or blocked a write — a card was
+     * unpublished, or several cards claim one account — and that is worth an
+     * email the day it happens. Otherwise the standing picture goes out once a
+     * week, because a list that has not changed since yesterday is not news and
+     * a daily one trains you to skim past the day it matters.
+     */
+    const urgent = report.unpublished.length > 0 || collisions.length > 0;
+    const digestDay = Number(process.env.STAFF_DIGEST_DAY ?? 1); // Monday, UTC
+    const isDigestDay = new Date().getUTCDay() === digestDay;
+    const anythingToSay =
+      report.needsAttention.length + report.newLinks.length +
+      report.cardsWithoutAccount.length + report.accountsWithoutCard.length > 0;
+
+    if (isDigestDay && !urgent && anythingToSay) {
+      // The week's links, not just this morning's — the digest is the only
+      // place they are reported, so a Tuesday match still gets mentioned.
+      const week = await db.execute(
+        `SELECT sanity_staff_id, okta_login, matched_by FROM staff_identity
+          WHERE updated_at >= unixepoch() - 7 * 86400`
+      );
+      for (const r of week.rows) {
+        const id = String(r.sanity_staff_id);
+        if (report.newLinks.some((l) => l.login === String(r.okta_login))) continue;
+        const card = cards.find((c) => c._id === id);
+        report.newLinks.push({
+          name: card?.name ?? id, login: String(r.okta_login), via: String(r.matched_by),
+        });
+      }
+    }
+
+    if ((urgent || (isDigestDay && anythingToSay)) && !DRY) {
+      const rendered = renderEmail(report, urgent ? 'now' : 'weekly');
       const { error } = await resend.emails.send({
         from: `The Joseph Center <${process.env.QUOTE_REVIEW_FROM_EMAIL || 'no-reply@josephcentergj.com'}>`,
         to: process.env.STAFF_ALERT_TO_EMAIL || process.env.QUOTE_REVIEW_TO_EMAIL || 'ephifer@josephcentergj.com',

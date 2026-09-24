@@ -94,6 +94,7 @@ async function load() {
     const d = await res.json();
     cards.value = d.cards; needsCard.value = d.needsCard; departments.value = d.departments;
     notStaff.value = d.notStaff ?? []; serviceAccounts.value = d.serviceAccounts ?? [];
+    mutes.value = d.mutes ?? [];
     reasons.value = d.reasons ?? {};
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not load the staff list.';
@@ -252,6 +253,30 @@ async function confirmLink(u: NeedsCard) {
   await revealCard(id);
 }
 const unlink = (card: Card) => post({ action: 'unlink', _id: card._id }, card._id);
+
+// ── Fine as it is ──
+// The weekly report exists to surface drift. A card that will never have an
+// Okta account, or someone deliberately off the site while still employed, is
+// not drift, and reporting it every week is how the report stops being read.
+const mutes = ref<{ kind: string; staffId: string; note: string; by: string; at: number }[]>([]);
+const isMuted = (card: Card, kind: string) => mutes.value.some((m) => m.kind === kind && m.staffId === card._id);
+const muteNote = (card: Card, kind: string) =>
+  mutes.value.find((m) => m.kind === kind && m.staffId === card._id)?.note ?? '';
+
+async function toggleMute(card: Card, kind: 'no-okta-account' | 'hidden-ok') {
+  const on = isMuted(card, kind);
+  const note = on
+    ? ''
+    : window.prompt(
+        kind === 'no-okta-account'
+          ? `Why will ${card.name || 'this person'} never have an Okta account? (optional)`
+          : `Why is ${card.name || 'this person'} off the website for now? (optional)`,
+        '',
+      );
+  if (!on && note === null) return;  // cancelled
+  await post({ action: on ? 'unmute' : 'mute', _id: card._id, kind, note }, card._id);
+  await load();
+}
 
 // ── Removing a card ──
 // Two clicks, because it cannot be undone. Hiding is the right tool for someone
@@ -465,7 +490,24 @@ async function removeCard(card: Card) {
                   Signs in as {{ card.linkedLogin }}
                   <button type="button" class="linkish" :disabled="busy === card._id" @click="unlink(card)">Unlink</button>
                 </template>
-                <span v-else class="row__link--none">No Okta account linked — link one from the queue above.</span>
+                <template v-else-if="isMuted(card, 'no-okta-account')">
+                  <span class="row__muted">No Okta account, and that is expected{{ muteNote(card, 'no-okta-account') ? ` — ${muteNote(card, 'no-okta-account')}` : '' }}</span>
+                  <button type="button" class="linkish" :disabled="busy === card._id" @click="toggleMute(card, 'no-okta-account')">Report it again</button>
+                </template>
+                <template v-else>
+                  <span class="row__link--none">No Okta account linked — link one from the queue above.</span>
+                  <button type="button" class="linkish" :disabled="busy === card._id" @click="toggleMute(card, 'no-okta-account')">They don't need one</button>
+                </template>
+              </p>
+              <p v-if="card.hidden" class="row__link">
+                <template v-if="isMuted(card, 'hidden-ok')">
+                  <span class="row__muted">Off the website on purpose{{ muteNote(card, 'hidden-ok') ? ` — ${muteNote(card, 'hidden-ok')}` : '' }}</span>
+                  <button type="button" class="linkish" :disabled="busy === card._id" @click="toggleMute(card, 'hidden-ok')">Report it again</button>
+                </template>
+                <template v-else>
+                  <span class="row__link--none">Hidden from the website.</span>
+                  <button type="button" class="linkish" :disabled="busy === card._id" @click="toggleMute(card, 'hidden-ok')">This is intended, stop reporting it</button>
+                </template>
               </p>
 
               <div class="row__actions">
@@ -533,6 +575,7 @@ async function removeCard(card: Card) {
 .linkish--danger { color: #8a1f1f; }
 .linkish--danger:hover { color: #6d1818; }
 .row__link { margin: 0 0 .5rem; font-size: .75rem; color: var(--color-text-secondary); display: flex; align-items: center; gap: .5rem; }
+.row__muted { color: var(--color-text-secondary); }
 .row__link--none { color: #8a5a1f; }
 .dismiss__wide { grid-column: 1 / -1; }
 .row--new { outline: 2px solid var(--color-primary-strong); outline-offset: 2px; transition: outline-color 1s ease; }

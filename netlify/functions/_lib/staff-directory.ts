@@ -177,6 +177,48 @@ export function turso() {
   });
 }
 
+/**
+ * Cards a human has said are fine as they are.
+ *
+ * Two kinds, both about a card rather than an account:
+ *   no-okta-account — this person will never have an Okta login. A volunteer,
+ *     a board member, the office dog. Reporting them weekly is not a prompt to
+ *     do anything, it is just noise.
+ *   hidden-ok — active in Okta but deliberately off the website. Someone on
+ *     leave for an unknown length of time is the case this exists for: it is
+ *     not drift and it does not want chasing every week.
+ *
+ * Muting says nothing about the person's access. Okta still governs that, and
+ * a departure still unpublishes the card whatever is muted here.
+ */
+export type MuteKind = 'no-okta-account' | 'hidden-ok';
+export interface Mute { kind: MuteKind; staffId: string; note: string; by: string; at: number }
+
+export async function ensureMuteTable(db: ReturnType<typeof turso>) {
+  await db.executeMultiple(`
+    CREATE TABLE IF NOT EXISTS staff_reconcile_mutes (
+      kind      TEXT NOT NULL,
+      staff_id  TEXT NOT NULL,
+      note      TEXT,
+      muted_by  TEXT NOT NULL,
+      muted_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+      PRIMARY KEY (kind, staff_id)
+    );
+  `);
+}
+
+export async function fetchMutes(db: ReturnType<typeof turso>): Promise<Mute[]> {
+  await ensureMuteTable(db);
+  const { rows } = await db.execute('SELECT kind, staff_id, note, muted_by, muted_at FROM staff_reconcile_mutes');
+  return rows.map((r) => ({
+    kind: String(r.kind) as MuteKind,
+    staffId: String(r.staff_id),
+    note: r.note ? String(r.note) : '',
+    by: String(r.muted_by),
+    at: Number(r.muted_at),
+  }));
+}
+
 export async function ensureIdentityTable(db: ReturnType<typeof turso>) {
   await db.executeMultiple(`
     CREATE TABLE IF NOT EXISTS staff_identity (
