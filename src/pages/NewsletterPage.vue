@@ -247,11 +247,22 @@ async function openSheet() {
   await readSheet();
 }
 
+/**
+ * The stats a month starts with. A saved month whose stats were emptied has no
+ * labels to match against, and the panel then asked the sheet for nothing and
+ * showed nothing — a resolved tab with an empty space under it.
+ */
+const DEFAULT_STAT_LABELS = [
+  'Meals served', 'Individuals welcomed', 'Families served',
+  'Program spotlight stat', 'IFS financial stability',
+];
+
 async function readSheet() {
   if (!draft.value) return;
   readingSheet.value = true; sheetError.value = '';
   try {
-    const labels = Object.keys(draft.value.stats).join('|');
+    const keys = Object.keys(draft.value.stats);
+    const labels = (keys.length ? keys : DEFAULT_STAT_LABELS).join('|');
     const params = new URLSearchParams({ month: month.value, labels });
     if (sheetTab.value) params.set('tab', sheetTab.value);
     const res = await apiFetch(`/.netlify/functions/sheets-stats?${params}`);
@@ -281,6 +292,13 @@ function pickRow(m: SheetMatch, index: number) {
   const row = sheetRows.value.find((r) => r.index === index);
   if (!row) return;
   m.row = index; m.value = row.value; m.sourceLabel = row.label;
+}
+
+/** A row the tool had no field for — a new metric, or a month that counts something different. */
+function addStat(label: string, value: string) {
+  if (!draft.value) return;
+  const name = label.split('›').pop()!.trim() || label;
+  draft.value.stats = { ...draft.value.stats, [name]: value };
 }
 
 function applySheet() {
@@ -946,6 +964,21 @@ function videoBlock() {
             <button type="button" class="btn btn--sm" @click="applySheet">Use these numbers</button>
             <span class="hint">Check each one against the row it came from before you do.</span>
           </div>
+
+          <details v-if="sheetRows.length" class="sheet__all">
+            <summary>Everything in this tab ({{ sheetRows.length }} rows)</summary>
+            <table class="sheet__tbl">
+              <tbody>
+                <tr v-for="r in sheetRows" :key="r.index">
+                  <td>{{ r.label }}</td>
+                  <td class="num"><strong>{{ r.value }}</strong></td>
+                  <td class="num">
+                    <button type="button" class="linkish" @click="addStat(r.label, r.value)">Add as a stat</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </details>
         </div>
         <div class="grid2">
           <label v-for="(_, k) in draft.stats" :key="k" class="f"><span>{{ k }}</span><input v-model="draft.stats[k]" type="text" /></label>
@@ -1266,6 +1299,8 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .sheet__head { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin-bottom: .7rem; }
 .f--inline { display: flex; align-items: center; gap: .4rem; margin: 0; }
 .f--inline > span { margin: 0; }
+.sheet__all { margin-top: .8rem; font-size: .8125rem; }
+.sheet__all summary { cursor: pointer; color: var(--color-text-secondary); }
 .sheet__tbl { width: 100%; border-collapse: collapse; font-size: .8125rem; }
 .sheet__tbl th { text-align: left; font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); padding: .3rem .4rem; border-bottom: 1px solid var(--color-border); }
 .sheet__tbl td { padding: .35rem .4rem; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
