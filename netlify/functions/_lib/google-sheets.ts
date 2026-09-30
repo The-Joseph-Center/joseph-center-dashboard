@@ -162,16 +162,33 @@ const MONTHS = ['january','february','march','april','may','june','july','august
 export function findMonthTab(tabs: string[], month: string): string | null {
   const [year, m] = month.split('-').map(Number);
   const name = MONTHS[m! - 1]!;
-  const abbrev = name.slice(0, 3);
+  const mm = String(m).padStart(2, '0');
   const norm = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
 
-  // A tab naming this month and this year wins over one naming only the month.
-  const withYear = tabs.find((t) => norm(t).startsWith(name) && norm(t).includes(String(year)));
-  if (withYear) return withYear;
-  const exact = tabs.find((t) => norm(t) === name);
-  if (exact) return exact;
-  const starts = tabs.find((t) => norm(t).startsWith(name) || norm(t).startsWith(abbrev));
-  return starts ?? null;
+  /**
+   * The month named anywhere in the tab, not only at the start. "September",
+   * "Sept 2026", "2026-09 Impact" and "Sep Numbers" are all the same tab to a
+   * person, and a tab that only nearly matched used to fall through to no
+   * match at all — which looked like the sheet being empty for that month.
+   *
+   * "Sept" matters on its own: the three-letter cut of september is "sep", so
+   * a word-boundary test against the abbreviation alone misses the spelling
+   * people actually type.
+   */
+  const named = (t: string) => {
+    const n = norm(t);
+    return new RegExp(`\\b(${name}|${name.slice(0, 3)}t?)\\b`).test(n)
+      || n.includes(`${year}-${mm}`)
+      || new RegExp(`\\b${mm}[\\/.-]${year}\\b`).test(n);
+  };
+
+  const hits = tabs.filter(named);
+  if (!hits.length) return null;
+  // A tab that names this year beats one that names only the month, and an
+  // exact "September" beats "September — old" when both are there.
+  return hits.find((t) => norm(t).includes(String(year)))
+    ?? hits.find((t) => norm(t) === name)
+    ?? hits[0]!;
 }
 
 export interface Metric { row: number; department: string; category: string; label: string; value: string }

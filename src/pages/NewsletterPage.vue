@@ -258,7 +258,14 @@ async function readSheet() {
     const d = await res.json().catch(() => ({}));
     if (!res.ok) { sheetError.value = d.error || String(res.status); sheetTabs.value = d.tabs ?? []; return; }
     sheetTabs.value = d.tabs ?? [];
-    if (!sheetTab.value && sheetTabs.value.length) { sheetTab.value = d.tab || sheetTabs.value[0]!; if (!d.matches) return readSheet(); }
+    // The first read asks the server to resolve the month to a tab. When it
+    // cannot — a tab named in a way it does not recognise — fall back to the
+    // first tab and read AGAIN with it, rather than showing the numbers of a
+    // tab nobody selected, or, as it did, no numbers at all.
+    if (!sheetTab.value && sheetTabs.value.length) {
+      sheetTab.value = d.tab || sheetTabs.value[0]!;
+      if (sheetTab.value !== d.tab) return readSheet();
+    }
     sheetMatches.value = d.matches ?? [];
     sheetRows.value = d.rows ?? [];
 
@@ -959,6 +966,10 @@ function videoBlock() {
           <span v-else class="pill pill--warn">{{ musts.length }} to fix, {{ shoulds.length }} to check</span>
         </h2>
         <p class="block__hint">Every one of these is a mistake that has been caught in review before.</p>
+        <p v-if="!issues.length" class="ready">
+          Checked and clear: terminology, the bridge line and its month, first names only, the stats and video
+          titles, the AWeber tag and its year, the preview text, and this month's guest and partners.
+        </p>
         <ul v-if="issues.length" class="issues">
           <li v-for="(i, n) in issues" :key="n" class="issue" :class="`issue--${i.severity}`">
             <span class="sev" :class="`sev--${i.severity}`">{{ i.severity === 'must' ? 'Fix' : 'Check' }}</span>
@@ -1036,10 +1047,45 @@ function videoBlock() {
 
             <template v-else>
               <p class="ready">Nothing outstanding in the review.</p>
+
+              <!--
+                The tag is the last step, not the next one. Everything between
+                the review passing and the send happens in AWeber by hand,
+                because its API covers neither Campaigns nor the message
+                library — so the order lives here as a list rather than in
+                somebody's memory.
+              -->
+              <ol class="steps">
+                <li>
+                  <strong>Build the HTML for each version.</strong>
+                  In <em>The three versions</em> below, press <em>Build email HTML</em>, then copy each one.
+                </li>
+                <li>
+                  <strong>Create the three messages in AWeber.</strong>
+                  Messages → Drafts → Create a message, one per version. Paste the HTML, and set the subject and
+                  preview text from the version's copy buttons. Name each draft for its month and tier, e.g.
+                  <code>{{ draft.monthName }} Newsletter — donor</code>.
+                </li>
+                <li>
+                  <strong>Build or update the three automations.</strong>
+                  Campaigns → one per tier. Trigger: tag applied, <code>{{ sendState.tag }}</code>. Then a wait of
+                  {{ sendState.plan?.waitDays ?? 0 }} days, then send that tier's message.
+                  Each one excludes the other tiers' tags —
+                  <span v-for="v in versions" :key="v.id" class="steps__tier">
+                    <strong>{{ v.label }}</strong> excludes <code>{{ v.excludes.join(', ') }}</code>.
+                  </span>
+                </li>
+                <li>
+                  <strong>Check last month's automations are off</strong>, so an old one cannot fire on a
+                  subscriber who has just been tagged.
+                </li>
+                <li><strong>Apply the tag below.</strong> That is the send.</li>
+              </ol>
+
               <label class="attest">
                 <input v-model="automationsUpdated" type="checkbox" />
                 <span>
-                  All three automations are set to trigger on <code>{{ sendState.tag }}</code>.
+                  Steps 1–4 are done, and all three automations trigger on <code>{{ sendState.tag }}</code>.
                   <em>Nothing here can check this — AWeber's API does not expose Campaigns. If they still point at
                   last month's tag, this sends to nobody and reports success.</em>
                 </span>
@@ -1084,6 +1130,10 @@ function videoBlock() {
               <button type="button" class="linkish" @click="copy(v.subject, v.id + '-subject')">
                 {{ copied === v.id + '-subject' ? 'Copied' : 'Copy subject line' }}
               </button>
+              <button type="button" class="linkish" :disabled="!draft.previewText"
+                @click="copy(draft.previewText, v.id + '-preview')">
+                {{ copied === v.id + '-preview' ? 'Copied' : 'Copy preview text' }}
+              </button>
               <span class="version__spacer"></span>
               <button type="button" class="linkish" :disabled="buildingHtml" @click="showHtml && Object.keys(htmlVersions).length ? (showHtml = false) : buildHtml()">
                 {{ buildingHtml ? 'Building…' : showHtml ? 'Show plain text' : 'Build email HTML' }}
@@ -1121,6 +1171,9 @@ function videoBlock() {
 .pill--ok { color: #14532d; background: color-mix(in srgb, #14532d 12%, transparent); }
 .pill--warn { color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 12%, transparent); }
 
+.steps { margin: .9rem 0; padding-left: 1.2rem; font-size: .8125rem; line-height: 1.65; }
+.steps li { margin-bottom: .5rem; }
+.steps__tier { display: block; color: var(--color-text-secondary); font-size: .75rem; }
 .issues { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
 .issue { display: flex; gap: .6rem; align-items: flex-start; padding: .55rem .7rem; background: var(--color-bg); border-radius: var(--border-radius); border-left: 3px solid var(--color-border); }
 .issue--must { border-left-color: #8a1f1f; }
