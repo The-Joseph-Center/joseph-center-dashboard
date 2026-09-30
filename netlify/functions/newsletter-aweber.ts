@@ -1,7 +1,12 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { turso, fetchOktaUsers } from './_lib/staff-directory';
 import { reviewNewsletter, aweberPlan, type NewsletterDraft } from './_lib/newsletter';
-import { aweberConfig, missingScopes, allSubscribers, addTag, describeAudience, REQUIRED_SCOPES } from './_lib/aweber';
+import {
+  aweberConfig, missingScopes, allSubscribers, addTag, describeAudience, REQUIRED_SCOPES,
+  listDrafts, createDraft,
+} from './_lib/aweber';
+import { TIERS, section4, closingSection, DONATE_URL } from './_lib/newsletter';
+import { newsletterHtml, promoteButtons } from './_lib/newsletter-html';
 
 /**
  * The AWeber end of sending the newsletter.
@@ -150,8 +155,61 @@ export async function handler(event: {
       return { statusCode: 405, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Method not allowed' }) };
     }
 
-    // ── tag: this is the send ──
     const body = JSON.parse(event.body || '{}');
+
+    /**
+     * drafts: the three messages, built and put into AWeber.
+     *
+     * AWeber's drag-and-drop editor has nowhere to paste a built HTML email,
+     * so the alternative to this was pasting markup into an editor that cannot
+     * take it. A draft broadcast can be picked as the message an automation
+     * sends, which is where a person takes over.
+     *
+     * Built from the saved row rather than from whatever the page posted: the
+     * drafts should be the newsletter that was reviewed, not an edit made in
+     * the seconds since.
+     */
+    if (body.action === 'drafts') {
+      const existing = await listDrafts(cfg);
+      const prev = MONTHS[(Number(month.split('-')[1]) - 2 + 12) % 12];
+      const made: { tier: string; subject: string; id?: number; skipped?: boolean }[] = [];
+
+      for (const t of TIERS) {
+        const subject = t.subject(draft.monthName);
+        const already = existing.find((d) => d.subject.trim().toLowerCase() === subject.trim().toLowerCase());
+        if (already) {
+          made.push({ tier: t.label, subject, id: already.id, skipped: true });
+          continue;
+        }
+        const html = promoteButtons(newsletterHtml({
+          monthName: draft.monthName,
+          section1: draft.section1,
+          section2: draft.section2,
+          section3Header: `${draft.monthName} Impact & ${prev} Videos`,
+          stats: draft.stats,
+          videos: draft.videos,
+          section4: section4(t, draft.monthName, draft.guestName),
+          closing: closingSection(draft.partners),
+          signature: t.signature,
+          donateUrl: DONATE_URL,
+          coffeeChatFormUrl: 'https://forms.gle/aQZRYokrT7YK8GFL9',
+        }), DONATE_URL);
+        // AWeber needs a text part; without one it generates its own from the
+        // HTML, which mangles the buttons into bare URLs.
+        const text = [draft.section1, draft.section2, section4(t, draft.monthName, draft.guestName),
+          closingSection(draft.partners), `— ${t.signature}`].join('\n\n');
+        const created = await createDraft(cfg, { subject, html, text });
+        made.push({ tier: t.label, subject, id: created.id });
+      }
+
+      return {
+        statusCode: 200,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ drafts: made, previewText: draft.previewText }),
+      };
+    }
+
+    // ── tag: this is the send ──
 
     /**
      * The failure this cannot see.

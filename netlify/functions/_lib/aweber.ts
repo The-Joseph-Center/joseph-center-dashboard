@@ -129,6 +129,46 @@ export async function addTag(cfg: AweberConfig, subscriber: Subscriber, tag: str
   return 'added';
 }
 
+/**
+ * Draft messages, which the API does cover even though Campaigns do not.
+ *
+ * A draft broadcast is the only way to get a built HTML email into AWeber
+ * without a person pasting markup into an editor that has nowhere to paste it.
+ * Once the draft exists it can be picked as the message an automation sends,
+ * which is the step this hands back to a human.
+ */
+export interface DraftMessage { id: number; subject: string }
+
+export async function listDrafts(cfg: AweberConfig): Promise<DraftMessage[]> {
+  const { status, body } = await api<{ entries?: { id: number; subject?: string }[]; error?: { message: string } }>(
+    cfg, `/accounts/${cfg.accountId}/lists/${cfg.listId}/broadcasts?status=draft&ws.size=100`
+  );
+  if (status >= 300) throw new Error(body.error?.message ?? `Listing drafts failed (${status})`);
+  return (body.entries ?? []).map((e) => ({ id: e.id, subject: String(e.subject ?? '') }));
+}
+
+export async function createDraft(
+  cfg: AweberConfig,
+  message: { subject: string; html: string; text: string },
+): Promise<DraftMessage> {
+  const { status, body } = await api<{ id?: number; error?: { message: string } }>(
+    cfg, `/accounts/${cfg.accountId}/lists/${cfg.listId}/broadcasts`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        subject: message.subject,
+        body_html: message.html,
+        body_text: message.text,
+        // Sent by an automation, not broadcast to the list, so it should not
+        // appear in the public archive as a mailing of its own.
+        is_archived: false,
+      }),
+    },
+  );
+  if (status >= 300) throw new Error(body.error?.message ?? `Creating the draft failed (${status})`);
+  return { id: Number(body.id ?? 0), subject: message.subject };
+}
+
 /** The tier tags the automations route on, from the process document. */
 export const TIER_TAGS = [
   'community-friend', 'donor', 'repeat-donor', 'recurring-donor',

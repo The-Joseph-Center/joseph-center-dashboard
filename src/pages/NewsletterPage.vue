@@ -530,6 +530,29 @@ window.addEventListener('beforeunload', (e) => {
   e.returnValue = '';
 });
 
+// ── The three messages, put into AWeber ──
+// Its editor has nowhere to paste a built HTML email, so the drafts are made
+// through the API and picked up by hand when the automation is built.
+const makingDrafts = ref(false);
+const draftsMade = ref<{ tier: string; subject: string; id?: number; skipped?: boolean }[] | null>(null);
+
+async function createDrafts() {
+  makingDrafts.value = true; error.value = ''; draftsMade.value = null;
+  try {
+    const res = await apiFetch('/.netlify/functions/newsletter-aweber', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month: month.value, action: 'drafts' }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || String(res.status));
+    draftsMade.value = d.drafts ?? [];
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not create the drafts.';
+  } finally {
+    makingDrafts.value = false;
+  }
+}
+
 /** Last month's videos, from the channel — titles have to match exactly. */
 async function pullVideos() {
   if (!draft.value) return;
@@ -1057,19 +1080,29 @@ function videoBlock() {
               -->
               <ol class="steps">
                 <li>
-                  <strong>Build the HTML for each version.</strong>
-                  In <em>The three versions</em> below, press <em>Build email HTML</em>, then copy each one.
-                </li>
-                <li>
-                  <strong>Create the three messages in AWeber.</strong>
-                  Messages → Drafts → Create a message, one per version. Paste the HTML, and set the subject and
-                  preview text from the version's copy buttons. Name each draft for its month and tier, e.g.
-                  <code>{{ draft.monthName }} Newsletter — donor</code>.
+                  <strong>Put the three messages into AWeber.</strong>
+                  Built from what is saved here and created as drafts, subject lines and all.
+                  <div class="actions">
+                    <button type="button" class="btn btn--sm" :disabled="makingDrafts" @click="createDrafts">
+                      {{ makingDrafts ? 'Creating the drafts…' : 'Create the three drafts in AWeber' }}
+                    </button>
+                    <span class="hint">Run it twice and it will not duplicate — a draft with the same subject is left alone.</span>
+                  </div>
+                  <ul v-if="draftsMade" class="drafts">
+                    <li v-for="d in draftsMade" :key="d.subject">
+                      <strong>{{ d.tier }}</strong> — {{ d.subject }}
+                      <span class="hint">{{ d.skipped ? 'already in AWeber, left alone' : 'created' }}</span>
+                    </li>
+                  </ul>
+                  <p v-if="draftsMade" class="hint">
+                    Set the preview text on each one in AWeber — the API does not carry it.
+                    <template v-if="draft.previewText">Copy it: <button type="button" class="linkish" @click="copy(draft.previewText, 'steps-preview')">{{ copied === 'steps-preview' ? 'Copied' : draft.previewText }}</button></template>
+                  </p>
                 </li>
                 <li>
                   <strong>Build or update the three automations.</strong>
                   Campaigns → one per tier. Trigger: tag applied, <code>{{ sendState.tag }}</code>. Then a wait of
-                  {{ sendState.plan?.waitDays ?? 0 }} days, then send that tier's message.
+                  {{ sendState.plan?.waitDays ?? 0 }} days, then send that tier's draft from step 1.
                   Each one excludes the other tiers' tags —
                   <span v-for="v in versions" :key="v.id" class="steps__tier">
                     <strong>{{ v.label }}</strong> excludes <code>{{ v.excludes.join(', ') }}</code>.
@@ -1173,6 +1206,8 @@ function videoBlock() {
 
 .steps { margin: .9rem 0; padding-left: 1.2rem; font-size: .8125rem; line-height: 1.65; }
 .steps li { margin-bottom: .5rem; }
+.drafts { list-style: none; margin: .5rem 0; padding: 0; font-size: .8125rem; }
+.drafts li { padding: .15rem 0; }
 .steps__tier { display: block; color: var(--color-text-secondary); font-size: .75rem; }
 .issues { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
 .issue { display: flex; gap: .6rem; align-items: flex-start; padding: .55rem .7rem; background: var(--color-bg); border-radius: var(--border-radius); border-left: 3px solid var(--color-border); }
