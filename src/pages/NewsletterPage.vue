@@ -320,6 +320,9 @@ const sendResult = ref<{ added: number; already: number; failed: number; failedE
 async function checkSend() {
   checking.value = true; sendResult.value = null; error.value = '';
   try {
+    // The review runs server-side against the saved row, so checking an
+    // unsaved page would report on the version before the last edit.
+    if (!(await saveFirst())) throw new Error('Could not save first, so nothing was checked.');
     const res = await apiFetch(`/.netlify/functions/newsletter-aweber?month=${month.value}`);
     const d = await res.json().catch(() => ({}));
     sendState.value = res.ok ? d : { ready: false, error: d.error || String(res.status) };
@@ -336,6 +339,7 @@ async function applyTag() {
   if (!window.confirm(`This applies "${sendState.value.tag}" to every active subscriber, which is what triggers the send. There is no undo. Continue?`)) return;
   sending.value = true; error.value = '';
   try {
+    if (!(await saveFirst())) throw new Error('Could not save first, so nothing was sent.');
     const res = await apiFetch('/.netlify/functions/newsletter-aweber', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ month: month.value, confirm: confirmTag.value, automationsUpdated: automationsUpdated.value }),
@@ -530,6 +534,21 @@ window.addEventListener('beforeunload', (e) => {
   e.returnValue = '';
 });
 
+/**
+ * Put the work away before anything acts on it.
+ *
+ * Every step from here reads the saved row, not the page — the drafts, the
+ * review and the send all do. An unsaved edit would otherwise go out as the
+ * previous version, which is the kind of mistake nobody notices until it has
+ * sent.
+ */
+async function saveFirst() {
+  if (!dirty.value) return true;
+  clearTimeout(autosave);
+  await save();
+  return !dirty.value;
+}
+
 // ── The three messages, put into AWeber ──
 // Its editor has nowhere to paste a built HTML email, so the drafts are made
 // through the API and picked up by hand when the automation is built.
@@ -539,6 +558,7 @@ const draftsMade = ref<{ tier: string; subject: string; id?: number; skipped?: b
 async function createDrafts() {
   makingDrafts.value = true; error.value = ''; draftsMade.value = null;
   try {
+    if (!(await saveFirst())) throw new Error('Could not save first, so nothing was created.');
     const res = await apiFetch('/.netlify/functions/newsletter-aweber', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ month: month.value, action: 'drafts' }),
@@ -896,8 +916,15 @@ function videoBlock() {
                 <option v-for="t in sheetTabs" :key="t" :value="t">{{ t }}</option>
               </select>
             </label>
-            <span v-if="sheetTab" class="hint">Reading the <strong>{{ sheetTab }}</strong> tab.</span>
+            <span v-if="sheetTab" class="hint">
+              Reading the <strong>{{ sheetTab }}</strong> tab — {{ sheetRows.length }} numbered row{{ sheetRows.length === 1 ? '' : 's' }} found.
+            </span>
           </div>
+          <p v-if="sheetTab && !sheetRows.length && !sheetError" class="warn">
+            The <strong>{{ sheetTab }}</strong> tab was read, but no rows in it look like a label and a number.
+            It expects the department in column A, the metric in column B and the value in column C, within the
+            first 80 rows. If this month is laid out differently, say so and the reader can be taught the shape.
+          </p>
 
           <table v-if="sheetMatches.length" class="sheet__tbl">
             <thead><tr><th>Stat</th><th>Row it was taken from</th><th class="num">Value</th></tr></thead>
@@ -1086,7 +1113,7 @@ function videoBlock() {
                     <button type="button" class="btn btn--sm" :disabled="makingDrafts" @click="createDrafts">
                       {{ makingDrafts ? 'Creating the drafts…' : 'Create the three drafts in AWeber' }}
                     </button>
-                    <span class="hint">Run it twice and it will not duplicate — a draft with the same subject is left alone.</span>
+                    <span class="hint">Saves first, so the drafts match what is on screen. Run it twice and it will not duplicate — a draft with the same subject is left alone.</span>
                   </div>
                   <ul v-if="draftsMade" class="drafts">
                     <li v-for="d in draftsMade" :key="d.subject">
