@@ -1,4 +1,5 @@
 import { requireCapability, denial } from './_lib/verify-okta';
+import { SANITY_DATASET } from './_lib/sanity-dataset';
 
 /**
  * The site-wide notice — closures, changed hours, announcements.
@@ -18,7 +19,7 @@ import { requireCapability, denial } from './_lib/verify-okta';
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const PROJECT = process.env.VITE_SANITY_PROJECT_ID!;
-const DATASET = process.env.VITE_SANITY_DATASET || 'staging';
+const DATASET = SANITY_DATASET;
 const SANITY = process.env.SANITY_WRITE_TOKEN!;
 
 const clean = (v: unknown, max = 500) => (typeof v === 'string' ? v.trim().slice(0, max) : '');

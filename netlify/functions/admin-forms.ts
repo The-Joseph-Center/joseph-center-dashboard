@@ -1,5 +1,6 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { turso } from './_lib/staff-directory';
+import { SANITY_DATASET } from './_lib/sanity-dataset';
 
 /**
  * Opening, closing and editing the seasonal forms.
@@ -21,7 +22,7 @@ import { turso } from './_lib/staff-directory';
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const PROJECT = process.env.VITE_SANITY_PROJECT_ID!;
-const DATASET = process.env.VITE_SANITY_DATASET || 'staging';
+const DATASET = SANITY_DATASET;
 const SANITY = process.env.SANITY_WRITE_TOKEN!;
 
 const FIELD_TYPES = ['text', 'email', 'phone', 'number', 'textarea', 'select'];
@@ -121,6 +122,10 @@ export async function handler(event: {
             };
           }),
           fieldTypes: FIELD_TYPES,
+          // Which dataset these switches actually affect. Shown in the page,
+          // because a switch that lands in staging looks identical here to one
+          // that lands on the live site.
+          dataset: DATASET,
         }),
       };
     }

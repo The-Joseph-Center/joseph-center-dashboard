@@ -5,6 +5,7 @@ import {
   DONATE_URL, type NewsletterDraft,
 } from './_lib/newsletter';
 import { newsletterHtml, promoteButtons } from './_lib/newsletter-html';
+import { SANITY_DATASET as DATASET } from './_lib/sanity-dataset';
 
 /**
  * The monthly newsletter, assembled.
@@ -27,7 +28,7 @@ const parse = <T,>(v: unknown, fallback: T): T => {
 };
 
 const SANITY_PROJECT = process.env.VITE_SANITY_PROJECT_ID!;
-const SANITY_DATASET = process.env.VITE_SANITY_DATASET || 'staging';
+const SANITY_DATASET = DATASET;
 
 /**
  * Every partner already on the website's home-page marquee.

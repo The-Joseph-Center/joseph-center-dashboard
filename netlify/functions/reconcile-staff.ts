@@ -3,6 +3,7 @@ import {
   fetchOktaUsers, fetchStaffCards, fetchServiceAccountLogins, fetchNoCard, matchAll, oktaLogin,
   DEPARTED_STATUSES, turso, ensureIdentityTable, unpublishCard, fetchMutes, type OktaUser,
 } from './_lib/staff-directory';
+import { SANITY_DATASET } from './_lib/sanity-dataset';
 
 /**
  * Reconciliation between Okta and the public staff page.
@@ -82,7 +83,7 @@ function renderEmail(r: Report, kind: 'now' | 'weekly') {
 
 export async function handler() {
   const PROJECT = process.env.VITE_SANITY_PROJECT_ID!;
-  const DATASET = process.env.VITE_SANITY_DATASET || 'staging';
+  const DATASET = SANITY_DATASET;
   const SANITY = process.env.SANITY_WRITE_TOKEN!;
   const ORG = process.env.OKTA_ISSUER!;
   const OKTA = process.env.OKTA_API_TOKEN!;

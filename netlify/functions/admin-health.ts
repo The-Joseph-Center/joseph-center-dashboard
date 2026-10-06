@@ -2,6 +2,7 @@ import Stripe from 'stripe';
 import { requireCapability, denial } from './_lib/verify-okta';
 import { turso } from './_lib/staff-directory';
 import { accessToken } from './_lib/google-sheets';
+import { SANITY_DATASET } from './_lib/sanity-dataset';
 
 /**
  * Is each integration actually reachable right now?
@@ -95,7 +96,7 @@ export async function handler(event: { headers: Record<string, string> }) {
 
     timed('Sanity (CMS)', async () => {
       const project = need(process.env.VITE_SANITY_PROJECT_ID);
-      const dataset = process.env.VITE_SANITY_DATASET || 'production';
+      const dataset = SANITY_DATASET;
       const url = `https://${project}.api.sanity.io/v2024-01-01/data/query/${dataset}?query=${encodeURIComponent('count(*[_type=="post"])')}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

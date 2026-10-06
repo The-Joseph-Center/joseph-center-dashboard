@@ -27,6 +27,9 @@ interface Form {
 
 const forms = ref<Form[]>([]);
 const fieldTypes = ref<string[]>([]);
+// Which Sanity dataset these switches land in. The public site reads
+// production; anything else means a change here never reaches a visitor.
+const dataset = ref('');
 const loading = ref(true);
 const error = ref('');
 const savingId = ref<string | null>(null);
@@ -77,7 +80,7 @@ async function load() {
     const res = await apiFetch('/.netlify/functions/admin-forms');
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
     const d = await res.json();
-    forms.value = d.forms; fieldTypes.value = d.fieldTypes;
+    forms.value = d.forms; fieldTypes.value = d.fieldTypes; dataset.value = d.dataset ?? '';
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not load the forms.';
   } finally {
@@ -183,6 +186,12 @@ const busy = computed(() => (id: string) => savingId.value === id);
           Open or close a form, change what it says, and edit its questions. Changes
           are live on the site as soon as they are saved — no deploy needed.
           The web address and the list of forms are set in the site's code.
+        </p>
+        <p v-if="dataset && dataset !== 'production'" class="warn" role="alert">
+          <strong>These changes will not reach the website.</strong>
+          This page is editing the <code>{{ dataset }}</code> dataset; the public site reads
+          <code>production</code>. Set <code>VITE_SANITY_DATASET</code> to <code>production</code>
+          in Netlify for this dashboard, redeploy, then make the change again.
         </p>
       </div>
 

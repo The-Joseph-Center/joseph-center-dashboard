@@ -1,9 +1,10 @@
 import { createClient } from '@sanity/client';
 import { verifyRequest, denial } from './_lib/verify-okta';
+import { SANITY_DATASET } from './_lib/sanity-dataset';
 
 const client = createClient({
   projectId: process.env.NETLIFY_SANITY_PROJECT_ID!,
-  dataset: process.env.VITE_SANITY_DATASET || 'production',
+  dataset: SANITY_DATASET,
   apiVersion: '2024-01-01',
   useCdn: true,
 });

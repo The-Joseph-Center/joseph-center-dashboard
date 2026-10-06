@@ -1,4 +1,5 @@
 import { createClient } from '@libsql/client/web';
+import { SANITY_DATASET } from './sanity-dataset';
 
 // Resolves "who is asking" to "which staff card do they own".
 //
@@ -14,7 +15,7 @@ const turso = createClient({
 });
 
 const PROJECT = process.env.VITE_SANITY_PROJECT_ID!;
-const DATASET = process.env.VITE_SANITY_DATASET || 'staging';
+const DATASET = SANITY_DATASET;
 const WRITE_TOKEN = process.env.SANITY_WRITE_TOKEN!;
 
 export interface StaffCard {

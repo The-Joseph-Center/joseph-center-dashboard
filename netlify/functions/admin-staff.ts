@@ -4,6 +4,7 @@ import {
   ensureIdentityTable, oktaLogin, DEPARTED_STATUSES, turso, fetchMutes, ensureMuteTable,
   type OktaUser, type MuteKind,
 } from './_lib/staff-directory';
+import { SANITY_DATASET } from './_lib/sanity-dataset';
 
 /**
  * Staff administration — read the roster, edit public details, create a card.
@@ -26,7 +27,7 @@ import {
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const PROJECT = process.env.VITE_SANITY_PROJECT_ID!;
-const DATASET = process.env.VITE_SANITY_DATASET || 'staging';
+const DATASET = SANITY_DATASET;
 const SANITY = process.env.SANITY_WRITE_TOKEN!;
 
 const DEPARTMENTS = [
