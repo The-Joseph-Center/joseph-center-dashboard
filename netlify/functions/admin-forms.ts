@@ -55,7 +55,7 @@ async function sanityMutate(mutations: unknown[]) {
 
 interface Field { _key?: string; label?: string; name?: string; type?: string; required?: boolean; options?: string[] }
 interface Form {
-  _id: string; title?: string; slug?: string; active?: boolean;
+  _id: string; title?: string; slug?: string; active?: boolean; notifyMode?: string;
   activeDates?: { start?: string; end?: string } | null;
   description?: string; successMessage?: string; notifyEmail?: string; fields?: Field[];
 }
@@ -92,7 +92,7 @@ export async function handler(event: {
   try {
     const forms = await sanityQuery<Form[]>(
       `*[_type=="dynamicForm" && !(_id in path("drafts.**"))]|order(title asc){
-        _id,title,"slug":slug.current,active,activeDates,description,successMessage,notifyEmail,fields
+        _id,title,"slug":slug.current,active,activeDates,description,successMessage,notifyEmail,notifyMode,fields
       }`
     );
 
@@ -213,6 +213,9 @@ export async function handler(event: {
       description: clean(body.description, 2000),
       successMessage: clean(body.successMessage, 1000),
       notifyEmail: clean(body.notifyEmail, 200),
+      // Every submission, or Friday's summary — the seasonal sign-ups want the
+      // list, not a ping per family.
+      notifyMode: clean(body.notifyMode, 10) === 'weekly' ? 'weekly' : 'each',
       fields,
     };
     const unset: string[] = [];

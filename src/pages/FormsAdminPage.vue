@@ -18,7 +18,7 @@ interface Field {
 interface Form {
   _id: string; title: string; slug: string; active: boolean;
   activeDates: { start?: string; end?: string } | null;
-  description: string; successMessage: string; notifyEmail: string;
+  description: string; successMessage: string; notifyEmail: string; notifyMode: string;
   fields: Field[];
   status: { open: boolean; state: 'closed' | 'open' | 'before-start' | 'after-end' };
   years: { year: string; count: number }[];
@@ -39,7 +39,7 @@ const editing = ref<string | null>(null);
 // Local edit buffers, so a half-finished edit is never sent and Cancel is real.
 const draft = ref<Record<string, {
   title: string; description: string; successMessage: string; notifyEmail: string;
-  startAt: string; endAt: string; fields: Field[];
+  notifyMode: string; startAt: string; endAt: string; fields: Field[];
 }>>({});
 
 // Built here rather than on the server: Netlify runs in UTC, and a date
@@ -95,6 +95,7 @@ function edit(f: Form) {
     [f._id]: {
       title: f.title ?? '', description: f.description ?? '',
       successMessage: f.successMessage ?? '', notifyEmail: f.notifyEmail ?? '',
+      notifyMode: f.notifyMode === 'weekly' ? 'weekly' : 'each',
       startAt: toLocalInput(f.activeDates?.start), endAt: toLocalInput(f.activeDates?.end),
       fields: (f.fields ?? []).map((x) => ({ ...x, options: [...(x.options ?? [])] })),
     },
@@ -131,7 +132,7 @@ async function save(f: Form, confirmKeyChange = false) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         _id: f._id, title: d.title, description: d.description,
-        successMessage: d.successMessage, notifyEmail: d.notifyEmail,
+        successMessage: d.successMessage, notifyEmail: d.notifyEmail, notifyMode: d.notifyMode,
         startAt: fromLocalInput(d.startAt), endAt: fromLocalInput(d.endAt),
         fields: d.fields, confirmKeyChange,
       }),
@@ -237,8 +238,16 @@ const busy = computed(() => (id: string) => savingId.value === id);
           </label>
           <div class="grid2">
             <label class="f">
-              <span>Email each submission to</span>
+              <span>Notify</span>
               <input v-model="draft[f._id]!.notifyEmail" type="email" placeholder="leave blank for none" />
+              <select v-model="draft[f._id]!.notifyMode" class="f__after">
+                <option value="each">on every submission</option>
+                <option value="weekly">with a summary each Friday</option>
+              </select>
+              <span class="f__note">
+                A weekly summary suits a sign-up where the list matters more than each arrival. It goes out on
+                Fridays while the form is open, and once more the week after it closes.
+              </span>
             </label>
             <div class="grid2">
               <label class="f"><span>Opens (optional)</span><input v-model="draft[f._id]!.startAt" type="datetime-local" /></label>
@@ -329,4 +338,6 @@ const busy = computed(() => (id: string) => savingId.value === id);
 .linkish:hover { color: var(--color-text); }
 .linkish:disabled { opacity: .5; cursor: not-allowed; text-decoration: none; }
 .linkish--danger { color: #8a1f1f; }
+.f__after { margin-top: .35rem; width: 100%; }
+.f__note { display: block; font-size: .75rem; color: var(--color-text-secondary); line-height: 1.5; margin-top: .3rem; text-transform: none; letter-spacing: 0; font-weight: 400; }
 </style>
