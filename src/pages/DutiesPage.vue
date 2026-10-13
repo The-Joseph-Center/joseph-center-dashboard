@@ -158,6 +158,63 @@ const groups = computed(() => {
 
 const done = computed(() => duties.value.filter((d) => d.status === 'Done').length);
 
+/**
+ * The duties as a spreadsheet.
+ *
+ * Exports what is on screen, filters and all, because the list you are looking
+ * at is the one you mean — a search for "social" then a download should not
+ * quietly hand back all 60 rows.
+ *
+ * Who put their hand up is included only for someone who can see it anyway;
+ * the page already hides interest from everyone else, and a download is not
+ * the place to leak it.
+ */
+const CSV_COLUMNS: [string, (d: Duty) => string][] = [
+  ['Task', (d) => d.task],
+  ['Category', (d) => d.category],
+  ['Cadence', (d) => d.cadence],
+  ['Priority', (d) => d.priority],
+  ['Status', (d) => d.status],
+  ['Owner', (d) => d.ownerNames.join(' & ') || d.owner || 'Unassigned'],
+  ['Title or role', (d) => d.titleRole ?? ''],
+  ['Visible to', (d) => d.accessGroup ?? ''],
+  ['Notes', (d) => d.notes ?? ''],
+  ['Source', (d) => d.source ?? ''],
+];
+
+function csvCell(value: string): string {
+  const v = value ?? '';
+  // Quote everything: a task with a comma, a newline in a note, or a leading
+  // quote all break a bare field, and quoting always is cheaper than deciding.
+  return `"${v.replace(/"/g, '""')}"`;
+}
+
+function downloadCsv() {
+  const columns = canEdit.value
+    ? [...CSV_COLUMNS,
+       ['Hands up', (d: Duty) => String(d.interestCount ?? 0)] as [string, (d: Duty) => string],
+       ['Who', (d: Duty) => d.interest.map((i) => i.personName || i.person).join('; ')] as [string, (d: Duty) => string],
+       ['What they said', (d: Duty) => d.interest.map((i) => i.note ?? '').filter(Boolean).join(' | ')] as [string, (d: Duty) => string]]
+    : CSV_COLUMNS;
+
+  const rows = [
+    columns.map(([head]) => csvCell(head)).join(','),
+    ...visible.value.map((d) => columns.map(([, get]) => csvCell(get(d))).join(',')),
+  ];
+  // The BOM is what makes Excel open this as UTF-8 rather than mangling the
+  // em dashes and curly quotes the duties are written with.
+  const blob = new Blob([`\ufeff${rows.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8;' });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `marketing-duties-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function load() {
   loading.value = true; error.value = '';
   try {
@@ -247,6 +304,9 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
             <option value="">All owners</option>
             <option v-for="o in owners" :key="o" :value="o">{{ o }}</option>
           </select>
+          <button type="button" class="btn btn--ghost btn--sm" :disabled="!visible.length" @click="downloadCsv">
+            Download CSV ({{ visible.length }})
+          </button>
         </div>
       </div>
 
