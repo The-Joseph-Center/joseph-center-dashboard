@@ -1114,6 +1114,29 @@ function videoBlock() {
           </button>
         </div>
 
+        <div class="finish">
+          <template v-if="draft.status === 'sent'">
+            <p class="ok">{{ draft.monthName }} is marked sent{{ draft.sentAt ? ` — ${when(draft.sentAt)}` : '' }}.</p>
+            <div class="actions">
+              <button type="button" class="btn btn--sm" @click="month = nextMonth">Start {{ nextMonthName }}</button>
+              <span class="hint">
+                A fresh month, with this quarter's partners carried over and a tag of its own.
+              </span>
+            </div>
+          </template>
+          <template v-else>
+            <div class="actions">
+              <button type="button" class="btn btn--ghost btn--sm" :disabled="marking" @click="markSent">
+                {{ marking ? 'Marking…' : `Mark ${draft.monthName} as sent` }}
+              </button>
+              <span class="hint">
+                Applying the tag does this by itself. Use this when it went out another way, or when the tag
+                run finished but some subscribers failed.
+              </span>
+            </div>
+          </template>
+        </div>
+
         <template v-if="sendState">
           <p v-if="sendState.error" class="warn" role="alert">
             {{ sendState.error }}
@@ -1227,29 +1250,6 @@ function videoBlock() {
               </div>
             </template>
           </template>
-
-          <div class="finish">
-            <template v-if="draft.status === 'sent'">
-              <p class="ok">{{ draft.monthName }} is marked sent{{ draft.sentAt ? ` — ${when(draft.sentAt)}` : '' }}.</p>
-              <div class="actions">
-                <button type="button" class="btn btn--sm" @click="month = nextMonth">Start {{ nextMonthName }}</button>
-                <span class="hint">
-                  A fresh month, with this quarter's partners carried over and a tag of its own.
-                </span>
-              </div>
-            </template>
-            <template v-else>
-              <div class="actions">
-                <button type="button" class="btn btn--ghost btn--sm" :disabled="marking" @click="markSent">
-                  {{ marking ? 'Marking…' : `Mark ${draft.monthName} as sent` }}
-                </button>
-                <span class="hint">
-                  Applying the tag does this by itself. Use this when it went out another way, or when the tag
-                  run finished but some subscribers failed.
-                </span>
-              </div>
-            </template>
-          </div>
 
           <div v-if="sendResult" class="result">
             <p><strong>{{ sendResult.added }}</strong> tagged<span v-if="sendResult.already">, {{ sendResult.already }} already had it</span><span v-if="sendResult.failed">, <strong>{{ sendResult.failed }} failed</strong></span>.</p>
