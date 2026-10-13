@@ -25,7 +25,7 @@ interface Draft {
   aweberTag: string; section1: string; section2: string;
   stats: Record<string, string>; videos: { title: string; url: string }[];
   partners: { name: string; url: string }[]; previewText: string; status: string;
-  updatedBy: string | null; updatedAt: number;
+  sentAt: number | null; updatedBy: string | null; updatedAt: number;
 }
 
 const months = ref<{
@@ -588,6 +588,42 @@ async function createDrafts() {
     error.value = e instanceof Error ? e.message : 'Could not create the drafts.';
   } finally {
     makingDrafts.value = false;
+  }
+}
+
+// ── Finishing a month, and starting the next ──
+// Applying the tag marks a month sent, but that is not the only way a
+// newsletter goes out, and a month that is finished should not still look like
+// this month's work. Closing it is also how the next one begins: the tag, the
+// rotation of guests and programs, and the partner carry-over all key off it.
+const marking = ref(false);
+
+const nextMonth = computed(() => {
+  const [y, m] = month.value.split('-').map(Number);
+  const d = new Date(Date.UTC(y!, m!, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+});
+const nextMonthName = computed(() =>
+  new Date(`${nextMonth.value}-01T12:00:00Z`).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })
+);
+
+async function markSent() {
+  if (!draft.value) return;
+  if (!window.confirm(`Mark ${draft.value.monthName} as sent? Do this only if it has actually gone out — it locks the tag and takes the month out of the drafting queue.`)) return;
+  marking.value = true; error.value = '';
+  try {
+    if (!(await saveFirst())) throw new Error('Could not save first, so nothing was marked.');
+    const res = await apiFetch('/.netlify/functions/admin-newsletter', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month: month.value, action: 'sent' }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
+    await loadIndex();
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not mark it as sent.';
+  } finally {
+    marking.value = false;
   }
 }
 
@@ -1192,6 +1228,29 @@ function videoBlock() {
             </template>
           </template>
 
+          <div class="finish">
+            <template v-if="draft.status === 'sent'">
+              <p class="ok">{{ draft.monthName }} is marked sent{{ draft.sentAt ? ` — ${when(draft.sentAt)}` : '' }}.</p>
+              <div class="actions">
+                <button type="button" class="btn btn--sm" @click="month = nextMonth">Start {{ nextMonthName }}</button>
+                <span class="hint">
+                  A fresh month, with this quarter's partners carried over and a tag of its own.
+                </span>
+              </div>
+            </template>
+            <template v-else>
+              <div class="actions">
+                <button type="button" class="btn btn--ghost btn--sm" :disabled="marking" @click="markSent">
+                  {{ marking ? 'Marking…' : `Mark ${draft.monthName} as sent` }}
+                </button>
+                <span class="hint">
+                  Applying the tag does this by itself. Use this when it went out another way, or when the tag
+                  run finished but some subscribers failed.
+                </span>
+              </div>
+            </template>
+          </div>
+
           <div v-if="sendResult" class="result">
             <p><strong>{{ sendResult.added }}</strong> tagged<span v-if="sendResult.already">, {{ sendResult.already }} already had it</span><span v-if="sendResult.failed">, <strong>{{ sendResult.failed }} failed</strong></span>.</p>
             <p v-if="sendResult.failed" class="hint">
@@ -1264,6 +1323,7 @@ function videoBlock() {
 .pill--ok { color: #14532d; background: color-mix(in srgb, #14532d 12%, transparent); }
 .pill--warn { color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 12%, transparent); }
 
+.finish { border-top: 1px solid var(--color-border); margin-top: 1rem; padding-top: .8rem; }
 .steps { margin: .9rem 0; padding-left: 1.2rem; font-size: .8125rem; line-height: 1.65; }
 .steps li { margin-bottom: .5rem; }
 .drafts { list-style: none; margin: .5rem 0; padding: 0; font-size: .8125rem; }
