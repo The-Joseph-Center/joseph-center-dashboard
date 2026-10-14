@@ -128,7 +128,9 @@ export async function handler() {
       const mail = render(f, subs, closed);
       const { error } = await resend.emails.send({
         from: `The Joseph Center <${process.env.QUOTE_REVIEW_FROM_EMAIL || 'no-reply@josephcentergj.com'}>`,
-        to: f.notifyEmail,
+        // One line, possibly several people — "a@x.org, b@x.org" is rejected
+        // as a single malformed address.
+        to: f.notifyEmail.split(/[,;]/).map((a) => a.trim()).filter(Boolean),
         subject: mail.subject,
         html: mail.html,
         text: mail.text,
