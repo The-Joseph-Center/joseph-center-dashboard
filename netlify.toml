@@ -16,7 +16,17 @@
   # 07:15 UTC daily. Offboarding does not need to be instant — Okta app
   # assignment already revokes dashboard access the moment someone is
   # deactivated; this only governs how quickly their card leaves the website.
+  #
+  # The run stays daily; the email does not. The standing picture goes out on
+  # Mondays, and anything that changed the site or blocked a write still emails
+  # the same day. Dropping the run to weekly would leave a departed person's
+  # photo up for up to seven days, which is the thing this exists to prevent.
   schedule = "15 7 * * *"
+
+[functions."form-digest"]
+  # Fridays at 15:00 UTC — mid-morning in Grand Junction, so the week's
+  # sign-ups land while there is still a working day to act on them.
+  schedule = "0 15 * * 5"
 
 [dev]
   command = "npm run dev:vite"
