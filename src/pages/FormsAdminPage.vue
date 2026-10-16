@@ -299,7 +299,6 @@ const busy = computed(() => (id: string) => savingId.value === id);
 </template>
 
 <style scoped>
-.widget { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: 1.25rem; }
 .block { margin-bottom: 1.25rem; }
 .intro { margin-bottom: 1.25rem; }
 .intro__text { margin: 0; font-size: .8125rem; color: var(--color-text-secondary); line-height: 1.6; }

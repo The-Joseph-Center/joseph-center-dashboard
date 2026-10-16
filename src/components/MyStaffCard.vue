@@ -169,12 +169,6 @@ async function submit() {
 </template>
 
 <style scoped>
-.widget {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius);
-  padding: 1.25rem;
-}
 
 .widget__state { font-size: 0.875rem; color: var(--color-text-secondary); }
 .nocard__head { margin: 0 0 0.25rem; font-size: 0.9375rem; }

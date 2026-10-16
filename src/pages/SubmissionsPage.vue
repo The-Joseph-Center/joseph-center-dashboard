@@ -369,7 +369,6 @@ async function exportCsv() {
 </template>
 
 <style scoped>
-.widget { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: 1.25rem; }
 .block__title { font-family: var(--font-heading); font-size: 1rem; margin: 0 0 .35rem; }
 .block__hint { font-size: .8125rem; color: var(--color-text-secondary); margin: 0 0 1rem; }
 .state { color: var(--color-text-secondary); font-size: .875rem; }

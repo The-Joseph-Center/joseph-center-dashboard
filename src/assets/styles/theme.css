@@ -22,6 +22,10 @@
   --font-heading: 'Montserrat', sans-serif;
   --font-body: 'Open Sans', sans-serif;
   --border-radius: 0.5rem;
+  /* Lifts a card off the page without a heavier border. Tinted with the
+     darkest brand green rather than neutral black, so it reads as part of the
+     palette instead of a drop shadow from a different design. */
+  --shadow-card: 0 1px 2px rgba(29, 95, 85, 0.04), 0 2px 8px rgba(29, 95, 85, 0.05);
 }
 
 [data-theme="dark"] {
@@ -30,6 +34,7 @@
   --color-primary-strong: #a8dcae;
   --color-secondary: #899f4a;
   --color-accent: #d7b556;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
   --color-bg: #131d29;
   --color-surface: #222f39;
   --color-text: #f3f4f6;

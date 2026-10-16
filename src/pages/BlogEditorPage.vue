@@ -613,7 +613,6 @@ const publishRow = (row: Row) => post({ action: 'publish', _id: row._id }, row._
 </template>
 
 <style scoped>
-.widget { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: 1.25rem; }
 .block { margin-bottom: 1.25rem; }
 .block__title { font-family: var(--font-heading); font-size: 1rem; margin: 0 0 .75rem; }
 .state { color: var(--color-text-secondary); font-size: .875rem; margin-bottom: .75rem; }

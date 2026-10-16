@@ -52,12 +52,6 @@ const cards = computed(() => visible.value.filter(l => !!l.description));
 </template>
 
 <style scoped>
-.widget {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius);
-  padding: 1.25rem;
-}
 
 .widget__title {
   font-size: 1rem;

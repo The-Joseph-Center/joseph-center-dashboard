@@ -96,12 +96,6 @@ const timePerVisit = computed(() => {
 /* The same box every other widget draws. A shared .card class belongs in
    main.css, but that is a sweep of its own — until then this matches rather
    than introducing a second look. */
-.widget {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius);
-  padding: 1.25rem;
-}
 .card__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; margin-bottom: .9rem; }
 .card__title { font-size: 1rem; font-family: var(--font-heading); margin: 0; }
 .card__link { font-size: .8125rem; font-weight: 600; color: var(--color-primary); text-decoration: none; }
