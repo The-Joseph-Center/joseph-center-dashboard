@@ -3,14 +3,19 @@ import { computed } from 'vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import OverviewGreeting from '@/components/overview/OverviewGreeting.vue';
 import AttentionStrip from '@/components/overview/AttentionStrip.vue';
-import AnalyticsWidget from '@/components/widgets/AnalyticsWidget.vue';
+import MonthToDate from '@/components/overview/MonthToDate.vue';
 import TutorialsWidget from '@/components/widgets/TutorialsWidget.vue';
 import LinksWidget from '@/components/widgets/LinksWidget.vue';
 import MyStaffCard from '@/components/MyStaffCard.vue';
 import config from '@/config/dashboard';
+import { useAuthStore } from '@/stores/useAuthStore';
+
+// Site analytics is not in this map: the overview shows "this month so far"
+// instead, which is the live half of what that widget showed. The full widget
+// still lives on the Analytics page.
+const auth = useAuthStore();
 
 const widgetMap: Record<string, unknown> = {
-  siteAnalytics: AnalyticsWidget,
   tutorials: TutorialsWidget,
   links: LinksWidget,
 };
@@ -35,6 +40,7 @@ const activeWidgets = computed(() =>
     <MyStaffCard class="dashboard-card" hide-when-unlinked />
 
     <div class="dashboard-grid">
+      <MonthToDate v-if="auth.can('analytics')" />
       <component
         v-for="widget in activeWidgets"
         :is="widget.component"
