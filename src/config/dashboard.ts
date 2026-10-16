@@ -7,7 +7,6 @@ const config: DashboardConfig = {
   "clientEmail": "mhighline@josephcentergj.com",
   "enabledWidgets": [
     "links",
-    "siteAnalytics",
     "submissions",
     "eventRegistrations",
     "subscribers",

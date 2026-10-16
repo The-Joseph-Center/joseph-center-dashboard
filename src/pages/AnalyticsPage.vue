@@ -5,6 +5,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import { Users, Eye, Clock, TrendingUp, TrendingDown, Minus, ExternalLink, RefreshCw } from 'lucide-vue-next';
 import { Chart, BarElement, CategoryScale, LinearScale, Tooltip } from 'chart.js';
 import config from '@/config/dashboard';
+import { compare } from '@/lib/compare';
 
 Chart.register(BarElement, CategoryScale, LinearScale, Tooltip);
 
@@ -110,6 +111,11 @@ function changePeriod(p: 'today' | '7d' | '30d') {
 
 // ─── Computations ───────────────────────────────────────────────────────────
 
+/**
+ * Kept for the places that still want a bare number (the chart's own scaling),
+ * but nothing shown to a reader goes through it any more: it reports 100% when
+ * the earlier figure is zero, which is a sentence about nothing.
+ */
 function pctChange(cur: number, prev: number): number {
   if (!prev) return cur > 0 ? 100 : 0;
   return Math.round(((cur - prev) / prev) * 100);
@@ -120,18 +126,6 @@ function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.round(seconds % 60);
   return `${mins}m ${secs}s`;
-}
-
-function trendDirection(change: number): 'up' | 'down' | 'flat' {
-  if (change > 5) return 'up';
-  if (change < -5) return 'down';
-  return 'flat';
-}
-
-function trendLabel(dir: 'up' | 'down' | 'flat'): string {
-  if (dir === 'up') return 'Trending up';
-  if (dir === 'down') return 'Declining';
-  return 'About the same';
 }
 
 const visitorChange = computed(() => {
@@ -146,15 +140,15 @@ const storyHeadline = computed(() => {
   const v = current.value.visitors;
   const periodWord = PERIOD_WORDS[period.value];
   const prevWord = PREV_PERIOD_WORDS[period.value];
-  const change = visitorChange.value;
-
-  let trend: string;
-  if (change > 50) trend = `nearly double ${prevWord}`;
-  else if (change > 10) trend = `up from ${prevWord}`;
-  else if (change >= -10) trend = `about the same as ${prevWord}`;
-  else trend = `down from ${prevWord}`;
-
-  return `${v.toLocaleString()} ${v === 1 ? 'person' : 'people'} visited your site ${periodWord} — ${trend}.`;
+  const sentence = `${v.toLocaleString()} ${v === 1 ? 'person' : 'people'} visited your site ${periodWord}`;
+  const against = compare(v, previous.value?.visitors ?? null, { noun: 'visits', period: prevWord });
+  // No earlier figure means no claim about a trend at all.
+  if (!against.text) return `${sentence}.`;
+  if (against.direction === 'same') return `${sentence} — the same as ${prevWord}.`;
+  const pct = v >= 20 && (previous.value?.visitors ?? 0) >= 20
+    ? `${against.direction === 'up' ? 'up' : 'down'} ${Math.abs(pctChange(v, previous.value!.visitors))}% on ${prevWord}`
+    : `${previous.value!.visitors} ${prevWord}`;
+  return `${sentence} — ${v >= 20 && (previous.value?.visitors ?? 0) >= 20 ? pct : `compared with ${pct}`}.`;
 });
 
 const storySubline = computed(() => {
@@ -172,10 +166,19 @@ const metricCards = computed(() => {
   if (!current.value) return [];
   const c = current.value;
   const p = previous.value;
+  const against = PREV_PERIOD_WORDS[period.value];
   return [
-    { label: 'Visitors', value: c.visitors.toLocaleString(), change: p ? pctChange(c.visitors, p.visitors) : 0, icon: Users },
-    { label: 'Page views', value: c.pageviews.toLocaleString(), change: p ? pctChange(c.pageviews, p.pageviews) : 0, icon: Eye },
-    { label: 'Avg. time on page', value: formatDuration(c.seconds_on_page || 0), change: p ? pctChange(c.seconds_on_page, p.seconds_on_page) : 0, icon: Clock },
+    { label: 'Visitors', value: c.visitors.toLocaleString(), icon: Users,
+      comparison: compare(c.visitors, p?.visitors ?? null, { noun: 'visitors', period: against }) },
+    { label: 'Page views', value: c.pageviews.toLocaleString(), icon: Eye,
+      comparison: compare(c.pageviews, p?.pageviews ?? null, { noun: 'page views', period: against }) },
+    // Seconds are an average rather than a count, so the under-twenty rule does
+    // not apply to them: a percentage on an average is meaningful at any size.
+    { label: 'Avg. time on page', value: formatDuration(c.seconds_on_page || 0), icon: Clock,
+      comparison: p && p.seconds_on_page
+        ? { text: `${pctChange(c.seconds_on_page, p.seconds_on_page) >= 0 ? 'Up' : 'Down'} ${Math.abs(pctChange(c.seconds_on_page, p.seconds_on_page))}% on ${against}`,
+            direction: (c.seconds_on_page === p.seconds_on_page ? 'same' : c.seconds_on_page > p.seconds_on_page ? 'up' : 'down') as 'up' | 'down' | 'same' }
+        : { text: '', direction: 'unknown' as const } },
   ];
 });
 
@@ -438,16 +441,23 @@ onMounted(fetchAnalytics);
             </div>
             <p class="ana__metric-value">{{ card.value }}</p>
             <div
+              v-if="card.comparison.text"
               class="ana__metric-trend"
               :class="{
-                'ana__metric-trend--up': trendDirection(card.change) === 'up',
-                'ana__metric-trend--down': trendDirection(card.change) === 'down',
+                'ana__metric-trend--up': card.comparison.direction === 'up',
+                'ana__metric-trend--down': card.comparison.direction === 'down',
               }"
             >
-              <TrendingUp v-if="trendDirection(card.change) === 'up'" :size="14" />
-              <TrendingDown v-else-if="trendDirection(card.change) === 'down'" :size="14" />
+              <TrendingUp v-if="card.comparison.direction === 'up'" :size="14" />
+              <TrendingDown v-else-if="card.comparison.direction === 'down'" :size="14" />
               <Minus v-else :size="14" />
-              <span>{{ trendLabel(trendDirection(card.change)) }}</span>
+              <span>{{ card.comparison.text }}</span>
+            </div>
+            <!-- Nothing earlier to compare with: say that, rather than a
+                 confident arrow drawn from one figure. -->
+            <div v-else class="ana__metric-trend">
+              <Minus :size="14" />
+              <span>No earlier figure to compare</span>
             </div>
           </div>
         </div>
