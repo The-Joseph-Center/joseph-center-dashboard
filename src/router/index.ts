@@ -5,6 +5,7 @@ import { hasCapability, type Capability } from '@/lib/capabilities';
 
 const DashboardHome = () => import('@/pages/DashboardHome.vue');
 const AnalyticsPage = () => import('@/pages/AnalyticsPage.vue');
+const ReportsPage = () => import('@/pages/ReportsPage.vue');
 const SupportPage = () => import('@/pages/SupportPage.vue');
 const BillingPage = () => import('@/pages/BillingPage.vue');
 const AccessPage = () => import('@/pages/AccessPage.vue');
@@ -24,6 +25,7 @@ const NotFound = () => import('@/pages/NotFound.vue');
 const routes = [
   { path: '/', name: 'Dashboard', component: DashboardHome },
   { path: '/analytics', name: 'Analytics', component: AnalyticsPage, meta: { capability: 'analytics' } },
+  { path: '/reports', name: 'Reports', component: ReportsPage, meta: { capability: 'analytics' } },
   { path: '/staff', name: 'StaffAdmin', component: StaffAdminPage, meta: { capability: 'staffAdmin' } },
   // The page needs only one readable form; which forms appear is decided per
   // form, server-side, by list-submissions.

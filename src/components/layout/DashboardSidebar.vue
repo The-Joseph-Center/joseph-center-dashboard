@@ -10,6 +10,7 @@ import type { Capability } from '@/lib/capabilities';
 import { ref, computed, onMounted } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import {
+  FileText,
   LayoutDashboard,
   BarChart3,
   Users,
@@ -82,6 +83,9 @@ interface NavItem {
 const ALL_NAV: NavItem[] = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, capability: 'myCard' },
   { to: '/analytics', label: 'Analytics', icon: BarChart3, capability: 'analytics' },
+  // Directly under Analytics: the live figures and the finished months are the
+  // same question asked over two timescales.
+  { to: '/reports', label: 'Monthly reports', icon: FileText, capability: 'analytics' },
   { to: '/staff', label: 'Staff', icon: Users, capability: 'staffAdmin' },
   { to: '/submissions', label: 'Submissions', icon: Inbox, capability: 'submissions' },
   { to: '/forms', label: 'Seasonal forms', icon: ClipboardList, capability: 'formsAdmin' },
