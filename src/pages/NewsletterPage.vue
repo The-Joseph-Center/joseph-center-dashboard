@@ -252,6 +252,23 @@ async function openSheet() {
  * labels to match against, and the panel then asked the sheet for nothing and
  * showed nothing — a resolved tab with an empty space under it.
  */
+/**
+ * Why a drafting button is unavailable.
+ *
+ * A greyed-out button with no reason beside it is a dead end: the page knows
+ * exactly what is missing and said nothing, so the only way to find out was to
+ * read the source. Each of these names the next thing to do instead.
+ */
+const transcriptBlocker = computed(() => {
+  if (!draft.value?.guestName?.trim()) return 'Set the guest or partner name above first.';
+  if (transcript.value.trim().length < 400) return 'Drop the transcript files in, or paste a transcript, first.';
+  return '';
+});
+
+const spotlightBlocker = computed(() =>
+  draft.value?.program?.trim() ? '' : 'Set the Section 2 program or theme above first.'
+);
+
 const DEFAULT_STAT_LABELS = [
   'Meals served', 'Individuals welcomed', 'Families served',
   'Program spotlight stat', 'IFS financial stability',
@@ -814,7 +831,9 @@ function videoBlock() {
               :disabled="reading || transcript.trim().length < 400 || !draft.guestName" @click="readTranscript">
               {{ reading ? 'Reading…' : factsOpen ? 'Read it again' : 'Read the transcript first' }}
             </button>
-            <span class="hint">Check who is who and what happened when, before it writes.</span>
+            <span class="hint">
+              {{ transcriptBlocker || 'Check who is who and what happened when, before it writes.' }}
+            </span>
           </div>
 
           <div v-if="factsOpen" class="facts">
@@ -838,8 +857,7 @@ function videoBlock() {
             <button type="button" class="btn btn--sm" :disabled="drafting || transcript.trim().length < 400 || !draft.guestName" @click="draftSection1(false)">
               {{ drafting ? 'Reading the transcript…' : `Draft the ${draft.guestFrame === 'calling' ? 'partner' : 'guest'} story` }}
             </button>
-            <span v-if="!draft.guestName" class="hint">Set the guest name first.</span>
-            <span v-else-if="transcript.trim().length < 400" class="hint">Paste the transcript first.</span>
+            <span v-if="transcriptBlocker" class="hint">{{ transcriptBlocker }}</span>
           </div>
         </div>
 
@@ -918,7 +936,9 @@ function videoBlock() {
             <button type="button" class="btn btn--sm" :disabled="spotlightDrafting || !draft.program" @click="draftSection2(false)">
               {{ spotlightDrafting ? 'Drafting…' : 'Draft the spotlight' }}
             </button>
-            <span v-if="!draft.program" class="hint">Set the Section 2 program or theme first.</span>
+            <span class="hint">
+              {{ spotlightBlocker || 'It knows what the program provides; tell it what happened this month.' }}
+            </span>
           </div>
         </div>
 
