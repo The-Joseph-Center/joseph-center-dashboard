@@ -31,7 +31,7 @@ export interface MonthlyReport {
     sources: { source: string; visits: number }[];
   };
   submissions?: {
-    byForm: { id: string; label: string; count: number; previous: number; unanswered: number }[];
+    byForm: { id: string; label: string; count: number; previous: number; unanswered: number | null }[];
     total: number;
   };
   speed?: {
@@ -112,6 +112,22 @@ async function buildSubmissions(month: string): Promise<MonthlyReport['submissio
   const { start, end, prevStart, prevEnd } = monthWindow(month);
   const byForm: NonNullable<MonthlyReport['submissions']>['byForm'] = [];
 
+  /**
+   * When recording a reply became possible at all.
+   *
+   * Before the follow-up table existed, every message looks unanswered — not
+   * because nobody replied, but because there was nowhere to say so. Reporting
+   * "33 of 33 still without a reply" for a month in 2025 would describe the
+   * tool rather than the work, and it is exactly the sort of line that gets
+   * read out of context in a board meeting. So for months that ended before
+   * tracking began, the figure is left out rather than guessed at.
+   */
+  const firstFollowUp = await db
+    .execute('SELECT MIN(updated_at) AS first FROM submission_followups')
+    .then((r) => (r.rows[0]?.first == null ? null : Number(r.rows[0].first)))
+    .catch(() => null);
+  const tracked = firstFollowUp !== null && end > firstFollowUp;
+
   for (const form of FORMS) {
     if (form.archived) continue;
     try {
@@ -124,7 +140,7 @@ async function buildSubmissions(month: string): Promise<MonthlyReport['submissio
           sql: `SELECT COUNT(*) AS n FROM ${form.table} WHERE ${form.timeColumn} >= ? AND ${form.timeColumn} < ?`,
           args: [prevStart, prevEnd],
         }),
-        form.followUp?.length
+        form.followUp?.length && tracked
           ? db.execute({
               sql: `SELECT COUNT(*) AS n FROM ${form.table} t
                      WHERE t.${form.timeColumn} >= ? AND t.${form.timeColumn} < ?
@@ -139,7 +155,7 @@ async function buildSubmissions(month: string): Promise<MonthlyReport['submissio
       if (!count && !previous) continue;   // a form nobody used that month
       byForm.push({
         id: form.id, label: form.label, count, previous,
-        unanswered: Number(open.rows[0]?.n ?? 0),
+        unanswered: form.followUp?.length && tracked ? Number(open.rows[0]?.n ?? 0) : null,
       });
     } catch (err) {
       console.error(`report: submissions for ${form.id} failed`, err);
@@ -256,7 +272,7 @@ function summarize(r: MonthlyReport): string[] {
       .filter((f) => f.count)
       .map((f) => `${f.count} ${f.count === 1 ? f.label.replace(/s$/, '').toLowerCase() : f.label.toLowerCase()}`);
     if (parts.length) {
-      const unanswered = r.submissions.byForm.reduce((n, f) => n + f.unanswered, 0);
+      const unanswered = r.submissions.byForm.reduce((n, f) => n + (f.unanswered ?? 0), 0);
       out.push(
         `${parts.join(', ')} came in through the website${unanswered ? `, and ${unanswered} ${unanswered === 1 ? 'is' : 'are'} still without a reply recorded` : ''}.`
       );

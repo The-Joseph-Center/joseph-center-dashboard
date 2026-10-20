@@ -28,7 +28,7 @@ interface Report {
     sources: { source: string; visits: number }[];
   };
   submissions?: {
-    byForm: { id: string; label: string; count: number; previous: number; unanswered: number }[];
+    byForm: { id: string; label: string; count: number; previous: number; unanswered: number | null }[];
     total: number;
   };
   speed?: { checkedAt: number; devices: { device: string; scores: Record<string, number> }[] };
