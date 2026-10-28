@@ -334,7 +334,8 @@ interface SendState {
   ready: boolean; status?: string; tag?: string;
   missingScopes?: string[]; error?: string;
   totals?: { subscribers: number; active: number; alreadyTagged: number; toTag: number };
-  blocking?: { where: string; problem: string }[];
+  blocking?: Issue[];
+  issues?: Issue[];
   plan?: { tag: string; waitDays: number; endOfMonth: string };
   partiallyTagged?: boolean;
   audience?: {
@@ -361,6 +362,10 @@ async function checkSend() {
     const res = await apiFetch(`/.netlify/functions/newsletter-aweber?month=${month.value}`);
     const d = await res.json().catch(() => ({}));
     sendState.value = res.ok ? d : { ready: false, error: d.error || String(res.status) };
+    // The Review block above was built when the page loaded, so after a save
+    // it can be out of date with the review that actually blocks the send.
+    // The check returns its own list — take it, so the two cannot disagree.
+    if (res.ok && Array.isArray(d.issues)) issues.value = d.issues;
     sendOpen.value = true;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not reach AWeber.';
@@ -380,7 +385,14 @@ async function applyTag() {
       body: JSON.stringify({ month: month.value, confirm: confirmTag.value, automationsUpdated: automationsUpdated.value }),
     });
     const d = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(d.error || String(res.status));
+    if (!res.ok) {
+      // A refusal carries the reasons; show them rather than only the count.
+      if (sendState.value && Array.isArray(d.blocking)) {
+        sendState.value = { ...sendState.value, ready: false, blocking: d.blocking };
+        if (Array.isArray(d.issues)) issues.value = d.issues;
+      }
+      throw new Error(d.error || String(res.status));
+    }
     sendResult.value = d;
     await load();
     await checkSend();
@@ -1202,9 +1214,23 @@ function videoBlock() {
 
             <template v-else-if="sendState.blocking?.length">
               <p class="warn">
-                {{ sendState.blocking.length }} thing{{ sendState.blocking.length === 1 ? '' : 's' }} still to fix before this can go out —
-                see the review below. Sending is blocked until they are cleared.
+                {{ sendState.blocking.length }} thing{{ sendState.blocking.length === 1 ? '' : 's' }} still to fix before this can go out.
+                Sending is blocked until {{ sendState.blocking.length === 1 ? 'it is' : 'they are' }} cleared.
               </p>
+              <!--
+                Listed here as well as in the Review block above, because this
+                is the list that stops the send — pointing at another section
+                for it meant a blocked send with nothing on screen to fix.
+              -->
+              <ul class="issues">
+                <li v-for="(i, n) in sendState.blocking" :key="n" class="issue issue--must">
+                  <span class="sev sev--must">Fix</span>
+                  <div>
+                    <p class="issue__problem"><strong>{{ i.where }}</strong> — {{ i.problem }}</p>
+                    <p class="issue__fix">{{ i.fix }}</p>
+                  </div>
+                </li>
+              </ul>
             </template>
 
             <template v-else>
