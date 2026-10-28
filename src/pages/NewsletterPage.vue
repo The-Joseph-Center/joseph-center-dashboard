@@ -601,9 +601,13 @@ async function saveFirst() {
 // through the API and picked up by hand when the automation is built.
 const makingDrafts = ref(false);
 const draftsMade = ref<{ tier: string; subject: string; id?: number; skipped?: boolean }[] | null>(null);
+// Reported beside the button rather than in the banner at the top of the page.
+// This step sits a long way down the send steps, and a failure shown up there
+// is a failure nobody sees: the button simply appears to do nothing.
+const draftsError = ref('');
 
 async function createDrafts() {
-  makingDrafts.value = true; error.value = ''; draftsMade.value = null;
+  makingDrafts.value = true; draftsError.value = ''; draftsMade.value = null;
   try {
     if (!(await saveFirst())) throw new Error('Could not save first, so nothing was created.');
     const res = await apiFetch('/.netlify/functions/newsletter-aweber', {
@@ -614,7 +618,7 @@ async function createDrafts() {
     if (!res.ok) throw new Error(d.error || String(res.status));
     draftsMade.value = d.drafts ?? [];
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Could not create the drafts.';
+    draftsError.value = e instanceof Error ? e.message : 'Could not create the drafts.';
   } finally {
     makingDrafts.value = false;
   }
@@ -1251,8 +1255,9 @@ function videoBlock() {
                     <button type="button" class="btn btn--sm" :disabled="makingDrafts" @click="createDrafts">
                       {{ makingDrafts ? 'Creating the drafts…' : 'Create the three drafts in AWeber' }}
                     </button>
-                    <span class="hint">Saves first, so the drafts match what is on screen. Run it twice and it will not duplicate — a draft with the same subject is left alone.</span>
+                    <span class="hint">Saves first, so the drafts match what is on screen. Run it twice and it will not duplicate — a draft with the same subject is left alone. Only drafts created here are visible to it, so one built by hand in AWeber will not stop a second being made.</span>
                   </div>
+                  <p v-if="draftsError" class="warn" role="alert">{{ draftsError }}</p>
                   <ul v-if="draftsMade" class="drafts">
                     <li v-for="d in draftsMade" :key="d.subject">
                       <strong>{{ d.tier }}</strong> — {{ d.subject }}

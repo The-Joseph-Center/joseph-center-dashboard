@@ -139,34 +139,47 @@ export async function addTag(cfg: AweberConfig, subscriber: Subscriber, tag: str
  */
 export interface DraftMessage { id: number; subject: string }
 
+/**
+ * The API-created drafts on the list.
+ *
+ * `status=draft` returns only drafts created through the API — a draft built by
+ * hand in AWeber's editor is invisible here. So this answers "did we already
+ * create this one?" and not "does a message with this subject exist?".
+ */
 export async function listDrafts(cfg: AweberConfig): Promise<DraftMessage[]> {
-  const { status, body } = await api<{ entries?: { id: number; subject?: string }[]; error?: { message: string } }>(
+  const { status, body } = await api<{ entries?: { broadcast_id?: number; subject?: string }[]; error?: { message: string } }>(
     cfg, `/accounts/${cfg.accountId}/lists/${cfg.listId}/broadcasts?status=draft&ws.size=100`
   );
   if (status >= 300) throw new Error(body.error?.message ?? `Listing drafts failed (${status})`);
-  return (body.entries ?? []).map((e) => ({ id: e.id, subject: String(e.subject ?? '') }));
+  return (body.entries ?? []).map((e) => ({ id: Number(e.broadcast_id ?? 0), subject: String(e.subject ?? '') }));
 }
 
 export async function createDraft(
   cfg: AweberConfig,
   message: { subject: string; html: string; text: string },
 ): Promise<DraftMessage> {
-  const { status, body } = await api<{ id?: number; error?: { message: string } }>(
+  // Form-encoded, and deliberately so. Creating a broadcast is the one write
+  // in this API that refuses application/json — it answers 415 and creates
+  // nothing. Every other call here takes JSON, which is how a run could report
+  // three drafts created with nothing on the list to show for it.
+  const form = new URLSearchParams({
+    subject: message.subject,
+    body_html: message.html,
+    body_text: message.text,
+    // Sent by an automation, not broadcast to the list, so it should not
+    // appear in the public archive as a mailing of its own.
+    is_archived: 'false',
+  });
+  const { status, body } = await api<{ broadcast_id?: number; error?: { message: string } }>(
     cfg, `/accounts/${cfg.accountId}/lists/${cfg.listId}/broadcasts`,
     {
       method: 'POST',
-      body: JSON.stringify({
-        subject: message.subject,
-        body_html: message.html,
-        body_text: message.text,
-        // Sent by an automation, not broadcast to the list, so it should not
-        // appear in the public archive as a mailing of its own.
-        is_archived: false,
-      }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form,
     },
   );
   if (status >= 300) throw new Error(body.error?.message ?? `Creating the draft failed (${status})`);
-  return { id: Number(body.id ?? 0), subject: message.subject };
+  return { id: Number(body.broadcast_id ?? 0), subject: message.subject };
 }
 
 /** The tier tags the automations route on, from the process document. */
