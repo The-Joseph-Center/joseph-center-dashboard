@@ -2,9 +2,9 @@ import { requireCapability, denial } from './_lib/verify-okta';
 import { turso, fetchOktaUsers } from './_lib/staff-directory';
 import {
   TIERS, section4, closingSection, aweberPlan, reviewNewsletter, bridgeLine,
-  DONATE_URL, type NewsletterDraft,
+  DONATE_URL, section3Header, type NewsletterDraft, type Video,
 } from './_lib/newsletter';
-import { newsletterHtml, promoteButtons } from './_lib/newsletter-html';
+import { newsletterHtml, promoteButtons, sectionsHtml } from './_lib/newsletter-html';
 import { SANITY_DATASET as DATASET } from './_lib/sanity-dataset';
 
 /**
@@ -84,7 +84,7 @@ const shape = (r: Row) => ({
   program: r.program ?? '', aweberTag: r.aweber_tag ?? '',
   section1: r.section1 ?? '', section2: r.section2 ?? '',
   stats: parse<Record<string, string>>(r.stats, {}),
-  videos: parse<{ title: string; url: string }[]>(r.videos, []),
+  videos: parse<Video[]>(r.videos, []),
   partners: parse<{ name: string; url: string }[]>(r.partners, []),
   previewText: r.preview_text ?? '',
   // The materials the draft was built from — transcript, notes, fact sheet.
@@ -190,7 +190,24 @@ export async function handler(event: {
       const history = all
         .filter((r) => r.month !== month)
         .map((r) => ({ month: r.month, monthName: monthName(r.month), guest: r.guest_name, program: r.program }));
-      const issues = reviewNewsletter({ ...draft, usedTags, staffSurnames: surnames } as NewsletterDraft);
+      /**
+       * What the review needs that the row alone does not carry: the frame, the
+       * episode link and the names the writer has asked to keep out, all of
+       * which travel in the workbench, and the transcript — so a surname said
+       * out loud can be recognised in the prose.
+       */
+      const wb = (draft.workbench ?? {}) as {
+        coffeeChatUrl?: string; withholdNames?: string[]; transcript?: string;
+      };
+      const issues = reviewNewsletter({
+        ...draft,
+        usedTags,
+        staffSurnames: surnames,
+        guestFrame: draft.guestFrame === 'calling' ? 'calling' : 'guest',
+        coffeeChatUrl: wb.coffeeChatUrl ?? '',
+        withholdNames: Array.isArray(wb.withholdNames) ? wb.withholdNames : [],
+        transcript: typeof wb.transcript === 'string' ? wb.transcript : '',
+      } as NewsletterDraft);
       const plan = aweberPlan(month, new Date());
 
       return {
@@ -200,11 +217,13 @@ export async function handler(event: {
           draft, issues, plan, usedTags, partners, history,
           carriedPartners: !row && !!previous,
           bridgeLine: bridgeLine(draft.monthName),
-          section3Header: `${draft.monthName} Impact & ${MONTHS[(Number(month.split('-')[1]) - 2 + 12) % 12]} Videos`,
+          section3Header: section3Header(month, draft.monthName),
           versions: TIERS.map((t) => ({
             id: t.id, label: t.label, tag: t.aweberTag, excludes: t.excludes,
             subject: t.subject(draft.monthName), signature: t.signature,
-            section4: section4(t, draft.monthName, draft.guestName),
+            section4: section4(t, draft.monthName, draft.guestName, {
+              frame: draft.guestFrame === 'calling' ? 'calling' : 'guest',
+            }),
             closing: closingSection(draft.partners),
           })),
         }),
@@ -232,23 +251,48 @@ export async function handler(event: {
      */
     if (clean(body.action, 20) === 'html') {
       const name = monthName(month);
-      const prev = MONTHS[(Number(month.split('-')[1]) - 2 + 12) % 12];
+      const frame = body.guestFrame === 'calling' ? 'calling' as const : 'guest' as const;
+      const workbench = (body.workbench ?? {}) as { coffeeChatUrl?: string };
       const versions = TIERS.map((t) => ({
         id: t.id,
         label: t.label,
         subject: t.subject(name),
-        html: promoteButtons(newsletterHtml({
+        /**
+         * The same email, section by section.
+         *
+         * AWeber's editor takes a rich-text paste but not a block of HTML
+         * source, and a plain-text paste of the markdown loses every bullet and
+         * link. So each section is offered as HTML of its own for the clipboard
+         * to carry as rich text — which is how a "What we provide" list
+         * survives the trip.
+         */
+        sections: sectionsHtml({
+          month,
           monthName: name,
+          guestName: clean(body.guestName, 120),
           section1: clean(body.section1),
           section2: clean(body.section2),
-          section3Header: `${name} Impact & ${prev} Videos`,
           stats: (body.stats ?? {}) as Record<string, string>,
-          videos: (body.videos ?? []) as { title: string; url: string }[],
-          section4: section4(t, name, clean(body.guestName, 120)),
+          videos: (body.videos ?? []) as Video[],
+          section4: section4(t, name, clean(body.guestName, 120), { frame }),
           closing: closingSection((body.partners ?? []) as { name: string; url: string }[]),
           signature: t.signature,
           donateUrl: DONATE_URL,
-          coffeeChatFormUrl: 'https://forms.gle/aQZRYokrT7YK8GFL9',
+          coffeeChatUrl: clean(workbench.coffeeChatUrl, 300),
+        }),
+        html: promoteButtons(newsletterHtml({
+          month,
+          monthName: name,
+          guestName: clean(body.guestName, 120),
+          section1: clean(body.section1),
+          section2: clean(body.section2),
+          stats: (body.stats ?? {}) as Record<string, string>,
+          videos: (body.videos ?? []) as Video[],
+          section4: section4(t, name, clean(body.guestName, 120), { frame }),
+          closing: closingSection((body.partners ?? []) as { name: string; url: string }[]),
+          signature: t.signature,
+          donateUrl: DONATE_URL,
+          coffeeChatUrl: clean(workbench.coffeeChatUrl, 300),
         }), DONATE_URL),
       }));
       return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ versions }) };

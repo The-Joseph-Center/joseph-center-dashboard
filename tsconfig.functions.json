@@ -19,9 +19,11 @@
       "@/*": [
         "./src/*"
       ]
-    }
+    },
+    "allowImportingTsExtensions": true
   },
   "include": [
-    "netlify/functions/**/*.ts"
+    "netlify/functions/**/*.ts",
+    "test/**/*.ts"
   ]
 }

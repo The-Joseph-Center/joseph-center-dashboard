@@ -84,8 +84,13 @@ official name, "The Golden Girls Project", before any shortened form.
 Header is generated as: **{This month} Impact & {Previous month} Videos**
 
 - Stats come from the program directors and are **never** estimated. Blank, "TBD", "XX" or "0" are all flagged.
+- Stat labels carry a unit noun — "people served through IFS", not "IFS financial stability".
+- Fixed intro line above the list: *"Every month, Mona sits down with guests, volunteers, and community members to share real stories of transformation."*
+- Then the label **"{Previous month}'s episodes:"**.
 - Videos are *last* month's Coffee Chats, usually four or five.
-- Video titles must match YouTube exactly. Never fabricate or estimate a title.
+- Video titles must match YouTube exactly. Never fabricate or estimate a title. The email wraps each one in quotation marks itself, once — a title that is already a quotation is not wrapped again.
+- Shorts are labelled "Watch Short:" rather than "Watch:", from YouTube's own durations.
+- The section ends with an **"Apply here →"** button to `josephcentergj.com/media/apply`. The old `forms.gle` link is retired and any use of it is a must-fix.
 
 ---
 
@@ -202,10 +207,30 @@ Every one is a plain string test, so they are consistent and free.
 | Missing videos or titles | Never fabricated |
 | Reused AWeber tag | A subscriber can only enter an automation once |
 | AWeber tag with no year | Or the same tag comes round again next year and re-triggers |
+| A first name followed by a surname | Matched against the guest, the staff roster and the transcript |
+| A name on the withhold list | The writer's own list — minors, anyone who did not consent |
+| A phone number or email in Sections 1–2 | Only JC's own published numbers belong in the newsletter |
+| "Homeless people", "the homeless", "being homeless" | Say "people experiencing homelessness". Direct quotations are exempt |
+| `[X]`, TBD, XX, "once they're finalized", "we'll share" | In Sections 1–3, and in the preview text |
+| A placeholder stat label | "Program spotlight stat" and "IFS financial stability" are scaffolding, not measurements |
+| A `forms.gle` link | The Coffee Chat guest form is josephcentergj.com/media/apply |
+| No Coffee Chat episode link | Section 1's "Watch their full story" button is built from it |
+| No preview text, or over 140 characters | Required before a month can go out |
+| "What we provide" with no bullet list under it | A run of dashes in one paragraph renders as a single line |
 
 **Should-fix:** missing bridge line; wrong month in the bridge line; no foundation
-partners; missing preview text; preview text over 140 characters; Section 2 missing its
-standard closing line.
+partners; Section 2 missing its standard closing line; no Section 1 headline, or one with
+a colon or over ten words; a first sentence that introduces the story instead of starting
+it; fewer than four paragraphs, or one that runs to a wall of text; month-tied wording
+outside the bridge line; "charity", "the less fortunate", "handout", "hand up" (JC says
+"a hand forward"); a Section 2 header without the "{Hook}: {Program}" pattern; a missing
+per-program closing CTA; doubled quotation marks in a video title; a stat label with no
+unit noun; and, in a calling-frame month, the donor and recurring-donor Section 4s still
+crediting the reader for the story.
+
+**Raised, never removed:** mentions of a death, custody or foster placement, an arrest or
+a medical condition. Fine if it is the guest's own and they told it on air; not fine for
+anyone who was not in the room. These appear in the "transcript did not settle" panel.
 
 **Preview text:** one evocative sentence reflecting the guest story — not a summary, not
 the subject line again.
@@ -215,4 +240,5 @@ the subject line again.
 ## 9. What this brief does not contain
 
 - **Sent newsletters.** They live in the dashboard's database, which is not readable from here. Copy one out of the Newsletter tool and paste it in if you want a tone and length baseline.
+- **Tests.** `npm test` in `dashboard/` runs the review, the renderer and the prompts against two fixtures: October as it went out, and October corrected. Every fault found in the September → October comparison has a test.
 - **The full brand reference.** `jc-brand-reference.md` (342 lines, at the project root) is the source of truth for terminology, dignity-first framing and positioning. The tool embeds it verbatim in its prompts. Attach that file rather than working from a summary of it.

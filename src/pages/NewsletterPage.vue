@@ -3,6 +3,10 @@ import { ref, computed, onMounted, watch } from 'vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import { assembleTranscript, describeFile, isCaptionExport } from '@/lib/transcript';
 import { apiFetch } from '@/lib/api';
+// The one composer, shared with the functions that build the email. Section 3
+// was being assembled separately here, which is how the copy-out and the sent
+// version came to differ.
+import { composeSection3 } from '../../netlify/functions/_lib/newsletter';
 
 // The monthly newsletter, built in one place.
 //
@@ -23,7 +27,7 @@ interface Version {
 interface Draft {
   month: string; monthName: string; guestName: string; guestFrame: string; program: string;
   aweberTag: string; section1: string; section2: string;
-  stats: Record<string, string>; videos: { title: string; url: string }[];
+  stats: Record<string, string>; videos: { title: string; url: string; kind?: string }[];
   partners: { name: string; url: string }[]; previewText: string; status: string;
   sentAt: number | null; updatedBy: string | null; updatedAt: number;
 }
@@ -53,6 +57,18 @@ const appendedBridge = ref(false);
 // What the writer brings that the transcript cannot — what to focus on, what
 // to leave alone. Kept between redrafts so it keeps applying.
 const notes = ref('');
+/**
+ * Names that must not reach print, whatever the transcript says.
+ *
+ * A minor, someone who did not consent, a third party in a court matter.
+ * Nothing can infer this — October's draft named a guest's child because
+ * nobody had anywhere to say not to.
+ */
+const withholdNames = ref('');
+const withholdList = computed(() =>
+  withholdNames.value.split(/[,;\n]/).map((n) => n.trim()).filter(Boolean));
+/** This month's episode. Section 1 ends with a button to it. */
+const coffeeChatUrl = ref('');
 const instruction = ref('');
 // The reading pass: who is in the story and what happened in what order,
 // as plain lines the writer corrects before a word of prose is written.
@@ -169,6 +185,7 @@ async function readTranscript() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'facts', transcript: transcript.value, notes: notes.value,
+        withholdNames: withholdList.value,
         guestName: draft.value.guestName, monthName: draft.value.monthName,
         frame: draft.value.guestFrame, program: draft.value.program,
       }),
@@ -202,7 +219,7 @@ async function draftSection1(redraft = false) {
       body: JSON.stringify({
         transcript: transcript.value, guestName: draft.value.guestName,
         monthName: draft.value.monthName, frame: draft.value.guestFrame, program: draft.value.program,
-        notes: notes.value, facts: factSheet.value,
+        notes: notes.value, facts: factSheet.value, withholdNames: withholdList.value,
         ...(redraft ? {
           previousDraft: draft.value.section1,
           instruction: instruction.value,
@@ -405,8 +422,19 @@ async function applyTag() {
 
 // ── Email HTML ──
 const htmlVersions = ref<Record<string, string>>({});
+// The same email section by section, for pasting one block at a time into
+// AWeber's editor as rich text.
+const htmlSections = ref<Record<string, Record<string, string>>>({});
 const buildingHtml = ref(false);
 const showHtml = ref(false);
+
+const SECTION_LABELS: { key: string; label: string }[] = [
+  { key: 'section1', label: 'Section 1' },
+  { key: 'section2', label: 'Section 2' },
+  { key: 'section3', label: 'Section 3' },
+  { key: 'section4', label: 'Section 4' },
+  { key: 'closing', label: 'Closing' },
+];
 
 async function buildHtml() {
   if (!draft.value) return;
@@ -414,11 +442,15 @@ async function buildHtml() {
   try {
     const res = await apiFetch('/.netlify/functions/admin-newsletter', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...draft.value, month: month.value, action: 'html' }),
+      // The workbench carries the episode link, and without it the Section 1
+      // button cannot be built.
+      body: JSON.stringify({ ...draft.value, month: month.value, action: 'html', workbench: workbench.value }),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d.error || String(res.status));
     htmlVersions.value = Object.fromEntries(d.versions.map((v: { id: string; html: string }) => [v.id, v.html]));
+    htmlSections.value = Object.fromEntries(
+      d.versions.map((v: { id: string; sections?: Record<string, string> }) => [v.id, v.sections ?? {}]));
     showHtml.value = true;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not build the HTML.';
@@ -509,6 +541,8 @@ const workbench = computed(() => ({
   transcript: transcript.value,
   transcriptFiles: transcriptFiles.value,
   notes: notes.value,
+  withholdNames: withholdList.value,
+  coffeeChatUrl: coffeeChatUrl.value.trim(),
   facts: { people: factPeople.value, timeline: factTimeline.value, programs: factPrograms.value, uncertain: factUncertain.value },
   factsOpen: factsOpen.value,
   spotlightNotes: spotlightNotes.value,
@@ -517,12 +551,15 @@ const workbench = computed(() => ({
 function applyWorkbench(w: Record<string, unknown> | undefined) {
   const wb = (w ?? {}) as {
     transcript?: string; notes?: string; spotlightNotes?: string; factsOpen?: boolean;
+    withholdNames?: string[]; coffeeChatUrl?: string;
     transcriptFiles?: { name: string; speaker: string; bonus: boolean }[];
     facts?: { people?: string; timeline?: string; programs?: string; uncertain?: string[] };
   };
   transcript.value = wb.transcript ?? '';
   transcriptFiles.value = wb.transcriptFiles ?? [];
   notes.value = wb.notes ?? '';
+  withholdNames.value = (wb.withholdNames ?? []).join(', ');
+  coffeeChatUrl.value = wb.coffeeChatUrl ?? '';
   spotlightNotes.value = wb.spotlightNotes ?? '';
   factPeople.value = wb.facts?.people ?? '';
   factTimeline.value = wb.facts?.timeline ?? '';
@@ -671,7 +708,10 @@ async function pullVideos() {
     const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d.error || String(res.status));
     if (!d.videos.length) { error.value = `No videos found for ${prev}.`; return; }
-    draft.value.videos = d.videos.map((v: { title: string; url: string }) => ({ title: v.title, url: v.url }));
+    // kind comes from YouTube's own durations — dropping it is what turned
+    // every "Watch Short:" into "Watch:".
+    draft.value.videos = d.videos.map((v: { title: string; url: string; kind?: string }) =>
+      ({ title: v.title, url: v.url, kind: v.kind }));
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not reach YouTube.';
   } finally {
@@ -689,7 +729,40 @@ const removeVideo = (i: number) => draft.value?.videos.splice(i, 1);
 const addPartner = () => draft.value?.partners.push({ name: '', url: '' });
 const removePartner = (i: number) => draft.value?.partners.splice(i, 1);
 
+// AWeber's own personalization, quoted here because a subscriber with no
+// first name on record renders as "Hi ," — the greeting is in their template,
+// not in anything this builds.
+const GREETING_TAG = '{{ subscriber.first_name or "friend" }}';
+
 const copied = ref('');
+
+/**
+ * Copy as rich text, not as markup.
+ *
+ * AWeber's editor accepts a rich-text paste and shows HTML source as source,
+ * and a plain-text paste of the markdown arrives with every bullet and link
+ * flattened — which is the whole reason a built list stopped surviving the
+ * trip. Writing both flavours lets the destination choose: the editor takes
+ * text/html, a plain-text field takes the markdown.
+ */
+async function copyRich(html: string, plain: string, what: string) {
+  try {
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([plain], { type: 'text/plain' }),
+      })]);
+    } else {
+      // No rich-text clipboard here; the markup is better than nothing.
+      await navigator.clipboard.writeText(html);
+    }
+    copied.value = what;
+    window.setTimeout(() => { if (copied.value === what) copied.value = ''; }, 1600);
+  } catch {
+    error.value = 'Copying is blocked in this browser — select the text instead.';
+  }
+}
+
 async function copy(text: string, what: string) {
   try {
     await navigator.clipboard.writeText(text);
@@ -700,21 +773,43 @@ async function copy(text: string, what: string) {
   }
 }
 
-/** The whole version, in the order it appears in the email. */
-const fullVersion = (v: Version) =>
-  [draft.value?.section1, draft.value?.section2, `## ${section3Header.value}`, statsBlock(), videoBlock(), v.section4, v.closing, `— ${v.signature}`]
-    .filter(Boolean).join('\n\n');
+/** The plain-text flavour of one section, for whatever cannot take rich text. */
+function sectionPlain(v: Version, key: string): string {
+  const d = draft.value;
+  if (!d) return '';
+  if (key === 'section1') {
+    return [
+      d.guestName ? `COFFEE CHAT WITH ${d.guestName.toUpperCase()}` : '',
+      d.section1,
+      coffeeChatUrl.value.trim()
+        ? `Watch ${d.guestName ? `${d.guestName}'s` : 'the'} full story on Coffee Chat with Mona: ${coffeeChatUrl.value.trim()}`
+        : '',
+    ].filter(Boolean).join('\n\n');
+  }
+  if (key === 'section2') return d.section2;
+  if (key === 'section3') return composeSection3({ month: d.month, monthName: d.monthName, stats: d.stats, videos: d.videos });
+  if (key === 'section4') return v.section4;
+  if (key === 'closing') return v.closing;
+  return '';
+}
 
-function statsBlock() {
-  const s = draft.value?.stats ?? {};
-  const lines = Object.entries(s).filter(([, v]) => String(v).trim()).map(([k, v]) => `- ${k}: ${v}`);
-  return lines.length ? `**This Month in Numbers**\n\n${lines.join('\n')}` : '';
-}
-function videoBlock() {
-  const v = draft.value?.videos ?? [];
-  const lines = v.filter((x) => x.title && x.url).map((x) => `[Watch: "${x.title}"](${x.url})`);
-  return lines.length ? `${lines.join('\n\n')}\n\nWant to be a guest? [Apply here](https://forms.gle/aQZRYokrT7YK8GFL9)` : '';
-}
+/** The whole version, in the order it appears in the email. */
+const fullVersion = (v: Version) => {
+  const d = draft.value;
+  if (!d) return '';
+  return [
+    d.guestName ? `COFFEE CHAT WITH ${d.guestName.toUpperCase()}` : '',
+    d.section1,
+    coffeeChatUrl.value.trim()
+      ? `[Watch ${d.guestName ? `${d.guestName}'s` : 'the'} full story on Coffee Chat with Mona →](${coffeeChatUrl.value.trim()})`
+      : '',
+    d.section2,
+    composeSection3({ month: d.month, monthName: d.monthName, stats: d.stats, videos: d.videos }),
+    v.section4,
+    v.closing,
+    `— ${v.signature}`,
+  ].filter(Boolean).join('\n\n');
+};
 </script>
 
 <template>
@@ -764,7 +859,19 @@ function videoBlock() {
         </div>
         <label class="f"><span>Section 2 program or theme</span><input v-model="draft.program" type="text" placeholder="Day Shelter, Food Pantry, IFS, The Golden Girls Project, Family Center…" /></label>
         <label class="f">
-          <span>Preview text — the line that follows the subject in the inbox</span>
+          <span>This month's Coffee Chat episode <span class="req">required</span></span>
+          <input v-model="coffeeChatUrl" type="url" placeholder="https://youtu.be/…" />
+        </label>
+        <p class="block__hint">
+          Section 1 ends with a “Watch {{ draft.guestName || 'their' }} full story on Coffee Chat with Mona” button,
+          built from this link. Without it there is no button — October sent without one.
+        </p>
+        <label class="f">
+          <span>
+            Preview text — the line that follows the subject in the inbox
+            <span class="req">required</span>
+            <span class="count" :class="{ 'count--over': draft.previewText.length > 140 }">{{ draft.previewText.length }}/140</span>
+          </span>
           <input v-model="draft.previewText" type="text" maxlength="200" placeholder="This is what a second chance looks like at The Joseph Center" />
         </label>
         <p class="block__hint">
@@ -841,6 +948,14 @@ function videoBlock() {
           </p>
           <textarea id="draft-notes" v-model="notes" rows="3" class="body"
             placeholder="Focus on the sister, not the nephew. Don't mention the funeral."></textarea>
+
+          <label class="notes__label" for="draft-withhold">Names to withhold</label>
+          <p class="block__hint">
+            Anyone whose name must not reach print, whatever the recording says — a child, someone who did not
+            consent, a third party in a court matter. Separate them with commas. The draft is told not to use them
+            and the review flags them if they turn up anyway.
+          </p>
+          <input id="draft-withhold" v-model="withholdNames" type="text" placeholder="Mason, Aunt Carol" />
 
           <div class="actions">
             <button type="button" class="btn btn--ghost btn--sm"
@@ -1265,6 +1380,12 @@ function videoBlock() {
                     </li>
                   </ul>
                   <p v-if="draftsMade" class="hint">
+                    While you are in there: the greeting is AWeber's, not ours, and a subscriber with no first name
+                    on record renders as “Hi ,”. Give it a fallback —
+                    <code>{{ GREETING_TAG }}</code> — or drop the comma with a
+                    conditional.
+                  </p>
+                  <p v-if="draftsMade" class="hint">
                     Set the preview text on each one in AWeber — the API does not carry it.
                     <template v-if="draft.previewText">Copy it: <button type="button" class="linkish" @click="copy(draft.previewText, 'steps-preview')">{{ copied === 'steps-preview' ? 'Copied' : draft.previewText }}</button></template>
                   </p>
@@ -1341,6 +1462,18 @@ function videoBlock() {
               <button type="button" class="linkish" :disabled="buildingHtml" @click="showHtml && Object.keys(htmlVersions).length ? (showHtml = false) : buildHtml()">
                 {{ buildingHtml ? 'Building…' : showHtml ? 'Show plain text' : 'Build email HTML' }}
               </button>
+            </div>
+            <div v-if="htmlSections[v.id]" class="sections">
+              <span class="sections__label">Copy one section, as rich text:</span>
+              <button v-for="sec in SECTION_LABELS" :key="sec.key" type="button" class="linkish"
+                :disabled="!htmlSections[v.id]?.[sec.key]"
+                @click="copyRich(htmlSections[v.id]![sec.key]!, sectionPlain(v, sec.key), `${v.id}-${sec.key}`)">
+                {{ copied === `${v.id}-${sec.key}` ? 'Copied' : sec.label }}
+              </button>
+              <p class="block__hint">
+                Pastes into AWeber's editor as formatted text — bullets stay bullets and links stay links.
+                Whole-message HTML, for its HTML block, is below.
+              </p>
             </div>
             <p v-if="showHtml" class="block__hint">
               Paste this into AWeber's HTML mode. Inline styles and tables throughout, 600px wide — what email clients need rather than what a browser would.
@@ -1493,6 +1626,12 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 .tab { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .35rem .7rem; font: inherit; font-size: .8125rem; cursor: pointer; color: var(--color-text); }
 .tab--on { border-color: var(--color-primary-strong); color: var(--color-primary-strong); font-weight: 600; }
 .version__actions { display: flex; gap: .9rem; align-items: center; margin-bottom: .8rem; }
+.req { font-size: .6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--color-warning, #b4690e); }
+.count { font-size: .6875rem; color: var(--color-text-secondary); margin-left: .35rem; }
+.count--over { color: var(--color-danger, #b3261e); font-weight: 600; }
+.sections { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin: .5rem 0 .75rem; }
+.sections__label { font-size: .8125rem; color: var(--color-text-secondary); }
+.sections .block__hint { flex-basis: 100%; margin: .15rem 0 0; }
 .preview { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .9rem; font-size: .75rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; max-height: 32rem; overflow-y: auto; margin: 0; }
 
 .btn { background: var(--color-primary-strong); color: #fff; border: 0; border-radius: var(--border-radius); font-weight: 600; cursor: pointer; }

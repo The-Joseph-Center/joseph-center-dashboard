@@ -10,6 +10,10 @@
  * Colors are The Joseph Center's, from section 3 of the brand reference.
  */
 
+import {
+  APPLY_URL, SECTION3_INTRO, episodesLabel, quoteTitle, section3Header, watchLabel, type Video,
+} from './newsletter.ts';
+
 const DEEP_GREEN = '#1D5F55';
 const PRIMARY_GREEN = '#60B567';
 const GOLD = '#CAA230';
@@ -42,58 +46,114 @@ const P = `margin:0 0 16px;font-family:${FONT};font-size:16px;line-height:1.6;co
  * Built as a table with bgcolor on the cell — an anchor with padding collapses
  * in Outlook, which is exactly where a donate button must not collapse.
  */
+/**
+ * Which ink a button wears.
+ *
+ * White on Primary Green (#60B567) is about 2.5:1 and white on the gold is no
+ * better — both fail at any text size. Deep Charcoal on the same two is about
+ * 5:1, and white on Deep Green is about 7.4:1. So the dark backgrounds take
+ * white and the light ones take charcoal, rather than every button taking
+ * white because the first one did.
+ */
+const CHARCOAL_INK = new Set([PRIMARY_GREEN, GOLD, CREAM].map((c) => c.toLowerCase()));
+const inkOn = (bg: string) => (CHARCOAL_INK.has(bg.toLowerCase()) ? CHARCOAL : '#ffffff');
+
 export function button(label: string, href: string, color = PRIMARY_GREEN): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;">
   <tr><td align="center" bgcolor="${color}" style="border-radius:6px;">
-    <a href="${absolute(href)}" style="display:inline-block;padding:13px 26px;font-family:${FONT};font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:6px;">${esc(label)}</a>
+    <a href="${absolute(href)}" style="display:inline-block;padding:13px 26px;font-family:${FONT};font-size:16px;font-weight:700;color:${inkOn(color)};text-decoration:none;border-radius:6px;">${esc(label)}</a>
   </td></tr>
 </table>`;
 }
 
-/** The same plain writing format the rest of the dashboard uses, as email HTML. */
+/** The small uppercase line above a section, as "THIS MONTH IN NUMBERS" sets it. */
+export function eyebrow(text: string): string {
+  return `<p style="margin:0 0 6px;font-family:${FONT};font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${WARM_GRAY};">${esc(text)}</p>`;
+}
+
+const BULLET = /^[-*•–—]\s+/;
+const NUMBERED = /^\d+[.)]\s+/;
+
+const ulHtml = (items: string[]) =>
+  `<ul style="margin:0 0 16px;padding-left:22px;font-family:${FONT};font-size:16px;line-height:1.6;color:${CHARCOAL};">${
+    items.map((l) => `<li style="margin:0 0 6px;">${inline(l.replace(BULLET, ''))}</li>`).join('')}</ul>`;
+
+const olHtml = (items: string[]) =>
+  `<ol style="margin:0 0 16px;padding-left:22px;font-family:${FONT};font-size:16px;line-height:1.6;color:${CHARCOAL};">${
+    items.map((l) => `<li style="margin:0 0 6px;">${inline(l.replace(NUMBERED, ''))}</li>`).join('')}</ol>`;
+
+/** A run of lines that are all one kind of thing. */
+type Group = { kind: 'text' | 'ul' | 'ol'; lines: string[] };
+
+function textHtml(lines: string[]): string {
+  const first = lines[0] ?? '';
+  if (first.startsWith('> ')) {
+    const quoted = lines.map((l) => l.replace(/^>\s?/, '')).join(' ');
+    return `<blockquote style="margin:0 0 16px;padding:12px 18px;border-left:4px solid ${GOLD};background-color:${CREAM};font-family:${FONT};font-size:16px;line-height:1.6;font-style:italic;color:${CHARCOAL};">${inline(quoted)}</blockquote>`;
+  }
+  if (lines.length === 1) {
+    if (first.startsWith('### ')) return `<h3 style="margin:24px 0 10px;font-family:${FONT};font-size:18px;font-weight:700;color:${DEEP_GREEN};">${inline(first.slice(4))}</h3>`;
+    if (first.startsWith('## ')) return `<h2 style="margin:32px 0 12px;font-family:${FONT};font-size:22px;font-weight:700;color:${DEEP_GREEN};">${inline(first.slice(3))}</h2>`;
+    if (first.startsWith('# ')) return `<h2 style="margin:32px 0 12px;font-family:${FONT};font-size:22px;font-weight:700;color:${DEEP_GREEN};">${inline(first.slice(2))}</h2>`;
+  }
+  return `<p style="${P}">${inline(lines.join('\n'))}</p>`;
+}
+
+/**
+ * The same plain writing format the rest of the dashboard uses, as email HTML.
+ *
+ * Lines are grouped before anything is rendered, because a paragraph and the
+ * list under it arrive as one chunk whenever the writer — or the drafting
+ * model — leaves no blank line between them:
+ *
+ *     **What we provide:**
+ *     - Hot lunch at noon
+ *     - Laundry services
+ *
+ * The old version asked whether *every* line in the chunk was a bullet, which
+ * that is not, and fell through to a single <p>. HTML then collapsed the
+ * newlines and the list went out as one run-on line of dashes, which is what
+ * October's Section 2 did.
+ */
 export function blocksToHtml(text: string): string {
   const out: string[] = [];
   for (const raw of (text ?? '').split(/\n{2,}/)) {
-    const chunk = raw.trim();
-    if (!chunk) continue;
+    const lines = raw.trim().split('\n').map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) continue;
 
-    const lines = chunk.split('\n').map((l) => l.trim()).filter(Boolean);
-    const bullets = lines.every((l) => /^[-*•–—]\s+/.test(l));
-    const numbers = lines.every((l) => /^\d+[.)]\s+/.test(l));
+    const groups: Group[] = [];
+    for (const line of lines) {
+      const kind: Group['kind'] = BULLET.test(line) ? 'ul' : NUMBERED.test(line) ? 'ol' : 'text';
+      const last = groups[groups.length - 1];
+      if (last && last.kind === kind) last.lines.push(line);
+      else groups.push({ kind, lines: [line] });
+    }
 
-    if (lines.length && bullets) {
-      out.push(`<ul style="margin:0 0 16px;padding-left:22px;font-family:${FONT};font-size:16px;line-height:1.6;color:${CHARCOAL};">${
-        lines.map((l) => `<li style="margin:0 0 6px;">${inline(l.replace(/^[-*•–—]\s+/, ''))}</li>`).join('')}</ul>`);
-    } else if (lines.length > 1 && numbers) {
-      out.push(`<ol style="margin:0 0 16px;padding-left:22px;font-family:${FONT};font-size:16px;line-height:1.6;color:${CHARCOAL};">${
-        lines.map((l) => `<li style="margin:0 0 6px;">${inline(l.replace(/^\d+[.)]\s+/, ''))}</li>`).join('')}</ol>`);
-    } else if (chunk.startsWith('### ')) {
-      out.push(`<h3 style="margin:24px 0 10px;font-family:${FONT};font-size:18px;font-weight:700;color:${DEEP_GREEN};">${inline(chunk.slice(4))}</h3>`);
-    } else if (chunk.startsWith('## ')) {
-      out.push(`<h2 style="margin:32px 0 12px;font-family:${FONT};font-size:22px;font-weight:700;color:${DEEP_GREEN};">${inline(chunk.slice(3))}</h2>`);
-    } else if (chunk.startsWith('# ')) {
-      out.push(`<h2 style="margin:32px 0 12px;font-family:${FONT};font-size:22px;font-weight:700;color:${DEEP_GREEN};">${inline(chunk.slice(2))}</h2>`);
-    } else if (chunk.startsWith('> ')) {
-      out.push(`<blockquote style="margin:0 0 16px;padding:12px 18px;border-left:4px solid ${GOLD};background-color:${CREAM};font-family:${FONT};font-size:16px;line-height:1.6;font-style:italic;color:${CHARCOAL};">${inline(chunk.slice(2))}</blockquote>`);
-    } else {
-      out.push(`<p style="${P}">${inline(chunk)}</p>`);
+    for (const g of groups) {
+      // A lone "1. " line is far more often a sentence than a list of one.
+      if (g.kind === 'ul') out.push(ulHtml(g.lines));
+      else if (g.kind === 'ol' && g.lines.length > 1) out.push(olHtml(g.lines));
+      else out.push(textHtml(g.lines));
     }
   }
   return out.join('\n');
 }
 
 export interface HtmlInput {
+  /** 'YYYY-MM' — Section 3's header and the episodes label both derive from it. */
+  month: string;
   monthName: string;
+  guestName: string;
   section1: string;
   section2: string;
-  section3Header: string;
   stats: Record<string, string>;
-  videos: { title: string; url: string }[];
+  videos: Video[];
   section4: string;
   closing: string;
   signature: string;
   donateUrl: string;
-  coffeeChatFormUrl: string;
+  /** This month's Coffee Chat episode. No link, no button. */
+  coffeeChatUrl?: string;
 }
 
 /** The stats, as a bordered block rather than a bullet list — they are the proof. */
@@ -108,22 +168,40 @@ function statsHtml(stats: Record<string, string>): string {
 </table>`;
 }
 
-function videosHtml(videos: { title: string; url: string }[], formUrl: string): string {
+/**
+ * Last month's episodes.
+ *
+ * The label and the line above it are fixed copy, held in newsletter.ts so the
+ * plain-text version and this one cannot drift apart — both went missing from
+ * October because each was built separately. Shorts are labelled as shorts:
+ * YouTube's own durations already told us which is which.
+ */
+function videosHtml(videos: Video[], month: string): string {
   const live = videos.filter((v) => v.title?.trim() && v.url?.trim());
   if (!live.length) return '';
-  return `${live.map((v) =>
-    `<p style="margin:0 0 10px;font-family:${FONT};font-size:16px;line-height:1.5;color:${CHARCOAL};">▸ <a href="${absolute(v.url)}" style="color:${DEEP_GREEN};text-decoration:underline;">Watch: &ldquo;${esc(v.title)}&rdquo;</a></p>`
-  ).join('\n')}
-<p style="${P}">Want to be a guest? <a href="${absolute(formUrl)}" style="color:${DEEP_GREEN};text-decoration:underline;">Apply here</a>.</p>`;
+  return [
+    `<p style="${P}">${esc(SECTION3_INTRO)}</p>`,
+    `<p style="margin:0 0 10px;font-family:${FONT};font-size:16px;line-height:1.6;color:${CHARCOAL};"><strong>${esc(episodesLabel(month))}</strong></p>`,
+    ...live.map((v) =>
+      `<p style="margin:0 0 10px;font-family:${FONT};font-size:16px;line-height:1.5;color:${CHARCOAL};">▸ <a href="${absolute(v.url)}" style="color:${DEEP_GREEN};text-decoration:underline;">${esc(watchLabel(v))} ${esc(quoteTitle(v.title))}</a></p>`),
+    `<p style="${P}">Want to be a guest on Coffee Chat with Mona?</p>`,
+    button('Apply here →', APPLY_URL),
+  ].join('\n');
 }
 
 export function newsletterHtml(d: HtmlInput): string {
   const body = [
+    // The eyebrow is derived rather than written: it is the guest's name every
+    // month, and one that has to be typed is one that keeps last month's.
+    d.guestName ? eyebrow(`Coffee Chat with ${d.guestName}`) : '',
     blocksToHtml(d.section1),
+    d.coffeeChatUrl
+      ? button(`Watch ${d.guestName ? `${d.guestName}'s` : 'the'} full story on Coffee Chat with Mona →`, d.coffeeChatUrl, DEEP_GREEN)
+      : '',
     blocksToHtml(d.section2),
-    `<h2 style="margin:32px 0 12px;font-family:${FONT};font-size:22px;font-weight:700;color:${DEEP_GREEN};">${esc(d.section3Header)}</h2>`,
+    `<h2 style="margin:32px 0 12px;font-family:${FONT};font-size:22px;font-weight:700;color:${DEEP_GREEN};">${esc(section3Header(d.month, d.monthName))}</h2>`,
     statsHtml(d.stats),
-    videosHtml(d.videos, d.coffeeChatFormUrl),
+    videosHtml(d.videos, d.month),
     blocksToHtml(d.section4),
     blocksToHtml(d.closing),
     `<p style="margin:28px 0 0;padding-top:18px;border-top:1px solid #e2ded2;font-family:${FONT};font-size:16px;line-height:1.6;color:${CHARCOAL};">&mdash; ${esc(d.signature)}</p>`,
@@ -159,4 +237,38 @@ export function promoteButtons(html: string, donateUrl: string): string {
       new RegExp(`<p style="[^"]*"><a href="[^"]*${donateUrl.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^"]*"[^>]*>Give One Time[^<]*</a></p>`, 'g'),
       button('Give One Time', donateUrl, GOLD)
     );
+}
+
+/**
+ * The same email, one section at a time.
+ *
+ * For the clipboard. A whole-message paste is no use when AWeber's editor
+ * already holds a layout and only one block needs replacing, and the section
+ * boundaries are where a person works anyway. Section 3 is assembled here
+ * exactly as `newsletterHtml` assembles it, rather than being rebuilt by hand
+ * somewhere else — that is how October lost the intro line and the episodes
+ * label from the copy that went out.
+ */
+export function sectionsHtml(d: HtmlInput): Record<string, string> {
+  const section1 = [
+    d.guestName ? eyebrow(`Coffee Chat with ${d.guestName}`) : '',
+    blocksToHtml(d.section1),
+    d.coffeeChatUrl
+      ? button(`Watch ${d.guestName ? `${d.guestName}'s` : 'the'} full story on Coffee Chat with Mona →`, d.coffeeChatUrl, DEEP_GREEN)
+      : '',
+  ].filter(Boolean).join('\n');
+
+  const section3 = [
+    `<h2 style="margin:32px 0 12px;font-family:${FONT};font-size:22px;font-weight:700;color:${DEEP_GREEN};">${esc(section3Header(d.month, d.monthName))}</h2>`,
+    statsHtml(d.stats),
+    videosHtml(d.videos, d.month),
+  ].filter(Boolean).join('\n');
+
+  return {
+    section1,
+    section2: blocksToHtml(d.section2),
+    section3,
+    section4: promoteButtons(blocksToHtml(d.section4), d.donateUrl),
+    closing: blocksToHtml(d.closing),
+  };
 }

@@ -1,6 +1,6 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { turso, fetchOktaUsers } from './_lib/staff-directory';
-import { reviewNewsletter, aweberPlan, type NewsletterDraft } from './_lib/newsletter';
+import { reviewNewsletter, aweberPlan, composeSection3, type NewsletterDraft, type Video } from './_lib/newsletter';
 import {
   aweberConfig, missingScopes, allSubscribers, addTag, describeAudience, REQUIRED_SCOPES,
   listDrafts, createDraft,
@@ -51,6 +51,11 @@ async function loadForReview(month: string) {
     surnames = [...new Set(users.map((u) => u.profile.lastName ?? '').filter((n) => /^[A-Z][a-zA-Z'-]{2,}$/.test(n)))];
   } catch { /* the review still runs without it */ }
 
+  // The frame, the episode link and the withheld names travel in the
+  // workbench blob rather than in columns of their own; the review needs all
+  // three, and the transcript besides.
+  const wb = parse<{ coffeeChatUrl?: string; withholdNames?: string[]; transcript?: string }>(row.workbench, {});
+
   const draft: NewsletterDraft = {
     month,
     monthName: monthName(month),
@@ -59,12 +64,16 @@ async function loadForReview(month: string) {
     section1: String(row.section1 ?? ''),
     section2: String(row.section2 ?? ''),
     stats: parse<Record<string, string>>(row.stats, {}),
-    videos: parse<{ title: string; url: string }[]>(row.videos, []),
+    videos: parse<Video[]>(row.videos, []),
     partners: parse<{ name: string; url: string }[]>(row.partners, []),
     previewText: String(row.preview_text ?? ''),
     aweberTag: String(row.aweber_tag ?? ''),
     usedTags: all.filter((r) => r.month !== month).map((r) => String(r.aweber_tag ?? '')).filter(Boolean),
     staffSurnames: surnames,
+    guestFrame: String(row.guest_frame ?? '') === 'calling' ? 'calling' : 'guest',
+    coffeeChatUrl: typeof wb.coffeeChatUrl === 'string' ? wb.coffeeChatUrl : '',
+    withholdNames: Array.isArray(wb.withholdNames) ? wb.withholdNames : [],
+    transcript: typeof wb.transcript === 'string' ? wb.transcript : '',
   };
   return { draft, status: String(row.status ?? 'draft'), issues: reviewNewsletter(draft) };
 }
@@ -171,7 +180,6 @@ export async function handler(event: {
      */
     if (body.action === 'drafts') {
       const existing = await listDrafts(cfg);
-      const prev = MONTHS[(Number(month.split('-')[1]) - 2 + 12) % 12];
       const made: { tier: string; subject: string; id?: number; skipped?: boolean }[] = [];
 
       for (const t of TIERS) {
@@ -181,23 +189,35 @@ export async function handler(event: {
           made.push({ tier: t.label, subject, id: already.id, skipped: true });
           continue;
         }
+        const section4Text = section4(t, draft.monthName, draft.guestName, { frame: draft.guestFrame });
         const html = promoteButtons(newsletterHtml({
+          month,
           monthName: draft.monthName,
+          guestName: draft.guestName,
           section1: draft.section1,
           section2: draft.section2,
-          section3Header: `${draft.monthName} Impact & ${prev} Videos`,
           stats: draft.stats,
           videos: draft.videos,
-          section4: section4(t, draft.monthName, draft.guestName),
+          section4: section4Text,
           closing: closingSection(draft.partners),
           signature: t.signature,
           donateUrl: DONATE_URL,
-          coffeeChatFormUrl: 'https://forms.gle/aQZRYokrT7YK8GFL9',
+          coffeeChatUrl: draft.coffeeChatUrl,
         }), DONATE_URL);
         // AWeber needs a text part; without one it generates its own from the
-        // HTML, which mangles the buttons into bare URLs.
-        const text = [draft.section1, draft.section2, section4(t, draft.monthName, draft.guestName),
-          closingSection(draft.partners), `— ${t.signature}`].join('\n\n');
+        // HTML, which mangles the buttons into bare URLs. Section 3 belongs in
+        // it as much as the others — it was missing here, so the text
+        // alternative carried no stats and no episodes at all.
+        const text = [
+          draft.guestName ? `COFFEE CHAT WITH ${draft.guestName.toUpperCase()}` : '',
+          draft.section1,
+          draft.coffeeChatUrl ? `Watch ${draft.guestName ? `${draft.guestName}'s` : 'the'} full story on Coffee Chat with Mona: ${draft.coffeeChatUrl}` : '',
+          draft.section2,
+          composeSection3(draft),
+          section4Text,
+          closingSection(draft.partners),
+          `— ${t.signature}`,
+        ].filter(Boolean).join('\n\n');
         const created = await createDraft(cfg, { subject, html, text });
         made.push({ tier: t.label, subject, id: created.id });
       }

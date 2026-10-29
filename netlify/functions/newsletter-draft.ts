@@ -1,6 +1,7 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { BRAND_REFERENCE_FULL } from './_lib/brand-reference';
-import { bridgeLine } from './_lib/newsletter';
+import { bridgeLine, sensitiveMentions } from './_lib/newsletter';
+import { section1System, spotlightSystem } from './_lib/newsletter-prompts';
 
 /**
  * Drafts Section 1 from a Coffee Chat transcript.
@@ -75,7 +76,7 @@ const DRAFT_TOOL = {
       draft: {
         type: 'string',
         description:
-          'Three or four paragraphs, blank line between each, ending with the required bridge line. Use "> " for a pulled quote on its own line. No heading.',
+          'A headline as "## " on the first line, then four or five short paragraphs, blank line between each, ending with the required bridge line. Use "> " for a pulled quote on its own line.',
       },
       quotes: {
         type: 'array', maxItems: 4, items: { type: 'string' },
@@ -145,6 +146,12 @@ export async function handler(event: {
     // on, what to leave alone, and answers to what the last pass could not
     // settle. Their own words, not the guest's — the prompt keeps that line.
     const notes = String(body.notes ?? '').trim().slice(0, 4000);
+    // Names the writer has asked to keep out — a minor, someone who did not
+    // consent. The transcript cannot tell anyone this; only they can.
+    const withhold = (Array.isArray(body.withholdNames) ? body.withholdNames : [])
+      .slice(0, 20)
+      .map((n: unknown) => String(n ?? '').trim().slice(0, 60))
+      .filter(Boolean);
     const facts = String(body.facts ?? '').trim().slice(0, 8000);
     const action = body.action === 'facts' ? 'facts' : body.action === 'section2' ? 'section2' : 'draft';
     const instruction = String(body.instruction ?? '').trim().slice(0, 2000);
@@ -181,33 +188,9 @@ export async function handler(event: {
         return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Set the Section 2 program or theme first.' }) };
       }
 
-      const SPOTLIGHT_SYSTEM = `You draft Section 2 of The Joseph Center's monthly newsletter: the program spotlight. This month's spotlight is ${program}.
-
-${BRAND_REFERENCE_FULL}
-
-Write it in this order, and nothing else:
-1. A header, as "## " followed by a title naming the program.
-2. One or two sentences of hook — the reason a reader should care this month, not a definition.
-3. A short paragraph describing what the program is and who it is for.
-4. "**What we provide:**" followed by bullets, drawn from the program's entry in the reference above.
-5. A short paragraph on this month's figures. Use ONLY figures the writer has given you. If they have given none, leave this paragraph out and ask for them in gaps — never estimate, never reuse a headline statistic as though it were this month's.
-6. The closing line, exactly this shape, with the blank filled in so it reads naturally for this program:
-
-Every person who [action, e.g. "walks through the door for a hot lunch"] is walking across the bridge. Where they go from there depends on what they need — but they never walk alone.
-
-7. The referral CTA: a single line inviting a reader who knows someone in need to [Complete a Referral Form →](josephcentergj.com).
-
-Requirements:
-- Do not invent a program detail. If it is not in the reference above or in the writer's notes, it does not go in.
-- ${/\bIFS\b|integrated financial services/i.test(program) ? 'This is IFS: say "the people we serve", never "guests" and never "clients".' : 'Say "guests", never "clients".'}
-- Temporary housing, never transitional housing. "100% community and foundation funded" in full, or not at all.
-- The Joseph Center IS the bridge; donors sustain it. Never "build a bridge".
-- First names only, for everyone.${/golden girls/i.test(program) ? '\n- The first mention must be "The Golden Girls Project" in full; "Golden Girls" is fine after that.' : ''}
-- Warm and direct. No pity, no urgency tactics, no exaggerated claims.
-
-The writer may add notes or ask for a change. Treat what they tell you as true and use it.
-
-Call draft_spotlight.`;
+      const SPOTLIGHT_SYSTEM = spotlightSystem({
+        program, monthName, brandReference: BRAND_REFERENCE_FULL,
+      });
 
       const opening = [
         `The spotlight this month is ${program}${monthName ? `, for the ${monthName} newsletter` : ''}.`,
@@ -299,35 +282,11 @@ Call read_transcript.`,
       };
     }
 
-    const arc = frame === 'calling'
-      ? `${guest} is a board member or community partner, not a guest. Do NOT use a before/support/transformation arc — they were not in crisis, and writing them as though they were is both wrong and undignified. Use the calling frame instead: how they found The Joseph Center, what they witnessed there, why they stayed and why they believe in it.`
-      : `${guest} is a guest. Use the before / support / transformation arc: the circumstances that brought them to The Joseph Center, the support they found, and what changed. Lead with the most emotionally resonant angle, not with chronology. Focus on circumstances — "life happened" — never on personal shortcomings.`;
-
-    const SYSTEM = `You draft Section 1 of The Joseph Center's monthly newsletter from a Coffee Chat transcript.
-
-${BRAND_REFERENCE_FULL}
-
-The transcript is the only source. Use nothing else — no statistic, no date, no program detail, no outcome and no quotation that is not in it. If something would strengthen the piece and the transcript does not settle it, leave it out and raise it in gaps.
-
-${arc}
-
-Requirements:
-- Three or four paragraphs.
-- One or two direct quotations where the transcript gives you good ones. Quote exactly; do not tidy someone's grammar into something they did not say.
-- Name which program or programs served them${program ? `; this month's spotlight is ${program}` : ''}.
-- First names only, for everyone.
-- Dignity first: no pity, no rescue language, no sensationalism. Their agency stays in the sentence. A transcript often contains the worst thing that ever happened to someone — including it in clinical detail is not honesty, it is exposure.
-- End on exactly this line, unchanged:
-
-${bridgeLine(monthName)}
-
-${facts ? `The writer has checked who is in this story and what happened in what order. This is settled — where it differs from your own reading of the transcript, it is right and you are wrong:
-
-${facts}
-
-` : ''}The writer may add notes, answer your questions or ask for a change. Treat what they tell you as true and use it, but it is their account, not the guest's — never put it in quotation marks and never attribute it to anyone as speech. Only the transcript can be quoted. Where a note and the transcript disagree about emphasis, the note wins; where they disagree about fact, raise it in gaps rather than choosing.
-
-Call draft_section.`;
+    const SYSTEM = section1System({
+      guest, monthName, frame, program, facts,
+      brandReference: BRAND_REFERENCE_FULL,
+      withhold,
+    });
 
     /**
      * The conversation so far. A first pass is the transcript alone; a redraft
@@ -387,13 +346,23 @@ Call draft_section.`;
     const required = bridgeLine(monthName);
     const withBridge = draft.includes('hope has an address') ? draft : `${draft}\n\n${required}`;
 
+    /**
+     * Sensitive ground, raised rather than removed.
+     *
+     * A guest's own arrest or diagnosis may be the whole point of the story and
+     * theirs to tell on air. A third party's is not — and the model cannot tell
+     * which is which, so it goes in the panel the writer already reads.
+     */
+    const sensitive = sensitiveMentions(withBridge).map((what) =>
+      `The draft touches on ${what}. Fine if it is ${guest}'s own and they told it on air — not if it belongs to someone who was never in the room.`);
+
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
       body: JSON.stringify({
         draft: withBridge,
         quotes: lines(input.quotes, 4),
-        gaps: lines(input.gaps, 5),
+        gaps: [...lines(input.gaps, 5), ...sensitive],
         appendedBridgeLine: !draft.includes('hope has an address'),
         cost: priceOf(data.usage),
       }),
