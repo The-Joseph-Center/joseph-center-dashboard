@@ -121,15 +121,19 @@ const REPLY = `Have a question or just want to share something? Reply to this em
  * The donor and recurring-donor versions both open by crediting the reader for
  * the month's story. That is true of a guest and wrong of a community partner
  * or board member: nobody's giving produced Denise's decision to volunteer. So
- * the calling frame needs its own sentence for those two tiers.
+ * the calling frame has its own sentence for those two tiers.
  *
- * TODO: Eric is supplying this wording. Until then the frame-neutral sentence
- * below stands and the review raises a should-fix, rather than this inventing
- * copy for a settled block.
+ * Settled copy, chosen by Eric on 2026-10-29, and held to the same rule as the
+ * rest of Section 4: not regenerated, not paraphrased. Each keeps its tier's
+ * job — the donor sentence hands off to the upgrade ask, the recurring one has
+ * to land on "You built that" two paragraphs later — without implying the
+ * month's subject was ever in need of help.
+ *
+ * `{guest}` and `{month}` are filled in by section4().
  */
 export const CALLING_SECTION4_VARIANTS: Record<'donor' | 'recurring-donor', string> = {
-  donor: '',
-  'recurring-donor': '',
+  donor: 'You have already given to The Joseph Center, and what {guest} saw here this {month} is what your giving keeps standing.',
+  'recurring-donor': 'What {guest} found here this {month} is here because people like you give every month, without being asked twice.',
 };
 
 export interface Section4Options {
@@ -141,8 +145,12 @@ export interface Section4Options {
 export function section4(tier: Tier, month: string, guest: string, opts: Section4Options = {}): string {
   const who = guest || 'this month’s guest';
   const variants = { ...CALLING_SECTION4_VARIANTS, ...(opts.variants ?? {}) };
-  const variantFor = (id: 'donor' | 'recurring-donor') =>
-    (opts.frame === 'calling' ? (variants[id] ?? '').trim() : '');
+  const variantFor = (id: 'donor' | 'recurring-donor') => {
+    if (opts.frame !== 'calling') return '';
+    return (variants[id] ?? '').trim()
+      .split('{guest}').join(who)
+      .split('{month}').join(month);
+  };
   if (tier.id === 'community-friend') {
     return `## ${tier.section4Header}
 
@@ -846,8 +854,8 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
   if (d.guestFrame === 'calling') {
     const variants = { ...CALLING_SECTION4_VARIANTS, ...(d.section4Variants ?? {}) };
     if (!(variants.donor ?? '').trim() || !(variants['recurring-donor'] ?? '').trim()) {
-      add('should', 'Section 4', 'This month uses the calling frame, and the donor and recurring-donor versions still credit the reader for the story.',
-        `${d.guestName || 'A community partner'} was never in crisis, so "happened because people like you give every month" does not fit. The replacement wording is waiting on Eric.`);
+      add('should', 'Section 4', 'This month uses the calling frame, and one of the two frame-sensitive sentences is empty.',
+        `${d.guestName || 'A community partner'} was never in crisis, so the guest wording does not fit. Restore the calling variant for the donor and recurring-donor versions.`);
     }
   }
 

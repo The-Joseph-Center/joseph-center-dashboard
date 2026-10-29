@@ -293,11 +293,33 @@ test('the settled Section 4 copy is unchanged for a guest', () => {
   assert.ok(recurring.includes("Dana's story this October happened because people like you give every month, without being asked twice."));
 });
 
-test('the calling frame raises a should-fix while the variant is unwritten', () => {
+test('the calling frame uses its own sentences, and does not credit the reader for the story', () => {
+  const donor = section4(TIERS[1]!, 'October', 'Dee', { frame: 'calling' });
+  assert.ok(donor.includes('You have already given to The Joseph Center, and what Dee saw here this October is what your giving keeps standing.'));
+  assert.ok(!donor.includes('is part of what that made possible'));
+
+  const recurring = section4(TIERS[2]!, 'October', 'Dee', { frame: 'calling' });
+  assert.ok(recurring.includes('What Dee found here this October is here because people like you give every month, without being asked twice.'));
+  assert.ok(!recurring.includes("Dee's story this October happened because"));
+  // It still has to set up "You built that".
+  assert.ok(recurring.includes('**You built that.**'));
+
   const calling: NewsletterDraft = { ...OCTOBER_CORRECTED, guestFrame: 'calling' };
+  assert.ok(!review(calling).some((i) => i.where === 'Section 4'));
+});
+
+test('an emptied calling variant is flagged rather than silently falling back', () => {
+  const calling: NewsletterDraft = {
+    ...OCTOBER_CORRECTED,
+    guestFrame: 'calling',
+    section4Variants: { donor: '' },
+  };
   const issues = review(calling);
   assert.ok(issues.some((i) => i.severity === 'should' && i.where === 'Section 4'));
   assert.ok(!issues.some((i) => i.severity === 'must' && i.where === 'Section 4'));
+  // And the guest sentence stands in the meantime, rather than a blank.
+  assert.ok(section4(TIERS[1]!, 'October', 'Dee', { frame: 'calling', variants: { donor: '' } })
+    .includes('is part of what that made possible'));
 });
 
 test('a supplied calling variant replaces the sentence and clears the flag', () => {
