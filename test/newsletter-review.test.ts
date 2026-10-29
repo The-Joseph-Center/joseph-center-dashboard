@@ -242,6 +242,48 @@ test('preview text is required, and capped at 140 characters', () => {
   assert.ok(musts(long).some((i) => i.where === 'Preview text' && /141 characters/.test(i.problem)));
 });
 
+// ── Section 2's figures ────────────────────────────────────────────────────
+
+test('a figure in the spotlight that is in no source blocks the send', () => {
+  const d = {
+    ...OCTOBER_CORRECTED,
+    section2: OCTOBER_CORRECTED.section2.replace('1,418 lunches and welcomed 362 people', '2,900 lunches and welcomed 801 people'),
+  };
+  const problems = musts(d).map((i) => i.problem).join(' ');
+  assert.match(problems, /not in this month's stats or your notes: 2,900, 801/);
+});
+
+test('a figure that came from the stats panel is sourced', () => {
+  assert.ok(!musts(OCTOBER_CORRECTED).some((i) => /not in this month's stats/.test(i.problem)));
+});
+
+test("a figure from the writer's own notes is sourced too", () => {
+  const d: NewsletterDraft = {
+    ...OCTOBER_CORRECTED,
+    section2: OCTOBER_CORRECTED.section2.replace('welcomed 362 people through the doors', 'welcomed 362 people through the doors, 44 of them for the first time'),
+    spotlightNotes: '44 first-time guests in October, per Shawna',
+  };
+  assert.ok(!musts(d).some((i) => /not in this month's stats/.test(i.problem)));
+});
+
+test('opening hours and the phone number in the CTA are not figures', () => {
+  const d = {
+    ...OCTOBER_CORRECTED,
+    section2: `${OCTOBER_CORRECTED.section2}\n\nIn October, call (970) 985-6133 between 9am and 1pm.`,
+  };
+  assert.ok(!musts(d).some((i) => /985/.test(i.problem)));
+});
+
+test('a spotlight with no figures at all is a should-fix, not a blocker', () => {
+  const d = {
+    ...OCTOBER_CORRECTED,
+    section2: OCTOBER_CORRECTED.section2.replace(/In October we served[^\n]*\n\n/, ''),
+  };
+  const issues = review(d);
+  assert.ok(issues.some((i) => i.severity === 'should' && /gives no figures for this month/.test(i.problem)));
+  assert.ok(!issues.some((i) => i.severity === 'must' && i.where === 'Section 2'));
+});
+
 // ── E: Section 4 and the calling frame ─────────────────────────────────────
 
 test('the settled Section 4 copy is unchanged for a guest', () => {

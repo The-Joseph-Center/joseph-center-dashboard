@@ -6,7 +6,7 @@ import { apiFetch } from '@/lib/api';
 // The one composer, shared with the functions that build the email. Section 3
 // was being assembled separately here, which is how the copy-out and the sent
 // version came to differ.
-import { composeSection3 } from '../../netlify/functions/_lib/newsletter';
+import { composeSection3, GREETING } from '../../netlify/functions/_lib/newsletter';
 
 // The monthly newsletter, built in one place.
 //
@@ -729,11 +729,6 @@ const removeVideo = (i: number) => draft.value?.videos.splice(i, 1);
 const addPartner = () => draft.value?.partners.push({ name: '', url: '' });
 const removePartner = (i: number) => draft.value?.partners.splice(i, 1);
 
-// AWeber's own personalization, quoted here because a subscriber with no
-// first name on record renders as "Hi ," — the greeting is in their template,
-// not in anything this builds.
-const GREETING_TAG = '{{ subscriber.first_name or "friend" }}';
-
 const copied = ref('');
 
 /**
@@ -798,6 +793,7 @@ const fullVersion = (v: Version) => {
   const d = draft.value;
   if (!d) return '';
   return [
+    GREETING,
     d.guestName ? `COFFEE CHAT WITH ${d.guestName.toUpperCase()}` : '',
     d.section1,
     coffeeChatUrl.value.trim()
@@ -1380,10 +1376,10 @@ const fullVersion = (v: Version) => {
                     </li>
                   </ul>
                   <p v-if="draftsMade" class="hint">
-                    While you are in there: the greeting is AWeber's, not ours, and a subscriber with no first name
-                    on record renders as “Hi ,”. Give it a fallback —
-                    <code>{{ GREETING_TAG }}</code> — or drop the comma with a
-                    conditional.
+                    The drafts open with <code>{{ GREETING }}</code> — AWeber substitutes it, and the
+                    <code>or "friend"</code> is the fallback that stops it reading “Hi ,” for a subscriber with no
+                    first name. Check it renders on a test send before the month goes out, and fix the same tag in
+                    any older automation still greeting without a fallback.
                   </p>
                   <p v-if="draftsMade" class="hint">
                     Set the preview text on each one in AWeber — the API does not carry it.

@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { blocksToHtml, button, newsletterHtml, sectionsHtml } from '../netlify/functions/_lib/newsletter-html.ts';
-import { APPLY_URL, SECTION3_INTRO, episodesLabel, closingSection, section4, TIERS } from '../netlify/functions/_lib/newsletter.ts';
+import { APPLY_URL, GREETING, SECTION3_INTRO, episodesLabel, closingSection, section4, TIERS } from '../netlify/functions/_lib/newsletter.ts';
 import { OCTOBER_CORRECTED } from './fixtures/newsletters.ts';
 
 const input = (over: Record<string, unknown> = {}) => ({
@@ -125,4 +125,18 @@ test('each section can be had on its own', () => {
   assert.match(parts.section1!, /Coffee Chat with Dana/);
   // Section 4's donate CTAs are buttons here too, not sentences.
   assert.match(parts.section4!, /<table role="presentation"/);
+});
+
+// ── The greeting ───────────────────────────────────────────────────────────
+
+test('the message greets once, with a fallback, above everything else', () => {
+  const html = newsletterHtml(input());
+  assert.equal((html.match(/Hi \{\{ subscriber\.first_name/g) ?? []).length, 1);
+  assert.ok(GREETING.includes('or "friend"'));
+  assert.ok(html.indexOf(GREETING) < html.indexOf('Coffee Chat with Dana'));
+});
+
+test('a single section does not carry the greeting', () => {
+  // Pasted into a template that already greets, it would greet twice.
+  assert.ok(!sectionsHtml(input()).section1!.includes('subscriber.first_name'));
 });

@@ -11,7 +11,7 @@
  */
 
 import {
-  APPLY_URL, SECTION3_INTRO, episodesLabel, quoteTitle, section3Header, watchLabel, type Video,
+  APPLY_URL, GREETING, SECTION3_INTRO, episodesLabel, quoteTitle, section3Header, watchLabel, type Video,
 } from './newsletter.ts';
 
 const DEEP_GREEN = '#1D5F55';
@@ -191,6 +191,9 @@ function videosHtml(videos: Video[], month: string): string {
 
 export function newsletterHtml(d: HtmlInput): string {
   const body = [
+    // The greeting is here, not in sectionsHtml: a section pasted into an
+    // AWeber template that already greets would greet twice.
+    `<p style="${P}">${esc(GREETING)}</p>`,
     // The eyebrow is derived rather than written: it is the guest's name every
     // month, and one that has to be typed is one that keeps last month's.
     d.guestName ? eyebrow(`Coffee Chat with ${d.guestName}`) : '',

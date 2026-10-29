@@ -213,6 +213,7 @@ Every one is a plain string test, so they are consistent and free.
 | "Homeless people", "the homeless", "being homeless" | Say "people experiencing homelessness". Direct quotations are exempt |
 | `[X]`, TBD, XX, "once they're finalized", "we'll share" | In Sections 1–3, and in the preview text |
 | A placeholder stat label | "Program spotlight stat" and "IFS financial stability" are scaffolding, not measurements |
+| A figure in Section 2 that is in neither the stats nor your notes | Every number in the spotlight comes from the program directors |
 | A `forms.gle` link | The Coffee Chat guest form is josephcentergj.com/media/apply |
 | No Coffee Chat episode link | Section 1's "Watch their full story" button is built from it |
 | No preview text, or over 140 characters | Required before a month can go out |
@@ -241,4 +242,4 @@ the subject line again.
 
 - **Sent newsletters.** They live in the dashboard's database, which is not readable from here. Copy one out of the Newsletter tool and paste it in if you want a tone and length baseline.
 - **Tests.** `npm test` in `dashboard/` runs the review, the renderer and the prompts against two fixtures: October as it went out, and October corrected. Every fault found in the September → October comparison has a test.
-- **The full brand reference.** `jc-brand-reference.md` (342 lines, at the project root) is the source of truth for terminology, dignity-first framing and positioning. The tool embeds it verbatim in its prompts. Attach that file rather than working from a summary of it.
+- **The full brand reference.** `docs/jc-brand-reference.md` (342 lines) is the source of truth for terminology, dignity-first framing and positioning. The tool embeds it verbatim in its prompts. Attach that file rather than working from a summary of it.

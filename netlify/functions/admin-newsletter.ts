@@ -197,7 +197,7 @@ export async function handler(event: {
        * out loud can be recognised in the prose.
        */
       const wb = (draft.workbench ?? {}) as {
-        coffeeChatUrl?: string; withholdNames?: string[]; transcript?: string;
+        coffeeChatUrl?: string; withholdNames?: string[]; transcript?: string; spotlightNotes?: string;
       };
       const issues = reviewNewsletter({
         ...draft,
@@ -207,6 +207,7 @@ export async function handler(event: {
         coffeeChatUrl: wb.coffeeChatUrl ?? '',
         withholdNames: Array.isArray(wb.withholdNames) ? wb.withholdNames : [],
         transcript: typeof wb.transcript === 'string' ? wb.transcript : '',
+        spotlightNotes: typeof wb.spotlightNotes === 'string' ? wb.spotlightNotes : '',
       } as NewsletterDraft);
       const plan = aweberPlan(month, new Date());
 

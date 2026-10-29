@@ -90,6 +90,17 @@ export const JC_EMAILS = ['jc@josephcentergj.com', 'ephifer@josephcentergj.com',
 /** First names that appear in newsletter copy by design, from the brand reference. */
 export const ROSTER_FIRST_NAMES = ['Mona', 'Shawna', 'Khira', 'Sarah', 'Jennifer', 'Vangie'];
 
+/**
+ * The greeting, with AWeber doing the substitution.
+ *
+ * A subscriber with no first name on record is why September's preview read
+ * "Hi ,": the tag had no fallback. `or "friend"` is the fallback, and it is
+ * AWeber's own dynamic-content syntax rather than anything this evaluates —
+ * which is also why it has to survive a test send before a month goes out.
+ */
+export const FIRST_NAME_TAG = '{{ subscriber.first_name or "friend" }}';
+export const GREETING = `Hi ${FIRST_NAME_TAG},`;
+
 /** Section 3's fixed opening line, above the episode list. */
 export const SECTION3_INTRO =
   'Every month, Mona sits down with guests, volunteers, and community members to share real stories of transformation.';
@@ -396,6 +407,8 @@ export interface NewsletterDraft {
   withholdNames?: string[];
   /** The transcript, so a name said out loud can be recognised in the prose. */
   transcript?: string;
+  /** The writer's Section 2 notes — a figure they supplied counts as sourced. */
+  spotlightNotes?: string;
   /** Calling-frame replacements for Section 4's frame-sensitive sentence. */
   section4Variants?: Partial<Record<'donor' | 'recurring-donor', string>>;
 }
@@ -780,6 +793,44 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
       const wantsReferral = key === 'family center' || key === 'golden girls project';
       const present = wantsReferral ? /referral/i.test(d.section2) : /\(970\)/.test(d.section2);
       if (!present) add('should', 'Section 2', `No closing CTA for ${d.program}.`, cta);
+    }
+  }
+
+  // ── Section 2's figures ────────────────────────────────────────────────
+  //
+  // The spotlight's monthly figures come from the program directors, through
+  // the stats panel, or from the writer's notes. A number in that paragraph
+  // which is in neither is the drafting model's own — either an estimate or
+  // last month's headline statistic reused, and both of those are the error
+  // the process document is most emphatic about.
+  if (d.section2.trim()) {
+    const sourced = new Set<string>();
+    const addNumbers = (text: string) => {
+      for (const m of (text ?? '').matchAll(/\d[\d,.]*/g)) sourced.add(m[0].replace(/[,.]+$/, '').replace(/,/g, ''));
+    };
+    for (const v of Object.values(d.stats ?? {})) addNumbers(String(v ?? ''));
+    addNumbers(d.spotlightNotes ?? '');
+    for (const phone of JC_PHONES) sourced.add(onlyDigits(phone));
+
+    const monthly = d.section2.split(/\n{2,}/).filter((para) =>
+      new RegExp(`\\b(?:this month|${escapeRe(d.monthName)})\\b`, 'i').test(para));
+
+    const unsourced = new Set<string>();
+    for (const para of monthly) {
+      for (const m of para.matchAll(/\d[\d,]*/g)) {
+        const n = m[0].replace(/,/g, '');
+        if (sourced.has(n)) continue;
+        if (/^(?:19|20)\d{2}$/.test(n)) continue;          // a year, not a count
+        if (onlyDigits(para).includes(n) && JC_PHONES.some((ph) => onlyDigits(ph).includes(n))) continue;
+        unsourced.add(m[0]);
+      }
+    }
+    if (unsourced.size) {
+      add('must', 'Section 2', `Figures in the spotlight that are not in this month's stats or your notes: ${[...unsourced].join(', ')}.`,
+        'Every number here comes from the program directors. Put it in the stats above, or in your Section 2 notes, or take it out.');
+    } else if (!monthly.length) {
+      add('should', 'Section 2', 'The spotlight gives no figures for this month.',
+        'Either add this month\'s numbers from the directors, or leave the paragraph out deliberately — an empty one is worse than none.');
     }
   }
 

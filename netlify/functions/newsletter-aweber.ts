@@ -1,6 +1,6 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { turso, fetchOktaUsers } from './_lib/staff-directory';
-import { reviewNewsletter, aweberPlan, composeSection3, type NewsletterDraft, type Video } from './_lib/newsletter';
+import { reviewNewsletter, aweberPlan, composeSection3, GREETING, type NewsletterDraft, type Video } from './_lib/newsletter';
 import {
   aweberConfig, missingScopes, allSubscribers, addTag, describeAudience, REQUIRED_SCOPES,
   listDrafts, createDraft,
@@ -54,7 +54,9 @@ async function loadForReview(month: string) {
   // The frame, the episode link and the withheld names travel in the
   // workbench blob rather than in columns of their own; the review needs all
   // three, and the transcript besides.
-  const wb = parse<{ coffeeChatUrl?: string; withholdNames?: string[]; transcript?: string }>(row.workbench, {});
+  const wb = parse<{
+    coffeeChatUrl?: string; withholdNames?: string[]; transcript?: string; spotlightNotes?: string;
+  }>(row.workbench, {});
 
   const draft: NewsletterDraft = {
     month,
@@ -74,6 +76,7 @@ async function loadForReview(month: string) {
     coffeeChatUrl: typeof wb.coffeeChatUrl === 'string' ? wb.coffeeChatUrl : '',
     withholdNames: Array.isArray(wb.withholdNames) ? wb.withholdNames : [],
     transcript: typeof wb.transcript === 'string' ? wb.transcript : '',
+    spotlightNotes: typeof wb.spotlightNotes === 'string' ? wb.spotlightNotes : '',
   };
   return { draft, status: String(row.status ?? 'draft'), issues: reviewNewsletter(draft) };
 }
@@ -209,6 +212,7 @@ export async function handler(event: {
         // it as much as the others — it was missing here, so the text
         // alternative carried no stats and no episodes at all.
         const text = [
+          GREETING,
           draft.guestName ? `COFFEE CHAT WITH ${draft.guestName.toUpperCase()}` : '',
           draft.section1,
           draft.coffeeChatUrl ? `Watch ${draft.guestName ? `${draft.guestName}'s` : 'the'} full story on Coffee Chat with Mona: ${draft.coffeeChatUrl}` : '',
