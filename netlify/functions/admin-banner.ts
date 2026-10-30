@@ -1,5 +1,6 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { SANITY_DATASET } from './_lib/sanity-dataset';
+import { fromPortableText, toPortableText, windowsOverlap } from './_lib/banner';
 
 /**
  * The site-wide notice — closures, changed hours, announcements.
@@ -11,9 +12,16 @@ import { SANITY_DATASET } from './_lib/sanity-dataset';
  * the website keep working with exactly the shape they already expect.
  *
  * Only one banner can show at a time — the site takes the first match — so
- * switching one on switches the others off. Leaving that to whoever is posting
- * means the day it is forgotten, which banner appears is decided by the order
- * Sanity happens to return.
+ * switching one on switches off the others it would collide with. Leaving that
+ * to whoever is posting means the day it is forgotten, which banner appears is
+ * decided by the order Sanity happens to return.
+ *
+ * "Collide with" and not "every other banner", which is what this used to do.
+ * A banner can be scheduled, and switching off a banner whose week has not
+ * arrived yet is not housekeeping, it is deleting a plan: writing next month's
+ * closure notice would take down the campaign running today, three weeks before
+ * the closure. Two banners for two different weeks are not in competition and
+ * both stay on.
  */
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
@@ -44,55 +52,6 @@ async function sanityMutate(mutations: unknown[]) {
   );
   if (!res.ok) throw new Error(`Sanity mutate: ${res.status} ${await res.text()}`);
   return res.json();
-}
-
-/** Random enough for a _key; Sanity only requires uniqueness within the array. */
-const key = () => Math.random().toString(36).slice(2, 14);
-
-interface Span { _key: string; _type: 'span'; marks: string[]; text: string }
-
-/**
- * Plain text (+ an optional trailing link) as a portable-text block.
- *
- * Matches the shape the existing banner document already uses — one block, spans
- * with a link annotation in markDefs — so the site renders a banner written here
- * identically to one written in Studio.
- */
-export function toPortableText(text: string, linkLabel: string, linkHref: string) {
-  const children: Span[] = [];
-  const markDefs: { _key: string; _type: 'link'; href: string }[] = [];
-
-  if (text) children.push({ _key: key(), _type: 'span', marks: [], text });
-
-  if (linkHref && linkLabel) {
-    const linkKey = key();
-    markDefs.push({ _key: linkKey, _type: 'link', href: linkHref });
-    // A space between the sentence and the link, so they do not run together.
-    if (text) children.push({ _key: key(), _type: 'span', marks: [], text: ' ' });
-    children.push({ _key: key(), _type: 'span', marks: ['strong', linkKey], text: linkLabel });
-  }
-
-  return [{ _key: key(), _type: 'block', style: 'normal', markDefs, children }];
-}
-
-/** The reverse, for editing something written in Studio. */
-export function fromPortableText(blocks: unknown): { text: string; linkLabel: string; linkHref: string } {
-  const out = { text: '', linkLabel: '', linkHref: '' };
-  if (!Array.isArray(blocks)) return out;
-  for (const block of blocks as { children?: Span[]; markDefs?: { _key: string; href?: string }[] }[]) {
-    const defs = new Map((block.markDefs ?? []).map((d) => [d._key, d.href ?? '']));
-    for (const child of block.children ?? []) {
-      const linkMark = (child.marks ?? []).find((m) => defs.has(m));
-      if (linkMark) {
-        out.linkLabel = child.text;
-        out.linkHref = defs.get(linkMark) ?? '';
-      } else {
-        out.text += child.text;
-      }
-    }
-  }
-  out.text = out.text.trim();
-  return out;
 }
 
 /**
@@ -211,11 +170,15 @@ export async function handler(event: {
       ? [{ patch: { id, set: fields, ...(unset.length ? { unset } : {}) } }]
       : [{ create: { _type: 'banner', ...fields } }];
 
-    // Only one can show, so switching this one on switches the rest off.
+    // Only one can show at a time, so switching this one on switches off the
+    // ones whose weeks it shares — and only those.
+    const switchedOff: string[] = [];
     if (active) {
       for (const other of banners) {
         if (other._id === id || other.active === false) continue;
+        if (!windowsOverlap({ startsAt, endsAt }, other)) continue;
         mutations.push({ patch: { id: other._id, set: { active: false } } });
+        switchedOff.push(other.title || other._id);
       }
     }
 
@@ -223,7 +186,13 @@ export async function handler(event: {
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
-      body: JSON.stringify({ saved: true, id: id || result.results?.[0]?.id || null }),
+      body: JSON.stringify({
+        saved: true,
+        id: id || result.results?.[0]?.id || null,
+        // Named, so that switching one off is something the person saw happen
+        // rather than something they find out about later.
+        switchedOff,
+      }),
     };
   } catch (err) {
     console.error('admin-banner:', err);

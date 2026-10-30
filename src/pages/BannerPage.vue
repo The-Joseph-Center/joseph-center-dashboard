@@ -24,6 +24,14 @@ const loading = ref(true);
 const error = ref('');
 const saving = ref(false);
 const savedAt = ref(0);
+/**
+ * Banners this save switched off.
+ *
+ * Only ones sharing a week with what was just posted, since only one can show
+ * at a time. Said out loud because the alternative is finding out later that
+ * posting a notice took something else down.
+ */
+const switchedOff = ref<string[]>([]);
 const busyId = ref<string | null>(null);
 const confirmDelete = ref<string | null>(null);
 
@@ -95,8 +103,10 @@ async function post(payload: Record<string, unknown>, id = '') {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || String(res.status));
     savedAt.value = Date.now();
+    switchedOff.value = Array.isArray(d.switchedOff) ? d.switchedOff : [];
     confirmDelete.value = null;
     await load();
     return true;
@@ -192,6 +202,10 @@ const remove = (b: Banner) => post({ action: 'delete', _id: b._id }, b._id);
           </button>
           <button v-if="editingExisting" type="button" class="linkish" @click="blank">Cancel</button>
           <span v-if="savedAt && !saving" class="ok">Saved</span>
+          <span v-if="switchedOff.length && !saving" class="block__hint">
+            Switched off, because it shares these dates:
+            {{ switchedOff.join(', ') }}
+          </span>
         </div>
       </section>
 
