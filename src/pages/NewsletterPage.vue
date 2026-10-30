@@ -67,6 +67,18 @@ const notes = ref('');
 const withholdNames = ref('');
 const withholdList = computed(() =>
   withholdNames.value.split(/[,;\n]/).map((n) => n.trim()).filter(Boolean));
+/**
+ * Proper names that are not people.
+ *
+ * The first-names-only check reads a capitalised word after a name it knows as
+ * a surname. That is right for "Dana Whitfield" and wrong for "Seventh Day
+ * Adventist Church", and until there was a field for it the only way past a
+ * correct church name was to ignore a must-fix. Anything here is blanked out
+ * before the check runs.
+ */
+const notPeople = ref('');
+const notPeopleList = computed(() =>
+  notPeople.value.split(/[,;\n]/).map((n) => n.trim()).filter(Boolean));
 /** This month's episode. Section 1 ends with a button to it. */
 const coffeeChatUrl = ref('');
 const instruction = ref('');
@@ -286,9 +298,20 @@ const spotlightBlocker = computed(() =>
   draft.value?.program?.trim() ? '' : 'Set the Section 2 program or theme above first.'
 );
 
+/**
+ * What to ask the sheet for when a month has no figures yet.
+ *
+ * These become the labels of whatever is applied, so they are the labels the
+ * document fixes — not the slot names the tool used to seed ("Program
+ * spotlight stat", "IFS financial stability"), which went into the email as
+ * written and then blocked the send. The program-specific figure is named by
+ * the row it comes from, through "Add as a stat" below.
+ */
+const statsVersion = ref(0);
+
 const DEFAULT_STAT_LABELS = [
-  'Meals served', 'Individuals welcomed', 'Families served',
-  'Program spotlight stat', 'IFS financial stability',
+  'Meals served', 'Individuals welcomed through our doors', 'Families served',
+  'People served through IFS',
 ];
 
 async function readSheet() {
@@ -326,6 +349,42 @@ function pickRow(m: SheetMatch, index: number) {
   const row = sheetRows.value.find((r) => r.index === index);
   if (!row) return;
   m.row = index; m.value = row.value; m.sourceLabel = row.label;
+}
+
+/**
+ * Rename a figure.
+ *
+ * The labels print in the email exactly as they are stored, and until now they
+ * were print-only on this page: the tool seeded two of them with slot names,
+ * the review blocked the send over them, and the fix it asked for was not
+ * available anywhere. Renaming rebuilds the record in place so the card keeps
+ * its order; statsVersion re-keys the rows when an edit is rejected, so the
+ * input goes back to showing the label that is actually stored.
+ */
+function renameStat(from: string, to: string) {
+  if (!draft.value) return;
+  const name = to.trim();
+  const stats = draft.value.stats;
+  if (name === from) return;
+  // An emptied label with no figure behind it is a row being abandoned.
+  if (!name && !String(stats[from] ?? '').trim()) return removeStat(from);
+  if (!name || name in stats) { statsVersion.value++; return; }
+  draft.value.stats = Object.fromEntries(
+    Object.entries(stats).map(([k, v]) => (k === from ? [name, v] : [k, v])),
+  );
+}
+
+function removeStat(label: string) {
+  if (!draft.value) return;
+  const rest = { ...draft.value.stats };
+  delete rest[label];
+  draft.value.stats = rest;
+}
+
+/** A blank row to name and fill — the program figure, usually. */
+function addStatRow() {
+  if (!draft.value || '' in draft.value.stats) return;
+  draft.value.stats = { ...draft.value.stats, '': '' };
 }
 
 /** A row the tool had no field for — a new metric, or a month that counts something different. */
@@ -542,6 +601,7 @@ const workbench = computed(() => ({
   transcriptFiles: transcriptFiles.value,
   notes: notes.value,
   withholdNames: withholdList.value,
+  notPeople: notPeopleList.value,
   coffeeChatUrl: coffeeChatUrl.value.trim(),
   facts: { people: factPeople.value, timeline: factTimeline.value, programs: factPrograms.value, uncertain: factUncertain.value },
   factsOpen: factsOpen.value,
@@ -551,7 +611,7 @@ const workbench = computed(() => ({
 function applyWorkbench(w: Record<string, unknown> | undefined) {
   const wb = (w ?? {}) as {
     transcript?: string; notes?: string; spotlightNotes?: string; factsOpen?: boolean;
-    withholdNames?: string[]; coffeeChatUrl?: string;
+    withholdNames?: string[]; notPeople?: string[]; coffeeChatUrl?: string;
     transcriptFiles?: { name: string; speaker: string; bonus: boolean }[];
     facts?: { people?: string; timeline?: string; programs?: string; uncertain?: string[] };
   };
@@ -559,6 +619,7 @@ function applyWorkbench(w: Record<string, unknown> | undefined) {
   transcriptFiles.value = wb.transcriptFiles ?? [];
   notes.value = wb.notes ?? '';
   withholdNames.value = (wb.withholdNames ?? []).join(', ');
+  notPeople.value = (wb.notPeople ?? []).join(', ');
   coffeeChatUrl.value = wb.coffeeChatUrl ?? '';
   spotlightNotes.value = wb.spotlightNotes ?? '';
   factPeople.value = wb.facts?.people ?? '';
@@ -953,6 +1014,15 @@ const fullVersion = (v: Version) => {
           </p>
           <input id="draft-withhold" v-model="withholdNames" type="text" placeholder="Mason, Aunt Carol" />
 
+          <label class="notes__label" for="draft-notpeople">Names that are not people <span class="hint">— optional</span></label>
+          <p class="block__hint">
+            Churches, partner organisations, streets — anything the first-names-only check should leave alone. It
+            reads a capitalised word after a name it knows as a surname, which is right for "Dana Whitfield" and
+            wrong for "Seventh Day Adventist Church". Separate them with commas.
+          </p>
+          <input id="draft-notpeople" v-model="notPeople" type="text"
+            placeholder="Seventh Day Adventist Church, Horizon Drive" />
+
           <div class="actions">
             <button type="button" class="btn btn--ghost btn--sm"
               :disabled="reading || transcript.trim().length < 400 || !draft.guestName" @click="readTranscript">
@@ -1163,9 +1233,18 @@ const fullVersion = (v: Version) => {
             </table>
           </details>
         </div>
-        <div class="grid2">
-          <label v-for="(_, k) in draft.stats" :key="k" class="f"><span>{{ k }}</span><input v-model="draft.stats[k]" type="text" /></label>
+        <p class="block__hint">
+          The labels go into the email exactly as they are written here, so they say what was counted —
+          "People served through IFS across 14 counties", not the slot it fills. Five is the usual month:
+          meals, individuals welcomed, families served, one tied to this month's program, and one for IFS.
+        </p>
+        <div v-for="(_, k) in draft.stats" :key="`${statsVersion}:${k}`" class="rowline rowline--stat">
+          <input :value="k" type="text" placeholder="What was counted"
+            @change="renameStat(k, ($event.target as HTMLInputElement).value)" />
+          <input v-model="draft.stats[k]" type="text" placeholder="Figure" />
+          <button type="button" class="linkish linkish--danger" @click="removeStat(k)">Remove</button>
         </div>
+        <button type="button" class="linkish" @click="addStatRow">+ Add a figure</button>
 
         <h3 class="sub">
           Last month's Coffee Chat videos
@@ -1527,6 +1606,8 @@ input, select, textarea { padding: .45rem .55rem; font: inherit; font-size: .812
 @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
 .rowline { display: grid; grid-template-columns: 1fr 1fr auto; gap: .5rem; margin-bottom: .45rem; align-items: center; }
 @media (max-width: 700px) { .rowline { grid-template-columns: 1fr; } }
+.rowline--stat { grid-template-columns: 1fr 7rem auto; }
+@media (max-width: 700px) { .rowline--stat { grid-template-columns: 1fr; } }
 
 .plan { display: grid; grid-template-columns: minmax(7rem, 9rem) 1fr; gap: .3rem .9rem; margin: 0 0 .9rem; font-size: .8125rem; }
 .plan dt { font-family: var(--font-heading); font-size: .65rem; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); }

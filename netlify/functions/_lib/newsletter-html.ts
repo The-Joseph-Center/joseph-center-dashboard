@@ -158,7 +158,7 @@ export interface HtmlInput {
 
 /** The stats, as a bordered block rather than a bullet list — they are the proof. */
 function statsHtml(stats: Record<string, string>): string {
-  const rows = Object.entries(stats).filter(([, v]) => String(v ?? '').trim());
+  const rows = Object.entries(stats).filter(([k, v]) => k.trim() && String(v ?? '').trim());
   if (!rows.length) return '';
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 20px;background-color:${CREAM};border-radius:6px;">
   <tr><td style="padding:18px 20px;">

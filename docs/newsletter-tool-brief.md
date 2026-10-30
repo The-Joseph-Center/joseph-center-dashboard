@@ -84,7 +84,14 @@ official name, "The Golden Girls Project", before any shortened form.
 Header is generated as: **{This month} Impact & {Previous month} Videos**
 
 - Stats come from the program directors and are **never** estimated. Blank, "TBD", "XX" or "0" are all flagged.
-- Stat labels carry a unit noun — "people served through IFS", not "IFS financial stability".
+- **Labels are editable, and they print as written.** A new month starts with the three the
+  document fixes — meals served, individuals welcomed through our doors, families served —
+  and the other two are named by the month they describe: August's were "Women moved into
+  permanent housing through the Golden Girls Project" and "People served through IFS across
+  14 counties". The tool used to seed "Program spotlight stat" and "IFS financial stability",
+  print them in the email, and then block the send over them with no way to rename them.
+- Stat labels carry a unit noun — "people served through IFS", not "financial stability".
+- Five figures is the usual month; fewer than four is a should-fix.
 - Fixed intro line above the list: *"Every month, Mona sits down with guests, volunteers, and community members to share real stories of transformation."*
 - Then the label **"{Previous month}'s episodes:"**.
 - Videos are *last* month's Coffee Chats, usually four or five.
@@ -201,18 +208,20 @@ Every one is a plain string test, so they are consistent and free.
 | "Build a bridge" | The Joseph Center **is** the bridge — donors sustain it |
 | Harness or Colorado Gives links | Retired. All giving goes to josephcentergj.com/donate |
 | "Golden Girls" before the full name | First mention is "The Golden Girls Project" |
-| Any full name | **First names only, everywhere, for everyone** |
+| Any full name | **First names only, everywhere, for everyone.** A capitalised run that carries on into "Church", "Foundation", "County" and the like is read as an organisation; anything else goes in **Names that are not people** |
 | No guest named | All three Section 4 versions reference them |
 | Missing or placeholder stats | Never estimated |
 | Missing videos or titles | Never fabricated |
 | Reused AWeber tag | A subscriber can only enter an automation once |
 | AWeber tag with no year | Or the same tag comes round again next year and re-triggers |
-| A first name followed by a surname | Matched against the guest, the staff roster and the transcript |
+| A first name followed by a surname | Matched against the guest, the staff roster and the transcript. Organisation names, this month's partners, the program name and anything in **Names that are not people** are blanked first |
 | A name on the withhold list | The writer's own list — minors, anyone who did not consent |
 | A phone number or email in Sections 1–2 | Only JC's own published numbers belong in the newsletter |
 | "Homeless people", "the homeless", "being homeless" | Say "people experiencing homelessness". Direct quotations are exempt |
 | `[X]`, TBD, XX, "once they're finalized", "we'll share" | In Sections 1–3, and in the preview text |
-| A placeholder stat label | "Program spotlight stat" and "IFS financial stability" are scaffolding, not measurements |
+| A stat label that is a slot name | "Program spotlight stat" is scaffolding, not a measurement. Rename it in This Month in Numbers |
+| A figure with a number but no label | Name what was counted, or take the row out |
+| No figures at all in This Month in Numbers | Read them off the sheet, or add them by hand |
 | A figure in Section 2 that is in neither the stats nor your notes | Every number in the spotlight comes from the program directors |
 | A `forms.gle` link | The Coffee Chat guest form is josephcentergj.com/media/apply |
 | No Coffee Chat episode link | Section 1's "Watch their full story" button is built from it |
@@ -226,7 +235,7 @@ it; fewer than four paragraphs, or one that runs to a wall of text; month-tied w
 outside the bridge line; "charity", "the less fortunate", "handout", "hand up" (JC says
 "a hand forward"); a Section 2 header without the "{Hook}: {Program}" pattern; a missing
 per-program closing CTA; doubled quotation marks in a video title; a stat label with no
-unit noun; and, in a calling-frame month, the donor and recurring-donor Section 4s still
+unit noun; fewer than four figures in This Month in Numbers; and, in a calling-frame month, the donor and recurring-donor Section 4s still
 crediting the reader for the story.
 
 **Raised, never removed:** mentions of a death, custody or foster placement, an arrest or

@@ -55,7 +55,8 @@ async function loadForReview(month: string) {
   // workbench blob rather than in columns of their own; the review needs all
   // three, and the transcript besides.
   const wb = parse<{
-    coffeeChatUrl?: string; withholdNames?: string[]; transcript?: string; spotlightNotes?: string;
+    coffeeChatUrl?: string; withholdNames?: string[]; notPeople?: string[];
+    transcript?: string; spotlightNotes?: string;
   }>(row.workbench, {});
 
   const draft: NewsletterDraft = {
@@ -75,6 +76,7 @@ async function loadForReview(month: string) {
     guestFrame: String(row.guest_frame ?? '') === 'calling' ? 'calling' : 'guest',
     coffeeChatUrl: typeof wb.coffeeChatUrl === 'string' ? wb.coffeeChatUrl : '',
     withholdNames: Array.isArray(wb.withholdNames) ? wb.withholdNames : [],
+    notPeople: Array.isArray(wb.notPeople) ? wb.notPeople : [],
     transcript: typeof wb.transcript === 'string' ? wb.transcript : '',
     spotlightNotes: typeof wb.spotlightNotes === 'string' ? wb.spotlightNotes : '',
   };

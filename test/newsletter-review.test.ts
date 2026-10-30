@@ -54,6 +54,39 @@ test('the official program name is not mistaken for a surname', () => {
   assert.ok(!flags(d, /Golden Girls" appears as part of a full name/));
 });
 
+test('a church is not a person, in the transcript or in the prose', () => {
+  // "Seventh Day Adventist Church" came back as the full name "Seventh Day".
+  const transcript = `[00:04] MONA: Where were you on Sundays?\n[00:09] DANA: Seventh Day Adventist Church, over on Orchard.`;
+  const d: NewsletterDraft = {
+    ...OCTOBER_CORRECTED,
+    transcript,
+    section1: `${OCTOBER_CORRECTED.section1}\n\nSeventh Day Adventist Church had been feeding her on Sundays.`,
+  };
+  assert.ok(!namesInTranscript(transcript).includes('Seventh'));
+  assert.ok(!flags(d, /Seventh Day/), text(d));
+});
+
+test('a name the check cannot know about is cleared by the not-people list', () => {
+  const transcript = `[00:04] MONA: How did you hear about us?\n[00:11] DANA: The notice board at Horizon Drive.`;
+  const base: NewsletterDraft = {
+    ...OCTOBER_CORRECTED,
+    transcript,
+    section1: `${OCTOBER_CORRECTED.section1}\n\nShe found us on the notice board at Horizon Drive.`,
+  };
+  assert.ok(flags(base, /Horizon Drive" reads as a full name/));
+  assert.ok(!flags({ ...base, notPeople: ['Horizon Drive'] }, /Horizon Drive/));
+});
+
+test('a partner organisation is never read as somebody\'s name', () => {
+  const d: NewsletterDraft = {
+    ...OCTOBER_CORRECTED,
+    partners: [{ name: 'Mesa Roots', url: 'https://example.org' }],
+    transcript: `[00:04] DANA: Mesa Roots drove me to the appointment.`,
+    section1: `${OCTOBER_CORRECTED.section1}\n\nMesa Roots drove her to the appointment.`,
+  };
+  assert.ok(!flags(d, /Mesa Roots" reads as a full name/), text(d));
+});
+
 test('transcript speakers and spoken full names are both found', () => {
   const names = namesInTranscript(OCTOBER_AS_SENT.transcript ?? '');
   assert.ok(names.includes('Mona'));
@@ -126,10 +159,36 @@ test('[X], "once they\'re finalized" and "we\'ll share" all block the send', () 
   assert.ok(/we'll share/.test(problems));
 });
 
-test("the tool's own stat labels block the send", () => {
-  const where = musts(OCTOBER_AS_SENT).filter((i) => /placeholder label/.test(i.problem)).map((i) => i.problem);
+test("the tool's own slot name blocks the send", () => {
+  const where = musts(OCTOBER_AS_SENT).filter((i) => /slot name/.test(i.problem)).map((i) => i.problem);
   assert.ok(where.some((p) => p.includes('Program spotlight stat')));
-  assert.ok(where.some((p) => p.includes('IFS financial stability')));
+});
+
+test('a real measurement with a poor label is a should-fix, not a block', () => {
+  // "IFS financial stability" is the document's own label, shortened. It needs
+  // renaming; it is not a reason to hold a month, and it was blocking one.
+  const about = review(OCTOBER_AS_SENT).filter((i) => i.problem.includes('IFS financial stability'));
+  assert.ok(about.length);
+  assert.ok(about.every((i) => i.severity === 'should'), JSON.stringify(about));
+});
+
+test('the fix names the field the label is edited in', () => {
+  const issue = musts(OCTOBER_AS_SENT).find((i) => i.problem.includes('Program spotlight stat'));
+  assert.match(issue!.fix, /Rename the label in This Month in Numbers/);
+});
+
+test('a figure with a number and no label is a must-fix', () => {
+  const d = { ...OCTOBER_CORRECTED, stats: { ...OCTOBER_CORRECTED.stats, '': '42' } };
+  assert.ok(musts(d).some((i) => /no label/.test(i.problem)));
+  // A blank row nobody has filled in yet is just a blank row.
+  const blank = { ...OCTOBER_CORRECTED, stats: { ...OCTOBER_CORRECTED.stats, '': '' } };
+  assert.ok(!musts(blank).some((i) => /no label/.test(i.problem)));
+});
+
+test('a thin set of figures is a should-fix, and an empty one blocks', () => {
+  const thin = { ...OCTOBER_CORRECTED, stats: { 'Meals served': '1,418', 'Families served': '96' } };
+  assert.ok(review(thin).some((i) => i.severity === 'should' && /has 2 figures/.test(i.problem)));
+  assert.ok(musts({ ...OCTOBER_CORRECTED, stats: {} }).some((i) => /no figures/.test(i.problem)));
 });
 
 test('a stat label with no unit noun is a should-fix', () => {

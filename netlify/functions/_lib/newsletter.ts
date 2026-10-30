@@ -351,7 +351,7 @@ export function composeSection3(d: {
   stats: Record<string, string>;
   videos: Video[];
 }): string {
-  const figures = Object.entries(d.stats ?? {}).filter(([, v]) => String(v ?? '').trim());
+  const figures = Object.entries(d.stats ?? {}).filter(([k, v]) => k.trim() && String(v ?? '').trim());
   const live = (d.videos ?? []).filter((v) => v.title?.trim() && v.url?.trim());
   return [
     `## ${section3Header(d.month, d.monthName)}`,
@@ -413,6 +413,13 @@ export interface NewsletterDraft {
    * and nothing else can infer them.
    */
   withholdNames?: string[];
+  /**
+   * Proper names that are not people: a church, a partner organisation, a
+   * landmark. Without this, "Seventh Day Adventist Church" came back as the
+   * full name "Seventh Day" — and a check that cries wolf on a correct name is
+   * worse than no check, so the writer needs somewhere to say "that is a thing".
+   */
+  notPeople?: string[];
   /** The transcript, so a name said out loud can be recognised in the prose. */
   transcript?: string;
   /** The writer's Section 2 notes — a figure they supplied counts as sourced. */
@@ -436,8 +443,12 @@ const PROTECTED = [
   'Coffee Chat', 'Western Slope', 'Grand Junction', 'Grand Valley',
   'Peer 180', 'Next 50 Initiative', 'Bridge to Stability',
 ];
-const maskProtected = (text: string) =>
-  PROTECTED.reduce((t, phrase) => t.split(phrase).join(' '.repeat(phrase.length)), text);
+const maskProtected = (text: string, extra: string[] = []) =>
+  [...PROTECTED, ...extra.map((p) => p.trim()).filter((p) => p.length > 2)]
+    // Longest first, so masking "Golden Girls" does not leave the tail of
+    // "The Golden Girls Project" behind for the pair test to read.
+    .sort((a, b) => b.length - a.length)
+    .reduce((t, phrase) => t.split(phrase).join(' '.repeat(phrase.length)), text);
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const prevMonthName = (month: string) => {
@@ -476,6 +487,33 @@ const NOT_A_SURNAME = new Set([
 ]);
 
 /**
+ * Words that mark a run of capitalised words as an organisation, not a person.
+ *
+ * "Seventh Day Adventist Church" was reported as the full name "Seventh Day":
+ * the transcript named the church, the pair test saw a capitalised word after
+ * a name it had learned, and nothing could tell it otherwise. A run that
+ * carries on into one of these is a thing, and the check leaves it alone.
+ */
+const ORG_WORDS = [
+  'Church', 'Churches', 'Chapel', 'Cathedral', 'Temple', 'Synagogue', 'Mosque', 'Parish',
+  'Ministries', 'Ministry', 'Fellowship', 'Assembly', 'Congregation', 'Mission', 'Missions',
+  'Diocese', 'Adventist', 'Baptist', 'Methodist', 'Lutheran', 'Presbyterian', 'Catholic',
+  'Episcopal', 'Nazarene', 'Evangelical', 'Pentecostal', 'Christian',
+  'Foundation', 'Trust', 'Charities', 'Coalition', 'Alliance', 'Council', 'Association',
+  'Institute', 'Initiative', 'Society', 'Network', 'Partnership', 'Partners', 'Program',
+  'Programs', 'Project', 'Center', 'Centre', 'Shelter', 'Pantry', 'Kitchen', 'Clinic',
+  'Hospital', 'Hospice', 'School', 'Academy', 'College', 'University', 'Library',
+  'District', 'County', 'City', 'Department', 'Division', 'Bureau', 'Authority', 'Agency',
+  'Office', 'Bank', 'Company', 'Corporation', 'Inc', 'LLC', 'Corp', 'Group', 'Services',
+  'Solutions', 'Housing', 'Health', 'Hall', 'Lodge', 'Club', 'League', 'Union', 'Chamber',
+  'Rotary', 'Kiwanis', 'Elks', 'Lions', 'Valley', 'Mesa', 'Street', 'Avenue', 'Road',
+];
+const ORG_WORD_SET = new Set(ORG_WORDS);
+const ORG_TAIL = new RegExp(`^(?:\\s+[A-Z][A-Za-z0-9'\u2019.-]*){0,3}\\s+(?:${ORG_WORDS.join('|')})\\b`);
+/** True when the capitalised run ending at `at` carries on into an organisation's name. */
+const runsIntoOrgName = (text: string, at: number) => ORG_TAIL.test(text.slice(at));
+
+/**
  * First names heard in the transcript.
  *
  * Speaker labels ("[02:14] MONA:") and any "First Last" pair somebody says out
@@ -484,13 +522,18 @@ const NOT_A_SURNAME = new Set([
  * person's full name rather than two ordinary words.
  */
 export function namesInTranscript(transcript: string): string[] {
+  const t = transcript ?? '';
   const out = new Set<string>();
   const title = (w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-  for (const m of (transcript ?? '').matchAll(/^\s*(?:\[[^\]]*\]\s*)?([A-Za-z][A-Za-z'’-]{1,})\s*:/gm)) {
+  for (const m of t.matchAll(/^\s*(?:\[[^\]]*\]\s*)?([A-Za-z][A-Za-z'’-]{1,})\s*:/gm)) {
     if (m[1]) out.add(title(m[1]));
   }
-  for (const m of (transcript ?? '').matchAll(/\b([A-Z][a-z]{2,})\s+[A-Z][a-z]{2,}\b/g)) {
-    if (m[1] && !NOT_A_SURNAME.has(m[1])) out.add(m[1]);
+  for (const m of t.matchAll(/\b([A-Z][a-z]{2,})\s+([A-Z][a-z]{2,})\b/g)) {
+    if (!m[1] || NOT_A_SURNAME.has(m[1])) continue;
+    // "Seventh Day Adventist Church" must not teach the check that "Seventh"
+    // is somebody's first name, or every later mention reads as a full name.
+    if (ORG_WORD_SET.has(m[2]!) || runsIntoOrgName(t, m.index! + m[0].length)) continue;
+    out.add(m[1]);
   }
   return [...out].slice(0, 60);
 }
@@ -510,11 +553,22 @@ const PLACEHOLDERS: { re: RegExp; what: string }[] = [
   { re: /\bwe(?:'|’)ll share\b/i, what: '"we\'ll share"' },
 ];
 
-/** Stat labels that are the tool's own scaffolding rather than a measurement. */
-const PLACEHOLDER_STAT_LABELS = ['program spotlight stat', 'spotlight stat', 'ifs financial stability'];
+/**
+ * Stat labels that are a slot name rather than a measurement.
+ *
+ * The tool used to seed "Program spotlight stat" and "IFS financial stability"
+ * into every new month, print the labels as plain text, and then block the
+ * send over them — asking for a change the page gave no way to make. The seeds
+ * are gone and the labels are editable now, so this only fires on a label
+ * somebody typed. "IFS financial stability" is off the list: shortened from the
+ * document's own "IFS clients maintaining financial stability", it is a real
+ * measurement badly named, which the unit-noun check below picks up as a
+ * should-fix instead of holding the month.
+ */
+const PLACEHOLDER_STAT_LABELS = ['program spotlight stat', 'spotlight stat', 'program stat', 'stat label'];
 
 /** A stat label has to say what is being counted. */
-const UNIT_NOUN = /\b(people|persons?|individuals?|guests?|families|households|women|men|children|kids|parents|moms|veterans|residents|neighbors|meals|lunches|boxes|packs|nights|beds|visits|hours|calls|appointments|referrals|loads|showers|rides|classes|sessions)\b/i;
+const UNIT_NOUN = /\b(people|persons?|individuals?|guests?|clients?|families|households|women|men|adults|seniors|children|kids|parents|moms|veterans|residents|neighbors|participants|volunteers|meals|lunches|plates|boxes|bags|packs|pounds|nights|stays|beds|visits|hours|calls|appointments|applications|referrals|loads|showers|rides|classes|sessions)\b/i;
 
 const MUST_TERMS: { re: RegExp; problem: string; fix: string }[] = [
   { re: /\bhomeless people\b/i, problem: '"Homeless people" appears outside a quotation.', fix: 'Say "people experiencing homelessness".' },
@@ -583,6 +637,11 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
   const body = [d.section1, d.section2].join('\n\n');
   const everything = [body, d.previewText].join('\n\n');
   const isIfs = /\bIFS\b|integrated financial services/i.test(d.program);
+  /**
+   * Proper names the first-names-only checks must not read as people: the
+   * writer's own list, this month's partners and the program name itself.
+   */
+  const notPeople = [...(d.notPeople ?? []), ...(d.partners ?? []).map((p) => p.name), d.program ?? ''];
 
   // ── straight from the Common Errors table ──
   if (/transitional housing/i.test(everything))
@@ -607,11 +666,15 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
       add('must', 'Section 2', '"Golden Girls" is used before the official name.', 'First mention must be "The Golden Girls Project".');
   }
 
+  const maskedAll = maskProtected(everything, notPeople);
   for (const surname of d.staffSurnames) {
     // Preceded by a capitalised word, so this fires on "Mona Highline" and not
     // on a surname that happens to be an ordinary word in another sentence.
-    if (new RegExp(`\\b[A-Z][a-z]+\\s+${surname}\\b`).test(maskProtected(everything)))
+    for (const m of maskedAll.matchAll(new RegExp(`\\b[A-Z][a-z]+\\s+${escapeRe(surname)}\\b`, 'g'))) {
+      if (runsIntoOrgName(maskedAll, m.index! + m[0].length)) continue;
       add('must', 'No last names', `"${surname}" appears as part of a full name.`, 'First names only, everywhere, for everyone.');
+      break;
+    }
   }
 
   // Guest name has to be current in every Section 4 — the document lists this
@@ -647,7 +710,7 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
   // The surname check above works from the staff directory, which only knows
   // about staff. A guest's surname and a child's first name both reached the
   // October draft because nothing was looking for them. These two checks look.
-  const prose = maskProtected(body);
+  const prose = maskProtected(body, notPeople);
   const written = [body, d.previewText, ...(d.videos ?? []).map((v) => v.title ?? ''), ...Object.keys(d.stats ?? {})].join('\n');
 
   const firstNames = new Set<string>();
@@ -661,11 +724,13 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
     if (first.length < 2) continue;
     for (const m of prose.matchAll(new RegExp(`\\b${escapeRe(first)}\\s+([A-Z][A-Za-z'’-]+)\\b`, 'g'))) {
       const last = m[1]!;
-      if (NOT_A_SURNAME.has(last)) continue;
+      if (NOT_A_SURNAME.has(last) || ORG_WORD_SET.has(last)) continue;
+      if (runsIntoOrgName(prose, m.index! + m[0].length)) continue;
       const pair = `${first} ${last}`;
       if (seenPairs.has(pair)) continue;
       seenPairs.add(pair);
-      add('must', 'No last names', `"${pair}" reads as a full name.`, 'First names only, everywhere, for everyone.');
+      add('must', 'No last names', `"${pair}" reads as a full name.`,
+        'First names only, everywhere, for everyone. If it is not a person \u2014 a church, a partner, a street \u2014 put it in "Names that are not people" and this stops asking.');
     }
   }
 
@@ -713,14 +778,25 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
     }
   }
 
-  for (const label of Object.keys(d.stats ?? {})) {
+  const figures = Object.entries(d.stats ?? {});
+  const labelled = figures.filter(([k]) => k.trim());
+  if (!labelled.length)
+    add('must', 'Section 3', 'This Month in Numbers has no figures in it.',
+      'Read them off the sheet or add them by hand. Five is the usual month.');
+  else if (labelled.length < 4)
+    add('should', 'Section 3', `This Month in Numbers has ${labelled.length} figure${labelled.length === 1 ? '' : 's'}.`,
+      "Recent months carried five: meals, individuals welcomed, families served, one tied to this month's program and one for IFS.");
+  if (figures.some(([k, v]) => !k.trim() && String(v ?? '').trim()))
+    add('must', 'Section 3', 'A figure has a number but no label.', 'Name what was counted, or take the row out.');
+
+  for (const [label] of labelled) {
     const l = label.trim().toLowerCase();
     if (PLACEHOLDER_STAT_LABELS.some((p) => l.includes(p))) {
-      add('must', 'Section 3', `"${label}" is the tool's own placeholder label, not a measurement.`,
-        'Say what was counted — "people served through IFS", not "IFS financial stability".');
+      add('must', 'Section 3', `"${label}" is a slot name, not a measurement.`,
+        'Rename the label in This Month in Numbers to what was counted this month \u2014 August used "Women moved into permanent housing through the Golden Girls Project".');
     } else if (!UNIT_NOUN.test(label)) {
       add('should', 'Section 3', `"${label}" does not say what is being counted.`,
-        'Stat labels carry the unit — "people served through IFS", "meals served".');
+        'Rename the label so it carries the unit \u2014 "People served through IFS across 14 counties", "Meals served".');
     }
   }
 

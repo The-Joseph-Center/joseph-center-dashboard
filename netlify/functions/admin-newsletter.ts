@@ -140,7 +140,12 @@ export async function handler(event: {
       const draft = row ? shape(row) : {
         id: 0, month, monthName: monthName(month), guestName: '', guestFrame: 'guest',
         program: '', aweberTag: aweberPlan(month, new Date()).tag, section1: '', section2: '',
-        stats: { 'Meals served': '', 'Individuals welcomed': '', 'Families served': '', 'Program spotlight stat': '', 'IFS financial stability': '' },
+        // Three labels the document fixes, and nothing else. The two the tool
+        // used to seed — "Program spotlight stat", "IFS financial stability" —
+        // were slot names, and the review blocked the send over them; the
+        // program figure and the IFS figure are named by the month they
+        // describe, which is what every real month has done.
+        stats: { 'Meals served': '', 'Individuals welcomed through our doors': '', 'Families served': '' },
         videos: [],
         partners: previous ? parse<{ name: string; url: string }[]>(previous.partners, []) : [],
         previewText: '', workbench: {}, status: 'draft', sentAt: null, updatedBy: null, updatedAt: 0,
@@ -197,7 +202,8 @@ export async function handler(event: {
        * out loud can be recognised in the prose.
        */
       const wb = (draft.workbench ?? {}) as {
-        coffeeChatUrl?: string; withholdNames?: string[]; transcript?: string; spotlightNotes?: string;
+        coffeeChatUrl?: string; withholdNames?: string[]; notPeople?: string[];
+        transcript?: string; spotlightNotes?: string;
       };
       const issues = reviewNewsletter({
         ...draft,
@@ -206,6 +212,7 @@ export async function handler(event: {
         guestFrame: draft.guestFrame === 'calling' ? 'calling' : 'guest',
         coffeeChatUrl: wb.coffeeChatUrl ?? '',
         withholdNames: Array.isArray(wb.withholdNames) ? wb.withholdNames : [],
+        notPeople: Array.isArray(wb.notPeople) ? wb.notPeople : [],
         transcript: typeof wb.transcript === 'string' ? wb.transcript : '',
         spotlightNotes: typeof wb.spotlightNotes === 'string' ? wb.spotlightNotes : '',
       } as NewsletterDraft);
