@@ -3,7 +3,7 @@ import { turso, fetchOktaUsers } from './_lib/staff-directory';
 import { reviewNewsletter, aweberPlan, composeSection3, GREETING, type NewsletterDraft, type Video } from './_lib/newsletter';
 import {
   aweberConfig, missingScopes, allSubscribers, addTag, describeAudience, REQUIRED_SCOPES,
-  listDrafts, createDraft,
+  listDrafts, createDraft, tagEveryone,
 } from './_lib/aweber';
 import { TIERS, section4, closingSection, DONATE_URL } from './_lib/newsletter';
 import { newsletterHtml, promoteButtons } from './_lib/newsletter-html';
@@ -20,8 +20,14 @@ import { newsletterHtml, promoteButtons } from './_lib/newsletter-html';
  *
  *   tag     applies the month's tag to every active subscriber. This is the
  *           send. AWeber's automations trigger on that tag, so the moment it
- *           lands the newsletter is on its way to 263 people and there is no
+ *           lands the newsletter is on its way to the list and there is no
  *           recalling it.
+ *
+ *           One call is one *pass*, not the whole job. A function is stopped at
+ *           ten seconds and tagging the list takes longer than that, so a pass
+ *           tags what it can, reports `done: false` and what is left, and the
+ *           page calls back for the rest. Only untagged subscribers are
+ *           touched, so no automation fires twice.
  *
  * `tag` re-runs the review server-side and refuses on any outstanding "must".
  * A disabled button is a courtesy; this is the part that means it. It also
@@ -83,12 +89,24 @@ async function loadForReview(month: string) {
   return { draft, status: String(row.status ?? 'draft'), issues: reviewNewsletter(draft) };
 }
 
+/**
+ * How long a pass may spend tagging before it hands back.
+ *
+ * Netlify stops a synchronous function at ten seconds, and being stopped is the
+ * one outcome to avoid: the gateway answers 504 with no body, so the page
+ * cannot tell how far the run got, and the "sent" bookkeeping never happens.
+ * The margin covers the reads before the loop, a retried PATCH, and the
+ * response itself.
+ */
+const PASS_BUDGET_MS = 6_500;
+
 export async function handler(event: {
   httpMethod: string;
   headers: Record<string, string>;
   body: string | null;
   queryStringParameters: Record<string, string> | null;
 }) {
+  const startedAt = Date.now();
   const auth = await requireCapability(event.headers, 'newsletter');
   if (!auth.ok) return denial(auth);
 
@@ -287,21 +305,17 @@ export async function handler(event: {
     const subscribers = await allSubscribers(cfg);
     const active = subscribers.filter((s) => s.status === 'subscribed');
 
-    let added = 0, already = 0;
-    const failed: string[] = [];
-    for (const s of active) {
-      try {
-        (await addTag(cfg, s, draft.aweberTag)) === 'added' ? added++ : already++;
-      } catch (err) {
-        // Keep going. A partial run is resumable — the ones already tagged are
-        // skipped next time — whereas stopping halfway sends to some and not
-        // others with no record of where it stopped.
-        failed.push(s.email);
-        console.error('newsletter-aweber: tagging failed for', s.email, err);
-      }
-    }
+    const run = await tagEveryone(
+      active, draft.aweberTag,
+      (s) => addTag(cfg, s, draft.aweberTag),
+      { budgetMs: PASS_BUDGET_MS, startedAt },
+    );
 
-    if (!failed.length) {
+    // The month is sent once every active subscriber carries the tag, which is
+    // not the same as this pass having finished: a pass can reach the end of
+    // the list with failures behind it.
+    const markedSent = run.done && !run.failed.length;
+    if (markedSent) {
       await turso().execute({
         sql: `UPDATE newsletters SET status='sent', sent_at=unixepoch(), updated_by=?, updated_at=unixepoch() WHERE month=?`,
         args: [auth.email ?? 'unknown', month],
@@ -313,10 +327,16 @@ export async function handler(event: {
       headers: JSON_HEADERS,
       body: JSON.stringify({
         tag: draft.aweberTag,
-        added, already,
-        failed: failed.length,
-        failedEmails: failed.slice(0, 20),
-        markedSent: failed.length === 0,
+        added: run.added,
+        already: run.already,
+        failed: run.failed.length,
+        failedEmails: run.failed.slice(0, 20),
+        // What the page needs to decide whether to come back for another pass.
+        done: run.done,
+        remaining: run.remaining,
+        active: active.length,
+        tagged: active.length - run.remaining,
+        markedSent,
       }),
     };
   } catch (err) {

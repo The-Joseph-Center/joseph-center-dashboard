@@ -56,12 +56,33 @@ export async function accessToken(cfg: AweberConfig): Promise<string> {
   return cached.token;
 }
 
-async function api<T>(cfg: AweberConfig, path: string, init?: RequestInit): Promise<{ status: number; body: T }> {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * One request, retried when AWeber asks us to wait.
+ *
+ * Tagging the list is two hundred and forty PATCHes in a row, which is exactly
+ * the traffic shape a rate limiter exists to slow down. A 429 is not a failure,
+ * it is an instruction, and treating it as one would leave that subscriber
+ * untagged and silently out of the month's send.
+ *
+ * The waits are capped hard and short on purpose: the caller is working against
+ * a ten-second function limit, and a polite thirty-second sleep would spend the
+ * whole budget on one subscriber.
+ */
+async function api<T>(
+  cfg: AweberConfig, path: string, init?: RequestInit, attempt = 0,
+): Promise<{ status: number; body: T }> {
   const token = await accessToken(cfg);
   const res = await fetch(`${API}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   });
+  if ((res.status === 429 || res.status >= 500) && attempt < 2) {
+    const after = Number(res.headers.get('retry-after'));
+    await sleep(Number.isFinite(after) && after > 0 ? Math.min(after * 1000, 1000) : 300 * (attempt + 1));
+    return api<T>(cfg, path, init, attempt + 1);
+  }
   return { status: res.status, body: (await res.json().catch(() => ({}))) as T };
 }
 
@@ -127,6 +148,64 @@ export async function addTag(cfg: AweberConfig, subscriber: Subscriber, tag: str
   });
   if (status >= 300) throw new Error(body.error?.message ?? `Tagging ${subscriber.email} failed (${status})`);
   return 'added';
+}
+
+export interface TagRun {
+  /** Tagged on this pass. */
+  added: number;
+  /** Carried the tag before this pass began. */
+  already: number;
+  failed: string[];
+  /** Still without the tag when the pass ended, failures included. */
+  remaining: number;
+  /** Every untagged subscriber was attempted — there is no more to do. */
+  done: boolean;
+}
+
+/**
+ * This month's tag, onto everyone who does not have it yet — as far as the
+ * clock allows.
+ *
+ * A Netlify function is stopped at ten seconds. Tagging is one PATCH per
+ * subscriber, and AWeber answers in about eighty milliseconds, so a list of 243
+ * cannot be finished in one run: October's first attempt got through 76 and the
+ * browser was handed a bare 504, with no record of where it had stopped.
+ *
+ * So the run watches the clock and stops itself with time to spare, reporting
+ * what is left. The caller comes back for the rest. Resuming is safe because
+ * the only subscribers touched are the ones without the tag — nobody is tagged
+ * twice, and AWeber's automations therefore fire once per person however many
+ * passes it takes.
+ *
+ * A subscriber that errors is recorded and passed over rather than ending the
+ * run: stopping at the first failure would send to the people before it in the
+ * list and nobody after, which is the worst of the available outcomes.
+ */
+export async function tagEveryone(
+  subscribers: Subscriber[],
+  tag: string,
+  apply: (s: Subscriber) => Promise<unknown>,
+  opts: { budgetMs: number; startedAt: number; now?: () => number },
+): Promise<TagRun> {
+  const now = opts.now ?? Date.now;
+  const todo = subscribers.filter((s) => !s.tags.includes(tag));
+  const already = subscribers.length - todo.length;
+  const failed: string[] = [];
+  let added = 0;
+  let done = true;
+
+  for (const s of todo) {
+    if (now() - opts.startedAt >= opts.budgetMs) { done = false; break; }
+    try {
+      await apply(s);
+      added++;
+    } catch (err) {
+      failed.push(s.email);
+      console.error('aweber: tagging failed for', s.email, err);
+    }
+  }
+
+  return { added, already, failed, remaining: todo.length - added, done };
 }
 
 /**

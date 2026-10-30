@@ -451,6 +451,24 @@ const sending = ref(false);
 const confirmTag = ref('');
 const automationsUpdated = ref(false);
 const sendResult = ref<{ added: number; already: number; failed: number; failedEmails: string[]; markedSent: boolean } | null>(null);
+/** How far through the list the tagging has got, while it is running. */
+const sendProgress = ref<{ tagged: number; active: number } | null>(null);
+
+/**
+ * What to say when a request fails without saying why.
+ *
+ * A gateway timeout answers with an HTML error page, so `res.json()` gives
+ * nothing and the page used to print the bare number: October's send showed
+ * "504" and nothing else, with no hint that 76 subscribers had been tagged and
+ * the rest had not.
+ */
+function failureMessage(status: number, error?: string): string {
+  if (error) return error;
+  if (status === 502 || status === 504) {
+    return `AWeber did not answer in time (${status}). Nothing is lost — anyone already tagged is skipped — so check the counts and run it again.`;
+  }
+  return `The request failed (${status}).`;
+}
 
 async function checkSend() {
   checking.value = true; sendResult.value = null; error.value = '';
@@ -460,7 +478,7 @@ async function checkSend() {
     if (!(await saveFirst())) throw new Error('Could not save first, so nothing was checked.');
     const res = await apiFetch(`/.netlify/functions/newsletter-aweber?month=${month.value}`);
     const d = await res.json().catch(() => ({}));
-    sendState.value = res.ok ? d : { ready: false, error: d.error || String(res.status) };
+    sendState.value = res.ok ? d : { ready: false, error: failureMessage(res.status, d.error) };
     // The Review block above was built when the page loaded, so after a save
     // it can be out of date with the review that actually blocks the send.
     // The check returns its own list — take it, so the two cannot disagree.
@@ -476,29 +494,62 @@ async function checkSend() {
 async function applyTag() {
   if (!sendState.value?.tag) return;
   if (!window.confirm(`This applies "${sendState.value.tag}" to every active subscriber, which is what triggers the send. There is no undo. Continue?`)) return;
-  sending.value = true; error.value = '';
+  sending.value = true; error.value = ''; sendProgress.value = null;
   try {
     if (!(await saveFirst())) throw new Error('Could not save first, so nothing was sent.');
-    const res = await apiFetch('/.netlify/functions/newsletter-aweber', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ month: month.value, confirm: confirmTag.value, automationsUpdated: automationsUpdated.value }),
-    });
-    const d = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      // A refusal carries the reasons; show them rather than only the count.
-      if (sendState.value && Array.isArray(d.blocking)) {
-        sendState.value = { ...sendState.value, ready: false, blocking: d.blocking };
-        if (Array.isArray(d.issues)) issues.value = d.issues;
+
+    /**
+     * One pass is not the whole send.
+     *
+     * The function is stopped at ten seconds, which is not long enough to PATCH
+     * the whole list one subscriber at a time, so it tags what it can and says
+     * what is left. This keeps asking until it says it is done. Each pass skips
+     * anyone who already has the tag, so no automation fires twice and a pass
+     * that fails costs nothing but the time.
+     */
+    let added = 0, already = 0, failedEmails: string[] = [], markedSent = false;
+    for (let pass = 0; ; pass++) {
+      const res = await apiFetch('/.netlify/functions/newsletter-aweber', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month: month.value, confirm: confirmTag.value, automationsUpdated: automationsUpdated.value }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // A refusal carries the reasons; show them rather than only the count.
+        if (sendState.value && Array.isArray(d.blocking)) {
+          sendState.value = { ...sendState.value, ready: false, blocking: d.blocking };
+          if (Array.isArray(d.issues)) issues.value = d.issues;
+        }
+        throw new Error(failureMessage(res.status, d.error));
       }
-      throw new Error(d.error || String(res.status));
+
+      added += d.added ?? 0;
+      // Who held the tag before any of this started, which only the first pass
+      // can say — by the second, the first pass's work is "already tagged".
+      if (pass === 0) already = d.already ?? 0;
+      // The last pass's failures are the real ones: every pass retries whoever
+      // is still untagged, so an earlier failure gets another go.
+      failedEmails = d.failedEmails ?? [];
+      markedSent = !!d.markedSent;
+      sendProgress.value = { tagged: d.tagged ?? 0, active: d.active ?? 0 };
+
+      if (d.done) break;
+      // A pass that reached its time limit without tagging anybody will not do
+      // better on the next one, and looping on it would hammer AWeber.
+      if (!d.added) {
+        throw new Error(`Stopped with ${d.remaining} subscribers still untagged — the last pass tagged nobody. ${d.failed ? `Failed: ${failedEmails.join(', ')}` : 'Check AWeber, then run it again.'}`);
+      }
+      if (pass > 60) throw new Error(`Gave up after ${pass} passes with ${d.remaining} still untagged. Run it again — anyone already tagged is skipped.`);
     }
-    sendResult.value = d;
+
+    sendResult.value = { added, already, failed: failedEmails.length, failedEmails, markedSent };
     await load();
     await checkSend();
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not apply the tag.';
   } finally {
     sending.value = false;
+    sendProgress.value = null;
   }
 }
 
@@ -736,7 +787,7 @@ async function createDrafts() {
       body: JSON.stringify({ month: month.value, action: 'drafts' }),
     });
     const d = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(d.error || String(res.status));
+    if (!res.ok) throw new Error(failureMessage(res.status, d.error));
     draftsMade.value = d.drafts ?? [];
   } catch (e) {
     draftsError.value = e instanceof Error ? e.message : 'Could not create the drafts.';
@@ -1538,7 +1589,9 @@ const fullVersion = (v: Version) => {
               <div class="actions">
                 <input v-model="confirmTag" type="text" :placeholder="sendState.tag" class="confirm" />
                 <button type="button" class="btn btn--danger btn--sm" :disabled="sending || !automationsUpdated || confirmTag !== sendState.tag" @click="applyTag">
-                  {{ sending ? 'Tagging subscribers…' : `Apply the tag to ${sendState.totals.toTag} subscribers` }}
+                  {{ sending
+                    ? (sendProgress ? `Tagging… ${sendProgress.tagged} of ${sendProgress.active}` : 'Tagging subscribers…')
+                    : `Apply the tag to ${sendState.totals.toTag} subscribers` }}
                 </button>
               </div>
             </template>
