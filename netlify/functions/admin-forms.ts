@@ -1,4 +1,5 @@
 import { requireCapability, denial } from './_lib/verify-okta';
+import { capStatus, countRecorded, type CapStatus, type FormCap } from './_lib/form-cap';
 import { turso } from './_lib/staff-directory';
 import { SANITY_DATASET } from './_lib/sanity-dataset';
 
@@ -27,6 +28,11 @@ const SANITY = process.env.SANITY_WRITE_TOKEN!;
 
 const FIELD_TYPES = ['text', 'email', 'phone', 'number', 'textarea', 'select'];
 const KEY_RE = /^[a-zA-Z][a-zA-Z0-9]*$/;
+
+const whole = (v: unknown): number => {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+};
 
 const clean = (v: unknown, max = 500) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
@@ -58,6 +64,7 @@ interface Form {
   _id: string; title?: string; slug?: string; active?: boolean; notifyMode?: string;
   activeDates?: { start?: string; end?: string } | null;
   description?: string; successMessage?: string; notifyEmail?: string; fields?: Field[];
+  cap?: FormCap | null;
 }
 
 /**
@@ -70,9 +77,12 @@ interface Form {
  * The wording is built there; the decision stays here, matching what
  * submit-dynamic-form enforces.
  */
-type FormState = 'closed' | 'open' | 'before-start' | 'after-end';
-function statusOf(f: Form): { open: boolean; state: FormState } {
+type FormState = 'closed' | 'open' | 'before-start' | 'after-end' | 'full';
+function statusOf(f: Form, capacity?: CapStatus): { open: boolean; state: FormState } {
   if (f.active === false || f.active == null) return { open: false, state: 'closed' };
+  // Before the dates, because a form that is full is full whatever the dates
+  // say, and "full" is the useful thing to read on the page.
+  if (capacity?.full) return { open: false, state: 'full' };
   const now = Date.now();
   const start = f.activeDates?.start ? new Date(f.activeDates.start).getTime() : null;
   const end = f.activeDates?.end ? new Date(f.activeDates.end).getTime() : null;
@@ -92,7 +102,7 @@ export async function handler(event: {
   try {
     const forms = await sanityQuery<Form[]>(
       `*[_type=="dynamicForm" && !(_id in path("drafts.**"))]|order(title asc){
-        _id,title,"slug":slug.current,active,activeDates,description,successMessage,notifyEmail,notifyMode,fields
+        _id,title,"slug":slug.current,active,activeDates,description,successMessage,notifyEmail,notifyMode,fields,cap
       }`
     );
 
@@ -108,15 +118,39 @@ export async function handler(event: {
         const slug = String(r.form_slug);
         byForm.set(slug, [...(byForm.get(slug) ?? []), { year: String(r.y), count: Number(r.n) }]);
       }
+
+      /**
+       * How full each capped form is.
+       *
+       * One query per capped form, and in practice that is one form. Alongside
+       * the total it reports how many submissions carry no number at all, which
+       * is the figure somebody needs in order to decide what "counted before
+       * the form tracked it" should be — Angel Tree ran for weeks without
+       * asking how many children were in the household.
+       */
+      const capped = forms.filter((f) => f.cap?.limit && f.slug);
+      const capacities = new Map<string, CapStatus & { submissions: number; withoutCount: number }>();
+      for (const f of capped) {
+        try {
+          const { recorded, submissions, withoutCount } =
+            await countRecorded(turso(), f.slug!, f.cap?.countField);
+          capacities.set(f._id, { ...capStatus(f.cap, recorded), submissions, withoutCount });
+        } catch (err) {
+          console.error('admin-forms: could not count', f.slug, err);
+        }
+      }
+
       return {
         statusCode: 200,
         headers: JSON_HEADERS,
         body: JSON.stringify({
           forms: forms.map((f) => {
             const years = byForm.get(f.slug ?? '') ?? [];
+            const capacity = capacities.get(f._id) ?? null;
             return {
               ...f,
-              status: statusOf(f),
+              status: statusOf(f, capacity ?? undefined),
+              capacity,
               years,
               total: years.reduce((n, y) => n + y.count, 0),
             };
@@ -219,6 +253,25 @@ export async function handler(event: {
       fields,
     };
     const unset: string[] = [];
+
+    /**
+     * The cap.
+     *
+     * A blank or zero limit removes it rather than storing a cap of nothing —
+     * a form with `limit: 0` would read as permanently full, which is the one
+     * way this could do real harm.
+     */
+    const limit = whole(body.capLimit);
+    if (limit > 0) {
+      set.cap = {
+        limit,
+        ...(clean(body.capCountField, 80) ? { countField: clean(body.capCountField, 80) } : {}),
+        alreadyCounted: whole(body.capAlreadyCounted),
+        ...(clean(body.capFullMessage, 1000) ? { fullMessage: clean(body.capFullMessage, 1000) } : {}),
+      };
+    } else {
+      unset.push('cap');
+    }
     if (start || end) {
       set.activeDates = { ...(start ? { start } : {}), ...(end ? { end } : {}) };
     } else {

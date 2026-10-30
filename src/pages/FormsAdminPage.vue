@@ -20,7 +20,13 @@ interface Form {
   activeDates: { start?: string; end?: string } | null;
   description: string; successMessage: string; notifyEmail: string; notifyMode: string;
   fields: Field[];
-  status: { open: boolean; state: 'closed' | 'open' | 'before-start' | 'after-end' };
+  cap: { limit?: number; countField?: string; alreadyCounted?: number; fullMessage?: string } | null;
+  capacity: {
+    capped: boolean; limit: number; counted: number; recorded: number;
+    alreadyCounted: number; remaining: number; full: boolean;
+    submissions: number; withoutCount: number;
+  } | null;
+  status: { open: boolean; state: 'closed' | 'open' | 'before-start' | 'after-end' | 'full' };
   years: { year: string; count: number }[];
   total: number;
 }
@@ -40,6 +46,7 @@ const editing = ref<string | null>(null);
 const draft = ref<Record<string, {
   title: string; description: string; successMessage: string; notifyEmail: string;
   notifyMode: string; startAt: string; endAt: string; fields: Field[];
+  capLimit: string; capCountField: string; capAlreadyCounted: string; capFullMessage: string;
 }>>({});
 
 // Built here rather than on the server: Netlify runs in UTC, and a date
@@ -51,6 +58,7 @@ const day = (iso?: string) =>
 
 function statusLabel(f: Form): string {
   switch (f.status.state) {
+    case 'full': return `Full — ${f.capacity?.counted} of ${f.capacity?.limit}`;
     case 'before-start': return `Opens ${day(f.activeDates?.start)}`;
     case 'after-end': return `Closed ${day(f.activeDates?.end)}`;
     case 'open': return f.activeDates?.end ? `Open until ${day(f.activeDates.end)}` : 'Open';
@@ -97,6 +105,10 @@ function edit(f: Form) {
       successMessage: f.successMessage ?? '', notifyEmail: f.notifyEmail ?? '',
       notifyMode: f.notifyMode === 'weekly' ? 'weekly' : 'each',
       startAt: toLocalInput(f.activeDates?.start), endAt: toLocalInput(f.activeDates?.end),
+      capLimit: f.cap?.limit ? String(f.cap.limit) : '',
+      capCountField: f.cap?.countField ?? '',
+      capAlreadyCounted: f.cap?.alreadyCounted ? String(f.cap.alreadyCounted) : '',
+      capFullMessage: f.cap?.fullMessage ?? '',
       fields: (f.fields ?? []).map((x) => ({ ...x, options: [...(x.options ?? [])] })),
     },
   };
@@ -134,6 +146,8 @@ async function save(f: Form, confirmKeyChange = false) {
         _id: f._id, title: d.title, description: d.description,
         successMessage: d.successMessage, notifyEmail: d.notifyEmail, notifyMode: d.notifyMode,
         startAt: fromLocalInput(d.startAt), endAt: fromLocalInput(d.endAt),
+        capLimit: d.capLimit, capCountField: d.capCountField,
+        capAlreadyCounted: d.capAlreadyCounted, capFullMessage: d.capFullMessage,
         fields: d.fields, confirmKeyChange,
       }),
     });
@@ -200,7 +214,16 @@ const busy = computed(() => (id: string) => savingId.value === id);
         <header class="head">
           <div>
             <h2 class="block__title">{{ f.title }}</h2>
-            <p class="block__hint">/forms/{{ f.slug }} · {{ f.total }} submission{{ f.total === 1 ? '' : 's' }} all time</p>
+            <p class="block__hint">
+            /forms/{{ f.slug }} · {{ f.total }} submission{{ f.total === 1 ? '' : 's' }} all time
+            <template v-if="f.capacity?.capped">
+              · <strong>{{ f.capacity.counted }} of {{ f.capacity.limit }}</strong>
+              <template v-if="f.capacity.alreadyCounted">
+                ({{ f.capacity.recorded }} recorded + {{ f.capacity.alreadyCounted }} counted earlier)
+              </template>
+              <template v-if="!f.capacity.full">· {{ f.capacity.remaining }} to go</template>
+            </template>
+          </p>
           </div>
           <div class="head__right">
             <span class="pill" :class="f.status.open ? 'pill--open' : 'pill--shut'">{{ statusLabel(f) }}</span>
@@ -253,6 +276,41 @@ const busy = computed(() => (id: string) => savingId.value === id);
               <label class="f"><span>Opens (optional)</span><input v-model="draft[f._id]!.startAt" type="datetime-local" /></label>
               <label class="f"><span>Closes (optional)</span><input v-model="draft[f._id]!.endAt" type="datetime-local" /></label>
             </div>
+          </div>
+
+          <h3 class="sub">How many can be served</h3>
+          <div class="block">
+            <div class="grid2">
+              <label class="f">
+                <span>Stop at</span>
+                <input v-model="draft[f._id]!.capLimit" type="number" min="1" placeholder="No limit" />
+              </label>
+              <label class="f">
+                <span>Count this answer</span>
+                <input v-model="draft[f._id]!.capCountField" type="text" placeholder="Leave blank to count sign-ups" />
+                <span class="f__note">
+                  The key of a number question — <code>childrenCount</code>, not its label. Blank counts
+                  sign-ups, and one sign-up is a family.
+                </span>
+              </label>
+            </div>
+            <label class="f">
+              <span>Counted before the form tracked it</span>
+              <input v-model="draft[f._id]!.capAlreadyCounted" type="number" min="0" placeholder="0" />
+              <span class="f__note">
+                Added to the total. The sign-ups taken before that question existed carry no number to add
+                up, so this is your own figure for them.
+                <template v-if="f.capacity?.withoutCount">
+                  <strong>{{ f.capacity.withoutCount }}</strong> stored
+                  sign-up{{ f.capacity.withoutCount === 1 ? '' : 's' }} currently
+                  {{ f.capacity.withoutCount === 1 ? 'has' : 'have' }} no number.
+                </template>
+              </span>
+            </label>
+            <label class="f">
+              <span>What to say when it is full</span>
+              <textarea v-model="draft[f._id]!.capFullMessage" rows="2" placeholder="Leave blank for the default" />
+            </label>
           </div>
 
           <h3 class="sub">Questions</h3>
