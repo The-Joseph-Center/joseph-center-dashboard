@@ -194,7 +194,7 @@ export async function handler(event: {
           made.push({ tier: t.label, subject, id: already.id, skipped: true });
           continue;
         }
-        const section4Text = section4(t, draft.monthName, draft.guestName, { frame: draft.guestFrame });
+        const section4Text = section4(t, draft.monthName, draft.guestName);
         const html = promoteButtons(newsletterHtml({
           month,
           monthName: draft.monthName,

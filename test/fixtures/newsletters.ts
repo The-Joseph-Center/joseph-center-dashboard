@@ -25,7 +25,9 @@ const TRANSCRIPT = `[00:04] MONA: Dana, thank you for sitting down with me.
  * a minor's first name that was meant to be withheld, "homeless people" in the
  * narration, [X] left in two places, the tool's own "Program spotlight stat"
  * label, a video title wrapped in quotes twice, no episode link so no Section 1
- * button, and no preview text at all.
+ * button, and no preview text at all. Two more from the October read-through:
+ * the Day Shelter's laundry, which is out of service, offered in a bullet and
+ * again in the description, and the retired (970) 985-6133 in the CTA.
  */
 export const OCTOBER_AS_SENT: NewsletterDraft = {
   month: '2026-10',
@@ -47,7 +49,7 @@ Dana Whitfield had been one of the homeless people sleeping in her car outside t
 ${'This is what we mean when we say hope has an address. And this October, we\'re inviting you to help us strengthen the bridge from crisis to stability across the Western Slope of Colorado.'}`,
   section2: `## Day Shelter
 
-The Day Shelter is the first stop on the bridge for anyone who needs help.
+The Day Shelter is the first stop on the bridge for anyone who needs help — whether someone needs a hot meal, a place to do laundry, a computer to apply for jobs, or simply a safe space for their children.
 
 **What we provide:**
 - Computer access for job applications
@@ -58,7 +60,7 @@ In October we served [X] meals and welcomed [X] people through our doors.
 
 Every person who walks through the door for a hot lunch is walking across the bridge. Where they go from there depends on what they need — but they never walk alone.
 
-Need help? Contact us.`,
+Need somewhere to start? Call (970) 985-6133 or come by Tuesday–Friday, 9am–1pm — walk-ins are welcome.`,
   stats: {
     'Meals served': '1,418',
     'Individuals welcomed': '362',
@@ -98,15 +100,14 @@ The Day Shelter is open to anyone who needs help, and it is where nearly every o
 **What we provide:**
 - Hot, homemade lunch served at noon, Tuesday–Friday
 - Computer access for job applications
-- Laundry services
 - A safe space for children
 - Open Tuesday–Friday, 9am–1pm
 
 In October we served 1,418 lunches and welcomed 362 people through the doors.
 
-Every person who walks through the door for a hot lunch is walking across the bridge. Where they go from there depends on what they need — but they never walk alone.
+Every person who walks through the Day Shelter door is walking across the bridge. Where they go from there depends on what they need — but they never walk alone.
 
-Need somewhere to start? Call (970) 985-6133 or come by Tuesday–Friday, 9am–1pm — walk-ins are welcome.`,
+Need somewhere to start? Call (970) 245-4672 or come by Tuesday–Friday, 9am–1pm — walk-ins are welcome.`,
   stats: {
     'Meals served': '1,418',
     'Individuals welcomed': '362',

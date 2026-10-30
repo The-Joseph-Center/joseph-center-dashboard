@@ -48,10 +48,23 @@ test('a list followed by a paragraph keeps both', () => {
   assert.match(html, /<p[^>]*>And then a sentence\.<\/p>/);
 });
 
-test('the real Section 2 renders its five bullets', () => {
+test('the real Section 2 renders its bullets, and not the one that is out of service', () => {
   const html = blocksToHtml(OCTOBER_CORRECTED.section2);
-  assert.equal((html.match(/<li/g) ?? []).length, 5);
+  assert.equal((html.match(/<li/g) ?? []).length, 4);
   assert.match(html, /Hot, homemade lunch served at noon/);
+  assert.ok(!/laundry/i.test(html));
+});
+
+test('an empty spotlight figure renders nothing at all', () => {
+  // The row is optional and has no default label: it used to be seeded with
+  // one, which then printed in the email as "Program spotlight stat".
+  const stats = { ...OCTOBER_CORRECTED.stats, '': '' };
+  const html = newsletterHtml(input({ stats }));
+  const from = html.indexOf('This Month in Numbers');
+  const card = html.slice(from, html.indexOf('</table>', from));
+  assert.equal(card.split('<strong').length - 1, 4);
+  assert.ok(!/spotlight/i.test(html));
+  assert.ok(!/<strong[^>]*><\/strong>/.test(html));
 });
 
 test('headings, quotes and numbered lists are unchanged', () => {

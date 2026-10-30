@@ -2,7 +2,7 @@ import { requireCapability, denial } from './_lib/verify-okta';
 import { turso, fetchOktaUsers } from './_lib/staff-directory';
 import {
   TIERS, section4, closingSection, aweberPlan, reviewNewsletter, bridgeLine,
-  DONATE_URL, section3Header, type NewsletterDraft, type Video,
+  DONATE_URL, section3Header, partnersForMonth, quarterOf, type NewsletterDraft, type Video,
 } from './_lib/newsletter';
 import { newsletterHtml, promoteButtons, sectionsHtml } from './_lib/newsletter-html';
 import { SANITY_DATASET as DATASET } from './_lib/sanity-dataset';
@@ -147,7 +147,15 @@ export async function handler(event: {
         // describe, which is what every real month has done.
         stats: { 'Meals served': '', 'Individuals welcomed through our doors': '', 'Families served': '' },
         videos: [],
-        partners: previous ? parse<{ name: string; url: string }[]>(previous.partners, []) : [],
+        // Foundation partners are a quarterly commitment: carried over inside
+        // a quarter, and taken from the quarter's own list when a new quarter
+        // starts rather than from the one that has just ended.
+        partners: ((): { name: string; url: string }[] => {
+          const carried = previous ? parse<{ name: string; url: string }[]>(previous.partners, []) : [];
+          const settled = partnersForMonth(month);
+          const sameQuarter = !!previous && quarterOf(previous.month) === quarterOf(month);
+          return sameQuarter && carried.length ? carried : (settled.length ? settled : carried);
+        })(),
         previewText: '', workbench: {}, status: 'draft', sentAt: null, updatedBy: null, updatedAt: 0,
       };
 
@@ -223,15 +231,13 @@ export async function handler(event: {
         headers: JSON_HEADERS,
         body: JSON.stringify({
           draft, issues, plan, usedTags, partners, history,
-          carriedPartners: !row && !!previous,
+          carriedPartners: !row && !!previous && quarterOf(previous.month) === quarterOf(month),
           bridgeLine: bridgeLine(draft.monthName),
           section3Header: section3Header(month, draft.monthName),
           versions: TIERS.map((t) => ({
             id: t.id, label: t.label, tag: t.aweberTag, excludes: t.excludes,
             subject: t.subject(draft.monthName), signature: t.signature,
-            section4: section4(t, draft.monthName, draft.guestName, {
-              frame: draft.guestFrame === 'calling' ? 'calling' : 'guest',
-            }),
+            section4: section4(t, draft.monthName, draft.guestName),
             closing: closingSection(draft.partners),
           })),
         }),
@@ -259,7 +265,6 @@ export async function handler(event: {
      */
     if (clean(body.action, 20) === 'html') {
       const name = monthName(month);
-      const frame = body.guestFrame === 'calling' ? 'calling' as const : 'guest' as const;
       const workbench = (body.workbench ?? {}) as { coffeeChatUrl?: string };
       const versions = TIERS.map((t) => ({
         id: t.id,
@@ -282,7 +287,7 @@ export async function handler(event: {
           section2: clean(body.section2),
           stats: (body.stats ?? {}) as Record<string, string>,
           videos: (body.videos ?? []) as Video[],
-          section4: section4(t, name, clean(body.guestName, 120), { frame }),
+          section4: section4(t, name, clean(body.guestName, 120)),
           closing: closingSection((body.partners ?? []) as { name: string; url: string }[]),
           signature: t.signature,
           donateUrl: DONATE_URL,
@@ -296,7 +301,7 @@ export async function handler(event: {
           section2: clean(body.section2),
           stats: (body.stats ?? {}) as Record<string, string>,
           videos: (body.videos ?? []) as Video[],
-          section4: section4(t, name, clean(body.guestName, 120), { frame }),
+          section4: section4(t, name, clean(body.guestName, 120)),
           closing: closingSection((body.partners ?? []) as { name: string; url: string }[]),
           signature: t.signature,
           donateUrl: DONATE_URL,

@@ -13,7 +13,9 @@ import assert from 'node:assert/strict';
 import {
   bridgeLine, namesInTranscript, outsideQuotes, quoteTitle, reviewNewsletter,
   section1Parts, sensitiveMentions, watchLabel, composeSection3, SECTION3_INTRO,
-  episodesLabel, section4, TIERS, APPLY_URL, programKey, PROGRAM_BULLETS,
+  episodesLabel, section4, TIERS, APPLY_URL, programKey, PROGRAM_BULLETS, PROGRAM_CTA,
+  PUBLIC_PHONE, JC_PHONES, availableBullets, closingLineFor, CLOSING_SECOND_SENTENCE,
+  quarterOf, partnersForMonth,
   type NewsletterDraft,
 } from '../netlify/functions/_lib/newsletter.ts';
 import { OCTOBER_AS_SENT, OCTOBER_CORRECTED } from './fixtures/newsletters.ts';
@@ -352,50 +354,130 @@ test('the settled Section 4 copy is unchanged for a guest', () => {
   assert.ok(recurring.includes("Dana's story this October happened because people like you give every month, without being asked twice."));
 });
 
-test('the calling frame uses its own sentences, and does not credit the reader for the story', () => {
-  const donor = section4(TIERS[1]!, 'October', 'Dee', { frame: 'calling' });
-  assert.ok(donor.includes('You have already given to The Joseph Center, and what Dee saw here this October is what your giving keeps standing.'));
-  assert.ok(!donor.includes('is part of what that made possible'));
-
-  const recurring = section4(TIERS[2]!, 'October', 'Dee', { frame: 'calling' });
-  assert.ok(recurring.includes('What Dee found here this October is here because people like you give every month, without being asked twice.'));
-  assert.ok(!recurring.includes("Dee's story this October happened because"));
-  // It still has to set up "You built that".
-  assert.ok(recurring.includes('**You built that.**'));
-
+test('one Section 4, whatever the frame', () => {
+  // The calling frame was going to have its own donor and recurring openers;
+  // Eric withdrew that on 2026-10-30 — the existing phrasing reads correctly
+  // for a community partner — so there is one version of this copy again.
   const calling: NewsletterDraft = { ...OCTOBER_CORRECTED, guestFrame: 'calling' };
+  assert.deepEqual(review(calling), review({ ...OCTOBER_CORRECTED, guestFrame: 'guest' }));
   assert.ok(!review(calling).some((i) => i.where === 'Section 4'));
+  assert.equal(section4(TIERS[1]!, 'October', 'Dee'), section4(TIERS[1]!, 'October', 'Dee'));
 });
 
-test('an emptied calling variant is flagged rather than silently falling back', () => {
-  const calling: NewsletterDraft = {
+// ── The public phone number ────────────────────────────────────────────────
+
+test('the retired number is a should-fix, and it says which number to use', () => {
+  const issues = review(OCTOBER_AS_SENT).filter((i) => i.problem.includes('985-6133'));
+  assert.ok(issues.length, text(OCTOBER_AS_SENT));
+  assert.ok(issues.every((i) => i.severity === 'should'));
+  assert.match(issues[0]!.fix, /\(970\) 245-4672/);
+  // And not as a privacy leak, which is what an unknown number is.
+  assert.ok(!musts(OCTOBER_AS_SENT).some((i) => i.problem.includes('985-6133')));
+});
+
+test('the public number is the one the CTAs are built from', () => {
+  assert.ok(PROGRAM_CTA['day shelter']!.includes(PUBLIC_PHONE));
+  assert.ok(PROGRAM_CTA['food pantry']!.includes(PUBLIC_PHONE));
+  assert.ok(JC_PHONES.includes(PUBLIC_PHONE));
+  assert.ok(!JC_PHONES.includes('(970) 985-6133'));
+  assert.ok(!musts(OCTOBER_CORRECTED).some((i) => i.where === 'Contact details'));
+});
+
+test("a stranger's number is still a must-fix", () => {
+  const d = { ...OCTOBER_CORRECTED, section2: `${OCTOBER_CORRECTED.section2}\n\nCall Dana on (970) 555-0134.` };
+  assert.ok(musts(d).some((i) => i.where === 'Contact details' && i.problem.includes('555-0134')));
+});
+
+// ── Services that are not running ──────────────────────────────────────────
+
+test('laundry at the Day Shelter blocks the send', () => {
+  const issues = musts(OCTOBER_AS_SENT).filter((i) => /laundry/i.test(i.problem));
+  assert.ok(issues.length, text(OCTOBER_AS_SENT));
+  assert.match(issues[0]!.problem, /not offering laundry/i);
+  assert.ok(!musts(OCTOBER_CORRECTED).some((i) => /laundry/i.test(i.problem)));
+});
+
+test('the bullets handed to the generator leave it out', () => {
+  assert.ok(PROGRAM_BULLETS['day shelter']!.some((b) => /laundry/i.test(b)));
+  assert.ok(!availableBullets('Day Shelter').some((b) => /laundry/i.test(b)));
+  assert.equal(availableBullets('Day Shelter').length, PROGRAM_BULLETS['day shelter']!.length - 1);
+});
+
+test('the Golden Girls Project keeps its own laundry', () => {
+  const d: NewsletterDraft = {
     ...OCTOBER_CORRECTED,
-    guestFrame: 'calling',
-    section4Variants: { donor: '' },
+    program: 'The Golden Girls Project',
+    section2: `## Somewhere Safe To Land: The Golden Girls Project\n\nSixteen beds.\n\n**What we provide:**\n- Recovery meetings, cooking classes and on-site laundry\n\nEvery person who walks in is walking across the bridge. Where they go from there depends on what they need — but they never walk alone.\n\nKnow a woman 50 or older who needs somewhere safe? [Complete a Referral Form →](josephcentergj.com/forms/referral)`,
   };
-  const issues = review(calling);
-  assert.ok(issues.some((i) => i.severity === 'should' && i.where === 'Section 4'));
-  assert.ok(!issues.some((i) => i.severity === 'must' && i.where === 'Section 4'));
-  // And the guest sentence stands in the meantime, rather than a blank.
-  assert.ok(section4(TIERS[1]!, 'October', 'Dee', { frame: 'calling', variants: { donor: '' } })
-    .includes('is part of what that made possible'));
+  assert.ok(!flags(d, /laundry/i), text(d));
+  assert.ok(availableBullets('The Golden Girls Project').some((b) => /laundry/i.test(b)));
 });
 
-test('a supplied calling variant replaces the sentence and clears the flag', () => {
-  const variants = { donor: 'Dee found us and never left.', 'recurring-donor': 'Dee found us and never left.' };
-  const donor = section4(TIERS[1]!, 'October', 'Dee', { frame: 'calling', variants });
-  assert.ok(donor.includes('Dee found us and never left.'));
-  assert.ok(!donor.includes('is part of what that made possible'));
-  const calling: NewsletterDraft = { ...OCTOBER_CORRECTED, guestFrame: 'calling', section4Variants: variants };
-  assert.ok(!review(calling).some((i) => i.where === 'Section 4'));
+test('a guest quoting laundry is raised, not blocked', () => {
+  const d: NewsletterDraft = {
+    ...OCTOBER_CORRECTED,
+    section1: `${OCTOBER_CORRECTED.section1}\n\n"I did my laundry there every Tuesday," she says of that winter.`,
+  };
+  const issues = review(d).filter((i) => /laundry/i.test(i.problem));
+  assert.ok(issues.length);
+  assert.ok(issues.every((i) => i.severity === 'should'), JSON.stringify(issues));
 });
 
-test('a calling variant is ignored for a guest month', () => {
-  const donor = section4(TIERS[1]!, 'October', 'Dana', {
-    frame: 'guest',
-    variants: { donor: 'should not appear' },
-  });
-  assert.ok(!donor.includes('should not appear'));
+// ── The Day Shelter's closing line ─────────────────────────────────────────
+
+test("the Day Shelter's closing line is settled copy", () => {
+  assert.equal(closingLineFor('Day Shelter'),
+    'Every person who walks through the Day Shelter door is walking across the bridge. Where they go from there depends on what they need — but they never walk alone.');
+  assert.ok(closingLineFor('Day Shelter').endsWith(CLOSING_SECOND_SENTENCE));
+  assert.equal(closingLineFor('Family Center'), '');
+});
+
+test('a Day Shelter month that does not use it is flagged', () => {
+  const d = {
+    ...OCTOBER_CORRECTED,
+    section2: OCTOBER_CORRECTED.section2.replace('walks through the Day Shelter door', 'walks through the door for a hot lunch'),
+  };
+  const issues = review(d).filter((i) => i.where === 'Section 2' && /settled wording/.test(i.problem));
+  assert.equal(issues.length, 1);
+  assert.ok(issues[0]!.fix.includes(CLOSING_SECOND_SENTENCE));
+  assert.ok(!review(OCTOBER_CORRECTED).some((i) => /settled wording/.test(i.problem)));
+});
+
+// ── The quarter's foundation partners ──────────────────────────────────────
+
+test("October's foundations come from the quarter, not from the month", () => {
+  assert.equal(quarterOf('2026-10'), '2026-Q4');
+  assert.equal(quarterOf('2026-09'), '2026-Q3');
+  const names = partnersForMonth('2026-10').map((p) => p.name);
+  assert.deepEqual(names, ['Colorado Health Foundation', 'Western Colorado Community Foundation']);
+  for (const p of partnersForMonth('2026-10')) assert.match(p.url, /^https:\/\//);
+  // Every month of the quarter gets the same two.
+  assert.deepEqual(partnersForMonth('2026-12'), partnersForMonth('2026-10'));
+});
+
+test('an empty partner list is still a should-fix naming who to ask', () => {
+  const d = { ...OCTOBER_CORRECTED, partners: [] };
+  const issue = review(d).find((i) => i.where === 'Closing');
+  assert.match(issue!.fix, /Mona or Shawna/);
+});
+
+// ── First names ────────────────────────────────────────────────────────────
+
+test("a child's first name is fine unless it is on the withhold list", () => {
+  // First names are acceptable in this piece. The checks are for surnames and
+  // for names the writer has asked to keep out — nothing else.
+  const transcript = `[00:04] MONA: Who was with you?\n[00:09] DANA: My daughter Milly Fairweather, she was four.`;
+  const section1 = `${OCTOBER_CORRECTED.section1}\n\nMilly was four that winter, and she slept in the back seat.`;
+  const open: NewsletterDraft = { ...OCTOBER_CORRECTED, transcript, section1, withholdNames: [] };
+  assert.ok(!flags(open, /Milly/), text(open));
+
+  const withheld: NewsletterDraft = { ...open, withholdNames: ['Milly'] };
+  assert.ok(musts(withheld).some((i) => i.where === 'Names to withhold' && i.problem.includes('Milly')));
+
+  // Her surname is a must-fix even with nothing on the withhold list, because
+  // the transcript says it out loud and the draft is where it must not land.
+  const surnamed: NewsletterDraft = { ...open, section1: `${section1} Milly Fairweather started school this year.` };
+  assert.ok(musts(surnamed).some((i) => i.where === 'No last names' && i.problem.includes('Milly Fairweather')), text(surnamed));
 });
 
 // ── The whole thing ────────────────────────────────────────────────────────

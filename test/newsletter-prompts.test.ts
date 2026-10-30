@@ -95,7 +95,48 @@ test("the Day Shelter's bullets include the noon lunch", () => {
   const p = spotlightSystem({ program: 'Day Shelter', monthName: 'October', brandReference: '[ref]' });
   assert.match(p, /Hot, homemade lunch served at noon, Tuesday–Friday/);
   assert.match(p, /walk-ins are welcome/);
-  assert.match(p, /\(970\) 985-6133/);
+  assert.match(p, /\(970\) 245-4672/);
+});
+
+// ── Where the reference is out of date ─────────────────────────────────────
+
+test('the prompt overrides the phone number the reference still lists', () => {
+  for (const p of [
+    spotlightSystem({ program: 'Day Shelter', monthName: 'October', brandReference: '[ref]' }),
+  ]) {
+    assert.match(p, /the public phone number is \(970\) 245-4672/);
+    assert.match(p, /Never write \(970\) 985-6133, whatever the reference says/);
+  }
+});
+
+test('a service that is out of order is named, and left out of the bullets', () => {
+  const p = spotlightSystem({ program: 'Day Shelter', monthName: 'October', brandReference: '[ref]' });
+  assert.match(p, /Day Shelter is not currently offering: laundry/);
+  assert.match(p, /Do not mention laundry in a bullet, a description, a hook or a quotation/);
+  // And the bullet list it is handed does not contain it to copy.
+  assert.ok(!/ {3}- Laundry services/.test(p));
+  assert.match(p, / {3}- Computer access for job applications/);
+});
+
+test('Section 1 is told about it too', () => {
+  const p = section1System({ ...base, frame: 'guest', program: 'Day Shelter' });
+  assert.match(p, /Day Shelter is not currently offering laundry/);
+  assert.ok(!/not currently offering/.test(section1System({ ...base, frame: 'guest', program: 'Family Center' })));
+});
+
+test("the Golden Girls Project keeps the laundry it has", () => {
+  const p = spotlightSystem({ program: 'The Golden Girls Project', monthName: 'October', brandReference: '[ref]' });
+  assert.ok(!/not currently offering/.test(p));
+  assert.match(p, /on-site laundry/);
+});
+
+test("the Day Shelter's closing line is handed over as settled copy", () => {
+  const p = spotlightSystem({ program: 'Day Shelter', monthName: 'October', brandReference: '[ref]' });
+  assert.match(p, /it is settled copy — write it exactly, word for word/);
+  assert.match(p, /Every person who walks through the Day Shelter door is walking across the bridge\./);
+  assert.ok(!/\[action, e\.g\./.test(p));
+  // Every other program still fills the blank in itself.
+  assert.match(spotlightSystem({ program: 'Family Center', monthName: 'October', brandReference: '[ref]' }), /\[action, e\.g\./);
 });
 
 test('IFS gets its own terminology and its own CTA', () => {

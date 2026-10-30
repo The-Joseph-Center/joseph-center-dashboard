@@ -216,7 +216,8 @@ Every one is a plain string test, so they are consistent and free.
 | AWeber tag with no year | Or the same tag comes round again next year and re-triggers |
 | A first name followed by a surname | Matched against the guest, the staff roster and the transcript. Organisation names, this month's partners, the program name and anything in **Names that are not people** are blanked first |
 | A name on the withhold list | The writer's own list — minors, anyone who did not consent |
-| A phone number or email in Sections 1–2 | Only JC's own published numbers belong in the newsletter |
+| A phone number or email in Sections 1–2 | Only JC's own published numbers belong in the newsletter. The public number is **(970) 245-4672** — `PUBLIC_PHONE` in `newsletter.ts`, which the CTAs, the allowlist and the prompts all read. The retired (970) 985-6133 is a should-fix, not a block |
+| A service the spotlight program is not currently offering | `UNAVAILABLE_SERVICES` in `newsletter.ts` — seeded with the Day Shelter's laundry. Per program: the Golden Girls Project has its own. Outranks the brand reference, filters the bullets handed to the generator, and the prompts say so outright |
 | "Homeless people", "the homeless", "being homeless" | Say "people experiencing homelessness". Direct quotations are exempt |
 | `[X]`, TBD, XX, "once they're finalized", "we'll share" | In Sections 1–3, and in the preview text |
 | A stat label that is a slot name | "Program spotlight stat" is scaffolding, not a measurement. Rename it in This Month in Numbers |
@@ -235,8 +236,22 @@ it; fewer than four paragraphs, or one that runs to a wall of text; month-tied w
 outside the bridge line; "charity", "the less fortunate", "handout", "hand up" (JC says
 "a hand forward"); a Section 2 header without the "{Hook}: {Program}" pattern; a missing
 per-program closing CTA; doubled quotation marks in a video title; a stat label with no
-unit noun; fewer than four figures in This Month in Numbers; and, in a calling-frame month, the donor and recurring-donor Section 4s still
-crediting the reader for the story.
+unit noun; fewer than four figures in This Month in Numbers; the retired (970) 985-6133 anywhere in
+Sections 1–2; and a quotation that mentions a service the spotlight program is not currently offering.
+
+Section 4 is one set of settled sentences for every frame. A calling-frame month was briefly
+going to have its own donor and recurring-donor openers; that was withdrawn on 2026-10-30.
+
+**Where the brand reference is out of date.** It is not edited from here — it lists (970) 985-6133
+for the Day Shelter and laundry among its services, and both are wrong as of October 2026. The tool
+holds the current word in `PUBLIC_PHONE` and `UNAVAILABLE_SERVICES`, hands the reference to the
+model as it stands, and then overrides it in the prompt. When the reference itself is next revised,
+these two can go.
+
+**Foundation partners are quarterly.** `QUARTERLY_PARTNERS` in `newsletter.ts`, keyed `2026-Q4`.
+A new month inside a quarter carries the list over; a new quarter starts from the quarter's own
+list rather than from the one that has just ended, and the panel offers it as one chip. Still
+confirmed with Mona or Shawna before the quarter's first send.
 
 **Raised, never removed:** mentions of a death, custody or foster placement, an arrest or
 a medical condition. Fine if it is the guest's own and they told it on air; not fine for

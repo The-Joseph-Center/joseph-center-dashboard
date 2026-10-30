@@ -10,7 +10,27 @@
  * The brand reference is passed in rather than imported so a test does not drag
  * 20KB of it along, and so there is one copy of it in the bundle.
  */
-import { PROGRAM_BULLETS, PROGRAM_CTA, bridgeLine, programKey } from './newsletter.ts';
+import {
+  PROGRAM_CTA, PUBLIC_PHONE, RETIRED_PHONES, availableBullets, bridgeLine, closingLineFor,
+  programKey, unavailableFor,
+} from './newsletter.ts';
+
+/**
+ * Where the brand reference is out of date.
+ *
+ * The reference is handed to the model verbatim and it is not ours to edit, so
+ * anything that has changed since has to be said again, after it, as an
+ * override. Both prompts carry this.
+ */
+const referenceOverrides = (program = ''): string => {
+  const out = unavailableFor(program);
+  return [
+    `The reference is out of date in one place: the public phone number is ${PUBLIC_PHONE}. Never write ${RETIRED_PHONES.join(' or ')}, whatever the reference says.`,
+    out.length
+      ? `${program} is not currently offering: ${out.join(', ')}. The reference still lists ${out.join(', ')} — it is wrong. Do not mention ${out.join(' or ')} in a bullet, a description, a hook or a quotation you choose to use.`
+      : '',
+  ].filter(Boolean).join('\n');
+};
 
 export interface Section1PromptInput {
   guest: string;
@@ -55,7 +75,7 @@ Do not write an eyebrow line and do not write the "Watch their full story" butto
 Requirements:
 - Name which program or programs served them${d.program ? `; this month's spotlight is ${d.program}` : ''}.
 - First names only, for everyone. No surnames, ever — not the guest's, not a family member's, not a staff member's.${withheld.length ? `\n- These names must not appear at all: ${withheld.join(', ')}. Refer to them by relationship instead — "her son", "the baby", "her sister".` : ''}
-- No phone numbers, email addresses or street addresses, even when the transcript has them.
+- No phone numbers, email addresses or street addresses, even when the transcript has them.${unavailableFor(d.program).length ? `\n- ${d.program} is not currently offering ${unavailableFor(d.program).join(', ')}. The reference still lists it; the reference is wrong. Do not have the story mention it as something on offer.` : ''}
 - Say "people experiencing homelessness". Never "homeless people", "the homeless" or "being homeless" — except inside a direct quotation, which is never altered.
 - Do not use "charity", "the less fortunate", "handout" or "hand up". The Joseph Center offers a hand forward.
 - Nothing tied to the month except the bridge line. "This October" is wrong by the time the email sends — and wrong again when somebody reads the archive.
@@ -80,8 +100,9 @@ export interface SpotlightPromptInput {
 
 export function spotlightSystem(d: SpotlightPromptInput): string {
   const key = programKey(d.program);
-  const bullets = key ? PROGRAM_BULLETS[key] : undefined;
+  const bullets = key ? availableBullets(d.program) : undefined;
   const cta = key ? PROGRAM_CTA[key] : undefined;
+  const closing = closingLineFor(d.program);
   const isIfs = /\bIFS\b|integrated financial services/i.test(d.program);
 
   return `You draft Section 2 of The Joseph Center's monthly newsletter: the program spotlight. This month's spotlight is ${d.program}.
@@ -96,11 +117,13 @@ Write it in this order, and nothing else:
     ? `Use these, in this order:\n${bullets.map((b) => `   - ${b}`).join('\n')}`
     : `Four to six items, drawn from the program's entry in the reference above.`}
 5. A short paragraph on this month's figures. Use ONLY figures the writer has given you. If they have given none, leave this paragraph out entirely and ask for them in gaps — never estimate, never reuse a headline statistic as though it were this month's, and never write a placeholder like [X] or TBD.
-6. The closing line, exactly this shape, with the blank filled in so it reads naturally for this program:
-
-Every person who [action, e.g. "walks through the door for a hot lunch"] is walking across the bridge. Where they go from there depends on what they need — but they never walk alone.
+6. The closing line. ${closing
+    ? `For ${d.program} it is settled copy — write it exactly, word for word:\n\n${closing}`
+    : `Exactly this shape, with the blank filled in so it reads naturally for this program:\n\nEvery person who [action, e.g. "walks through the door for a hot lunch"] is walking across the bridge. Where they go from there depends on what they need — but they never walk alone.`}
 
 7. The closing CTA. ${cta ? `For ${d.program} it is exactly this:\n\n${cta}` : `A single line telling a reader who knows someone in need what to do next — a referral form or a phone number, whichever fits this program.`}
+
+${referenceOverrides(d.program)}
 
 Requirements:
 - Do not invent a program detail. If it is not in the reference above or in the writer's notes, it does not go in.

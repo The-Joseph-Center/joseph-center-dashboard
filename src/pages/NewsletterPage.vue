@@ -6,7 +6,7 @@ import { apiFetch } from '@/lib/api';
 // The one composer, shared with the functions that build the email. Section 3
 // was being assembled separately here, which is how the copy-out and the sent
 // version came to differ.
-import { composeSection3, GREETING } from '../../netlify/functions/_lib/newsletter';
+import { composeSection3, GREETING, partnersForMonth, quarterOf } from '../../netlify/functions/_lib/newsletter';
 
 // The monthly newsletter, built in one place.
 //
@@ -122,13 +122,36 @@ async function loadTranscriptFiles(list: FileList | null | undefined) {
  */
 const flatten = (t: string) => t.toLowerCase().replace(/[\u2018\u2019\u201c\u201d]/g, "'").replace(/[^a-z0-9']+/g, ' ').trim();
 
-function quoteContext(quote: string): { found: boolean; text: string } {
+const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const around = (turns: string[], i: number) => turns.slice(Math.max(0, i - 1), i + 2).join('\n\n');
+
+function quoteContext(quote: string): { found: boolean; text: string; note: string } {
   const turns = transcript.value.split(/\n\n+/);
   const needle = flatten(quote);
-  if (!needle) return { found: false, text: '' };
-  const i = turns.findIndex((t) => flatten(t).includes(needle));
-  if (i === -1) return { found: false, text: '' };
-  return { found: true, text: turns.slice(Math.max(0, i - 1), i + 2).join('\n\n') };
+  if (!needle) return { found: false, text: '', note: '' };
+  const exact = turns.findIndex((t) => flatten(t).includes(needle));
+  if (exact !== -1) return { found: true, text: around(turns, exact), note: '' };
+
+  /*
+   * A quote that matches except for one missing word is almost always a name:
+   * first names only is the rule, so the draft trims the surname the recording
+   * still has. Reporting that as "not found in the transcript" sends the writer
+   * looking for a drift that is not there.
+   */
+  const words = needle.split(' ');
+  for (let gap = 1; gap < words.length; gap++) {
+    const re = new RegExp(`${words.slice(0, gap).map(escapeRe).join(' ')} (\\S+) ${words.slice(gap).map(escapeRe).join(' ')}`);
+    for (let i = 0; i < turns.length; i++) {
+      const dropped = re.exec(flatten(turns[i]!))?.[1];
+      if (!dropped) continue;
+      // Capitalised where it is actually written, so it reads as a name rather
+      // than a word the writer happened to cut.
+      const asWritten = new RegExp(`\\b${escapeRe(dropped)}\\b`, 'i').exec(turns[i]!)?.[0] ?? '';
+      const note = /^[A-Z]/.test(asWritten) ? '(name trimmed to first name)' : '(one word differs from the recording)';
+      return { found: true, text: around(turns, i), note };
+    }
+  }
+  return { found: false, text: '', note: '' };
 }
 
 const openQuote = ref(-1);
@@ -787,6 +810,22 @@ const usePartner = (p: { name: string; url: string }) => {
 
 const addVideo = () => draft.value?.videos.push({ title: '', url: '' });
 const removeVideo = (i: number) => draft.value?.videos.splice(i, 1);
+/**
+ * The quarter's settled foundations.
+ *
+ * The closing asks for them every month and they only change four times a
+ * year, which is how a month went out with the placeholder still in it. Still
+ * confirmed with Mona or Shawna before the quarter's first send — this saves
+ * the typing, not the asking.
+ */
+const quarterPartners = computed(() => partnersForMonth(month.value));
+function useQuarterPartners() {
+  if (!draft.value) return;
+  for (const p of quarterPartners.value) {
+    if (!draft.value.partners.some((x) => x.name === p.name)) draft.value.partners.push({ ...p });
+  }
+}
+
 const addPartner = () => draft.value?.partners.push({ name: '', url: '' });
 const removePartner = (i: number) => draft.value?.partners.splice(i, 1);
 
@@ -1068,7 +1107,8 @@ const fullVersion = (v: Version) => {
               <button type="button" class="linkish quotes__q" @click="openQuote = openQuote === i ? -1 : i">
                 &ldquo;{{ q }}&rdquo;
               </button>
-              <span v-if="!quoteContext(q).found" class="hint hint--warn"> — not found in the transcript, check the wording</span>
+              <span v-if="quoteContext(q).note" class="hint"> — {{ quoteContext(q).note }}</span>
+              <span v-else-if="!quoteContext(q).found" class="hint hint--warn"> — not found in the transcript, check the wording</span>
               <pre v-if="openQuote === i && quoteContext(q).found" class="quotes__context">{{ quoteContext(q).text }}</pre>
             </li>
           </ul>
@@ -1268,6 +1308,12 @@ const fullVersion = (v: Version) => {
           Confirm with Mona or Shawna before each quarter changes.
           <span v-if="carriedPartners"> Carried over from last month — check they are still current.</span>
         </p>
+        <div v-if="quarterPartners.length" class="suggest-partners">
+          <span class="suggest-partners__label">{{ quarterOf(month) }}:</span>
+          <button type="button" class="chip" @click="useQuarterPartners">
+            {{ quarterPartners.map((p) => p.name).join(' + ') }}
+          </button>
+        </div>
         <div v-if="partnerHistory.length" class="suggest-partners">
           <span class="suggest-partners__label">From the home-page marquee — never featured first, then least recent:</span>
           <button

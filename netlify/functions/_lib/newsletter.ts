@@ -84,7 +84,26 @@ export const APPLY_URL = 'josephcentergj.com/media/apply';
  * contact detail in those sections is treated as a leak unless it is one of
  * these — published, and ours to publish.
  */
-export const JC_PHONES = ['(970) 245-9425', '(970) 985-6133', '(970) 985-5114'];
+/**
+ * The number public copy gives out.
+ *
+ * The brand reference still lists (970) 985-6133 for the Day Shelter, and the
+ * reference is handed to the drafting model verbatim — so the generator will
+ * keep reaching for the old number until something tells it not to. This is
+ * the one the tool uses: the CTAs are built from it, the allowlist carries it,
+ * and the prompts carry an explicit override. The reference files themselves
+ * are left alone; they are not ours to edit here.
+ */
+export const PUBLIC_PHONE = '(970) 245-4672';
+/** The main office, unchanged, and the payee office for IFS. */
+export const JC_PHONES = ['(970) 245-9425', PUBLIC_PHONE, '(970) 985-5114'];
+/**
+ * Numbers that were public and are not any more.
+ *
+ * Flagged rather than blocked: it is a JC number, not somebody's private line,
+ * so it is a correction to make, not a privacy leak to stop the month over.
+ */
+export const RETIRED_PHONES = ['(970) 985-6133'];
 export const JC_EMAILS = ['jc@josephcentergj.com', 'ephifer@josephcentergj.com', 'josephcentergj@gmail.com'];
 
 /** First names that appear in newsletter copy by design, from the brand reference. */
@@ -116,41 +135,16 @@ const PERSONAL_LETTER = `Would you like to receive a personal letter from Mona? 
 const REPLY = `Have a question or just want to share something? Reply to this email and someone from our team will get back to you. We're always happy to hear from our partners.`;
 
 /**
- * The one sentence in Section 4 that assumes the guest was helped.
+ * Section 4, per tier.
  *
- * The donor and recurring-donor versions both open by crediting the reader for
- * the month's story. That is true of a guest and wrong of a community partner
- * or board member: nobody's giving produced Denise's decision to volunteer. So
- * the calling frame has its own sentence for those two tiers.
- *
- * Settled copy, chosen by Eric on 2026-10-29, and held to the same rule as the
- * rest of Section 4: not regenerated, not paraphrased. Each keeps its tier's
- * job — the donor sentence hands off to the upgrade ask, the recurring one has
- * to land on "You built that" two paragraphs later — without implying the
- * month's subject was ever in need of help.
- *
- * `{guest}` and `{month}` are filled in by section4().
+ * One set of settled sentences, whatever the frame. A calling-frame month was
+ * briefly going to have its own wording for the donor and recurring-donor
+ * openers; Eric withdrew that on 2026-10-30 — the existing phrasing reads
+ * correctly for a community partner — so there is one version of this copy
+ * again, and nothing here varies by frame.
  */
-export const CALLING_SECTION4_VARIANTS: Record<'donor' | 'recurring-donor', string> = {
-  donor: 'You have already given to The Joseph Center, and what {guest} saw here this {month} is what your giving keeps standing.',
-  'recurring-donor': 'What {guest} found here this {month} is here because people like you give every month, without being asked twice.',
-};
-
-export interface Section4Options {
-  frame?: 'guest' | 'calling';
-  /** Overrides for the frame-sensitive sentence, by tier id. */
-  variants?: Partial<Record<'donor' | 'recurring-donor', string>>;
-}
-
-export function section4(tier: Tier, month: string, guest: string, opts: Section4Options = {}): string {
+export function section4(tier: Tier, month: string, guest: string): string {
   const who = guest || 'this month’s guest';
-  const variants = { ...CALLING_SECTION4_VARIANTS, ...(opts.variants ?? {}) };
-  const variantFor = (id: 'donor' | 'recurring-donor') => {
-    if (opts.frame !== 'calling') return '';
-    return (variants[id] ?? '').trim()
-      .split('{guest}').join(who)
-      .split('{month}').join(month);
-  };
   if (tier.id === 'community-friend') {
     return `## ${tier.section4Header}
 
@@ -170,8 +164,7 @@ Prefer to give once? A one-time gift goes to work the day it arrives.
   }
 
   if (tier.id === 'donor') {
-    const opener = variantFor('donor')
-      || `You have already given to The Joseph Center, and ${who}'s story this ${month} is part of what that made possible.`;
+    const opener = `You have already given to The Joseph Center, and ${who}'s story this ${month} is part of what that made possible.`;
     return `## ${tier.section4Header}
 
 ${opener}
@@ -192,8 +185,7 @@ Prefer to give once again this month? That matters too.
 ${PERSONAL_LETTER}`;
   }
 
-  const recurringOpener = variantFor('recurring-donor')
-    || `${who}'s story this ${month} happened because people like you give every month, without being asked twice.`;
+  const recurringOpener = `${who}'s story this ${month} happened because people like you give every month, without being asked twice.`;
   return `## ${tier.section4Header}
 
 ${recurringOpener}
@@ -210,6 +202,32 @@ ${PERSONAL_LETTER}
 
 ${REPLY}`;
 }
+
+/** The quarter a month falls in, as "2026-Q4". */
+export const quarterOf = (month: string): string => {
+  const [y, m] = (month ?? '').split('-').map(Number);
+  return y && m ? `${y}-Q${Math.ceil(m / 3)}` : '';
+};
+
+/**
+ * The foundation partners named in the closing, by quarter.
+ *
+ * A quarterly commitment that the tool treated as a monthly question: the
+ * closing asked for the list every month, so a month that nobody answered went
+ * out with the placeholder in it. Carried over inside a quarter and taken from
+ * here when a new one starts — still confirmed with Mona or Shawna before the
+ * quarter's first send, which is what the panel says and what the review asks.
+ */
+export const QUARTERLY_PARTNERS: Record<string, { name: string; url: string }[]> = {
+  '2026-Q4': [
+    { name: 'Colorado Health Foundation', url: 'https://coloradohealth.org' },
+    { name: 'Western Colorado Community Foundation', url: 'https://wc-cf.org' },
+  ],
+};
+
+/** This month's quarter's partners, if they have been settled. */
+export const partnersForMonth = (month: string): { name: string; url: string }[] =>
+  QUARTERLY_PARTNERS[quarterOf(month)] ?? [];
 
 export function closingSection(partners: { name: string; url: string }[]): string {
   const list = partners.length
@@ -283,6 +301,37 @@ export const PROGRAM_BULLETS: Record<string, string[]> = {
 };
 
 /**
+ * Services a program is not offering at the moment.
+ *
+ * The Day Shelter's laundry is out of service, and the brand reference still
+ * lists it — so October's spotlight offered it in the bullets and again in the
+ * description, and somebody could have come down to Belford for a machine that
+ * is not running. This outranks the reference everywhere: the bullets handed to
+ * the generator are filtered, the prompt is told in as many words, and the
+ * review stops the send if the word turns up anyway.
+ *
+ * Per program, because it has to be. The Golden Girls Project has its own
+ * laundry on site and always has.
+ */
+export const UNAVAILABLE_SERVICES: Record<string, string[]> = {
+  'day shelter': ['laundry'],
+};
+
+/** What this month's program is not offering. */
+export const unavailableFor = (program: string): string[] => {
+  const key = programKey(program);
+  return (key && UNAVAILABLE_SERVICES[key]) || [];
+};
+
+/** The program's bullets, with anything out of service taken out. */
+export const availableBullets = (program: string): string[] => {
+  const key = programKey(program);
+  const out = unavailableFor(program);
+  return ((key && PROGRAM_BULLETS[key]) || [])
+    .filter((b: string) => !out.some((term) => new RegExp(`\\b${escapeRe(term)}`, 'i').test(b)));
+};
+
+/**
  * How Section 2 ends, per program.
  *
  * Not one CTA for everything: the Day Shelter's answer to "I need help" is to
@@ -290,11 +339,35 @@ export const PROGRAM_BULLETS: Record<string, string[]> = {
  * form. A generic "contact us" is the version that helps nobody.
  */
 export const PROGRAM_CTA: Record<string, string> = {
-  'day shelter': `Need somewhere to start? Call (970) 985-6133 or come by Tuesday–Friday, 9am–1pm — walk-ins are welcome.`,
-  'food pantry': `Lunch is at noon, Tuesday–Friday, and walk-ins are welcome. Call (970) 985-6133 with any questions.`,
+  'day shelter': `Need somewhere to start? Call ${PUBLIC_PHONE} or come by Tuesday–Friday, 9am–1pm — walk-ins are welcome.`,
+  'food pantry': `Lunch is at noon, Tuesday–Friday, and walk-ins are welcome. Call ${PUBLIC_PHONE} with any questions.`,
   'integrated financial services': `To ask about representative payee services, call (970) 985-5114.`,
   'family center': `Know a parent who needs support? [Complete a Referral Form →](${REFERRAL_URL})`,
   'golden girls project': `Know a woman 50 or older who needs somewhere safe? [Complete a Referral Form →](${REFERRAL_URL})`,
+};
+
+/**
+ * The second sentence of Section 2's closing line. Settled copy, verbatim.
+ */
+export const CLOSING_SECOND_SENTENCE =
+  'Where they go from there depends on what they need — but they never walk alone.';
+
+/**
+ * The first sentence, where a program has a settled one.
+ *
+ * The shape is "Every person who {action} is walking across the bridge", and
+ * the action used to be left to the model every month. The Day Shelter's is
+ * fixed now: it is the door the sentence is about.
+ */
+export const CLOSING_FIRST_SENTENCE: Record<string, string> = {
+  'day shelter': 'Every person who walks through the Day Shelter door is walking across the bridge.',
+};
+
+/** The whole closing line for a program, or '' where the action is still the model's to fill. */
+export const closingLineFor = (program: string): string => {
+  const key = programKey(program);
+  const first = key ? CLOSING_FIRST_SENTENCE[key] : undefined;
+  return first ? `${first} ${CLOSING_SECOND_SENTENCE}` : '';
 };
 
 /** Which of the five programs a month's free-text program field means, if any. */
@@ -424,8 +497,6 @@ export interface NewsletterDraft {
   transcript?: string;
   /** The writer's Section 2 notes — a figure they supplied counts as sourced. */
   spotlightNotes?: string;
-  /** Calling-frame replacements for Section 4's frame-sensitive sentence. */
-  section4Variants?: Partial<Record<'donor' | 'recurring-donor', string>>;
 }
 
 /**
@@ -542,6 +613,7 @@ const CONTACT_PHONE = /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g;
 const CONTACT_EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
 const onlyDigits = (s: string) => s.replace(/\D+/g, '');
 const JC_PHONE_DIGITS = new Set(JC_PHONES.map(onlyDigits));
+const RETIRED_PHONE_DIGITS = new Set(RETIRED_PHONES.map(onlyDigits));
 const JC_EMAIL_SET = new Set(JC_EMAILS.map((e) => e.toLowerCase()));
 
 /** Wording that goes out of date between drafting and sending, or never got filled in. */
@@ -749,6 +821,13 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
     return n.length === 11 && n.startsWith('1') ? n.slice(1) : n;
   };
   for (const found of body.match(CONTACT_PHONE) ?? []) {
+    // A number of ours that is no longer the public one is a correction, not
+    // a leak: say which number it should be and let the month go.
+    if (RETIRED_PHONE_DIGITS.has(nationalDigits(found))) {
+      add('should', 'Contact details', `${found} is not the public number any more.`,
+        `The number for the Day Shelter and the Food Pantry is ${PUBLIC_PHONE}. The brand reference still lists the old one.`);
+      continue;
+    }
     if (JC_PHONE_DIGITS.has(nationalDigits(found))) continue;
     add('must', 'Contact details', `A phone number appears in the story: ${found}.`,
       `Only JC's own published numbers belong in the newsletter: ${JC_PHONES.join(', ')}.`);
@@ -757,6 +836,22 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
     if (JC_EMAIL_SET.has(found.toLowerCase())) continue;
     add('must', 'Contact details', `An email address appears in the story: ${found}.`,
       'Take it out. Someone who wants to be reachable can be reached through The Joseph Center.');
+  }
+
+  // ── Services that are not running ──────────────────────────────────────
+  //
+  // Scoped to this month's program, because the term is only a promise when it
+  // is the program being written about: the Golden Girls Project has its own
+  // laundry, and a guest remembering a laundromat is not an offer of anything.
+  for (const term of unavailableFor(d.program)) {
+    const re = new RegExp(`\\b${escapeRe(term)}\\b`, 'i');
+    if (re.test(outsideQuotes(body))) {
+      add('must', 'Section 2', `${d.program} is not offering ${term} at the moment, and the draft offers it.`,
+        `Take it out of the bullets and out of the description. Someone reads this and comes down for it. The brand reference still lists ${term} — the override in the tool is the current word.`);
+    } else if (re.test(body)) {
+      add('should', 'Section 2', `A quotation mentions ${term}, which ${d.program} is not offering at the moment.`,
+        'The quote may be about an earlier visit, in which case it can stay. Make sure nothing around it reads as an offer.');
+    }
   }
 
   // ── Terminology, outside what people actually said ─────────────────────
@@ -894,7 +989,10 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
     };
     for (const v of Object.values(d.stats ?? {})) addNumbers(String(v ?? ''));
     addNumbers(d.spotlightNotes ?? '');
-    for (const phone of JC_PHONES) sourced.add(onlyDigits(phone));
+    // The retired number counts as a phone number here too: it has its own
+    // should-fix, and listing its digits as unsourced figures on top of that
+    // tells the writer nothing.
+    for (const phone of [...JC_PHONES, ...RETIRED_PHONES]) sourced.add(onlyDigits(phone));
 
     const monthly = d.section2.split(/\n{2,}/).filter((para) =>
       new RegExp(`\\b(?:this month|${escapeRe(d.monthName)})\\b`, 'i').test(para));
@@ -905,7 +1003,7 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
         const n = m[0].replace(/,/g, '');
         if (sourced.has(n)) continue;
         if (/^(?:19|20)\d{2}$/.test(n)) continue;          // a year, not a count
-        if (onlyDigits(para).includes(n) && JC_PHONES.some((ph) => onlyDigits(ph).includes(n))) continue;
+        if (onlyDigits(para).includes(n) && [...JC_PHONES, ...RETIRED_PHONES].some((ph) => onlyDigits(ph).includes(n))) continue;
         unsourced.add(m[0]);
       }
     }
@@ -926,15 +1024,6 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
     }
   }
 
-  // ── Section 4, when the guest was never a guest ────────────────────────
-  if (d.guestFrame === 'calling') {
-    const variants = { ...CALLING_SECTION4_VARIANTS, ...(d.section4Variants ?? {}) };
-    if (!(variants.donor ?? '').trim() || !(variants['recurring-donor'] ?? '').trim()) {
-      add('should', 'Section 4', 'This month uses the calling frame, and one of the two frame-sensitive sentences is empty.',
-        `${d.guestName || 'A community partner'} was never in crisis, so the guest wording does not fit. Restore the calling variant for the donor and recurring-donor versions.`);
-    }
-  }
-
   // ── the rest of the standards ──
   if (d.section1 && !d.section1.includes('hope has an address'))
     add('should', 'Section 1', 'The standard bridge line is missing from the end of the story.', bridgeLine(d.monthName));
@@ -952,8 +1041,13 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
   else if (d.previewText.trim().length > 140)
     add('must', 'Preview text', `Preview text is ${d.previewText.trim().length} characters; inboxes cut it off at about 140.`, 'Keep it to a single sentence.');
 
-  if (!d.section2.includes('Every person who'))
-    add('should', 'Section 2', 'The standard bridge closing line is missing.', '"Every person who [action] is walking across the bridge. Where they go from there depends on what they need — but they never walk alone."');
+  const settledClosing = closingLineFor(d.program);
+  if (settledClosing && d.section2.trim() && !d.section2.includes(settledClosing)) {
+    add('should', 'Section 2', `The closing line is not ${d.program}'s settled wording.`, `"${settledClosing}"`);
+  } else if (!settledClosing && !d.section2.includes('Every person who')) {
+    add('should', 'Section 2', 'The standard bridge closing line is missing.',
+      `"Every person who [action] is walking across the bridge. ${CLOSING_SECOND_SENTENCE}"`);
+  }
 
   return issues;
 }
