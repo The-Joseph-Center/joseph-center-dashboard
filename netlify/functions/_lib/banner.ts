@@ -7,26 +7,6 @@
  */
 
 /**
- * Could these two ever be on screen at the same moment?
- *
- * An absent start or end is open-ended in that direction, so a banner with no
- * dates at all overlaps everything — which is right: it is the one that shows
- * until somebody turns it off.
- */
-export function windowsOverlap(
-  a: { startsAt?: string; endsAt?: string },
-  b: { startsAt?: string; endsAt?: string },
-): boolean {
-  const at = (v: string | undefined, fallback: number) => {
-    const t = v ? Date.parse(v) : NaN;
-    return Number.isNaN(t) ? fallback : t;
-  };
-  const aStart = at(a.startsAt, -Infinity), aEnd = at(a.endsAt, Infinity);
-  const bStart = at(b.startsAt, -Infinity), bEnd = at(b.endsAt, Infinity);
-  return aStart <= bEnd && bStart <= aEnd;
-}
-
-/**
  * Which banner the website would be showing at a given moment.
  *
  * There is one slot and banners can be scheduled, so two can be live at once —

@@ -1,6 +1,6 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { SANITY_DATASET } from './_lib/sanity-dataset';
-import { fromPortableText, toPortableText, windowsOverlap } from './_lib/banner';
+import { fromPortableText, toPortableText } from './_lib/banner';
 
 /**
  * The site-wide notice — closures, changed hours, announcements.
@@ -11,17 +11,24 @@ import { fromPortableText, toPortableText, windowsOverlap } from './_lib/banner'
  * text plus an optional link and writes valid portable text back, so Studio and
  * the website keep working with exactly the shape they already expect.
  *
- * Only one banner can show at a time — the site takes the first match — so
- * switching one on switches off the others it would collide with. Leaving that
- * to whoever is posting means the day it is forgotten, which banner appears is
- * decided by the order Sanity happens to return.
+ * Only one banner shows at a time, and posting one **switches nothing off**.
  *
- * "Collide with" and not "every other banner", which is what this used to do.
- * A banner can be scheduled, and switching off a banner whose week has not
- * arrived yet is not housekeeping, it is deleting a plan: writing next month's
- * closure notice would take down the campaign running today, three weeks before
- * the closure. Two banners for two different weeks are not in competition and
- * both stay on.
+ * That is a reversal. This used to deactivate every other banner, and then
+ * every banner whose dates overlapped. Both were wrong, and the second was
+ * wrong in a way that only appeared when somebody tried to use the feature: a
+ * run of consecutive banners — campaign, closure, campaign again — touches or
+ * overlaps at every handover, so posting the second deleted the first and the
+ * third deleted the second. A queue could not be entered at all.
+ *
+ * It is also unnecessary. The site resolves two live banners by showing the one
+ * that ends soonest (see `bannerShowingAt`), so an overlap is not a conflict to
+ * be prevented — it is the ordinary way a closure sits inside a month-long
+ * campaign. Replacing a banner still works without any of it: two open-ended
+ * banners tie on end date and fall back to the most recently edited, so the new
+ * one takes the slot.
+ *
+ * What is left is a queue the dashboard shows in full, and switching one off is
+ * something a person does deliberately.
  */
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
@@ -170,29 +177,11 @@ export async function handler(event: {
       ? [{ patch: { id, set: fields, ...(unset.length ? { unset } : {}) } }]
       : [{ create: { _type: 'banner', ...fields } }];
 
-    // Only one can show at a time, so switching this one on switches off the
-    // ones whose weeks it shares — and only those.
-    const switchedOff: string[] = [];
-    if (active) {
-      for (const other of banners) {
-        if (other._id === id || other.active === false) continue;
-        if (!windowsOverlap({ startsAt, endsAt }, other)) continue;
-        mutations.push({ patch: { id: other._id, set: { active: false } } });
-        switchedOff.push(other.title || other._id);
-      }
-    }
-
     const result = await sanityMutate(mutations) as { results?: { id: string }[] };
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
-      body: JSON.stringify({
-        saved: true,
-        id: id || result.results?.[0]?.id || null,
-        // Named, so that switching one off is something the person saw happen
-        // rather than something they find out about later.
-        switchedOff,
-      }),
+      body: JSON.stringify({ saved: true, id: id || result.results?.[0]?.id || null }),
     };
   } catch (err) {
     console.error('admin-banner:', err);

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import { apiFetch } from '@/lib/api';
-import { bannerShowingAt, windowsOverlap } from '../../netlify/functions/_lib/banner';
+import { bannerShowingAt } from '../../netlify/functions/_lib/banner';
 
 // The notice across the top of every page — closures, changed hours,
 // announcements.
@@ -25,14 +25,6 @@ const loading = ref(true);
 const error = ref('');
 const saving = ref(false);
 const savedAt = ref(0);
-/**
- * Banners this save switched off.
- *
- * Only ones sharing a week with what was just posted, since only one can show
- * at a time. Said out loud because the alternative is finding out later that
- * posting a notice took something else down.
- */
-const switchedOff = ref<string[]>([]);
 const busyId = ref<string | null>(null);
 const confirmDelete = ref<string | null>(null);
 
@@ -90,12 +82,30 @@ const shelved = computed(() =>
   banners.value.filter((b) => !isOn(b) || endOf(b) < Date.now())
 );
 
-/** Which already-scheduled banners this draft would take down if posted. */
-const wouldSwitchOff = computed(() => {
-  const draft = { startsAt: fromLocal(form.value.startsAt), endsAt: fromLocal(form.value.endsAt) };
-  return banners.value.filter(
-    (b) => b._id !== form.value._id && isOn(b) && endOf(b) >= Date.now() && windowsOverlap(draft, b)
-  );
+/**
+ * What this draft will actually do, given everything already queued.
+ *
+ * Posting takes nothing down, so the useful warning is the opposite one: a
+ * banner can be saved, scheduled, correct in every field and still never
+ * appear, because something ending sooner holds the slot for its whole window.
+ * Better to say so beside the button than let it be discovered in December.
+ */
+const hiddenByOnPost = computed(() => {
+  if (!form.value.text && !form.value.linkLabel) return null;
+  const draft: Banner = {
+    ...(form.value as unknown as Banner),
+    _id: form.value._id || '__draft',
+    // Saving sets it, so the tie-break between open-ended banners has to be
+    // judged on what it is about to become, not what it was.
+    _updatedAt: new Date().toISOString(),
+    startsAt: fromLocal(form.value.startsAt) || undefined,
+    endsAt: fromLocal(form.value.endsAt) || undefined,
+    active: true,
+  };
+  const rest = banners.value.filter((b) => b._id !== draft._id);
+  const at = Math.max(startOf(draft), Date.now());
+  const winner = bannerShowingAt([...rest, draft], at);
+  return winner && winner._id !== draft._id ? winner : null;
 });
 
 const startsLater = computed(() => {
@@ -179,7 +189,6 @@ async function post(payload: Record<string, unknown>, id = '') {
     const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d.error || String(res.status));
     savedAt.value = Date.now();
-    switchedOff.value = Array.isArray(d.switchedOff) ? d.switchedOff : [];
     confirmDelete.value = null;
     await load();
     return true;
@@ -272,8 +281,9 @@ const remove = (b: Banner) => post({ action: 'delete', _id: b._id }, b._id);
       <section class="widget block">
         <h2 class="block__title">{{ editingExisting ? 'Edit the banner' : 'Post a banner' }}</h2>
         <p class="block__hint">
-          Give it dates and it joins the queue — it does not have to go up now. Posting it only takes
-          down banners that share its dates; ones set for other weeks are left alone.
+          Give it dates and it joins the queue — it does not have to go up now, and posting it takes
+          nothing else down. Where two banners share dates the one ending soonest shows, so a closure
+          notice can sit inside a longer campaign and the campaign comes back afterwards.
         </p>
 
         <div v-if="!editingExisting" class="templates">
@@ -303,11 +313,11 @@ const remove = (b: Banner) => post({ action: 'delete', _id: b._id }, b._id);
           — worth setting for anything temporary, so a closure notice cannot outlive the closure.
         </p>
 
-        <p v-if="wouldSwitchOff.length" class="warn">
-          This shares dates with
-          <strong>{{ wouldSwitchOff.map((b) => b.text || b.title).join(', ') }}</strong>,
-          so posting it will switch {{ wouldSwitchOff.length === 1 ? 'that one' : 'those' }} off.
-          Only one banner shows at a time.
+        <p v-if="hiddenByOnPost" class="warn">
+          This will not appear:
+          <strong>{{ hiddenByOnPost.text || hiddenByOnPost.title }}</strong>
+          ends sooner and holds the slot for the whole of this one's window. Give this one a later
+          start, or fold both messages into a single banner.
         </p>
 
         <div class="preview preview--draft" v-if="form.text || form.linkLabel">
@@ -328,10 +338,6 @@ const remove = (b: Banner) => post({ action: 'delete', _id: b._id }, b._id);
           </button>
           <button v-if="editingExisting" type="button" class="linkish" @click="blank">Cancel</button>
           <span v-if="savedAt && !saving" class="ok">Saved</span>
-          <span v-if="switchedOff.length && !saving" class="block__hint">
-            Switched off, because it shares these dates:
-            {{ switchedOff.join(', ') }}
-          </span>
         </div>
       </section>
 

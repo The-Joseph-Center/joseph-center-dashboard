@@ -100,3 +100,52 @@ test('the pick does not depend on the order it was given', () => {
     );
   }
 });
+
+// ── The schedule can actually be entered ───────────────────────────────────
+
+test('a run of consecutive banners hands over without gaps', () => {
+  /**
+   * The November/December plan, checked moment by moment. This is the test that
+   * caught the real bug: posting a banner used to switch off any whose dates
+   * overlapped, and consecutive banners touch or overlap at every handover, so
+   * entering the second deleted the first. Nothing is switched off now, and the
+   * end-soonest rule does the sequencing.
+   */
+  const queue = [
+    { _id: 'at-1', endsAt: '2026-11-09T15:00:00Z', _updatedAt: '2026-10-30T00:00:00Z' },
+    { _id: 'thanks', startsAt: '2026-11-09T15:00:00Z', endsAt: '2026-11-28T07:00:00Z', _updatedAt: '2026-10-30T00:01:00Z' },
+    { _id: 'at-2', startsAt: '2026-11-27T19:00:00Z', endsAt: '2026-12-01T15:00:00Z', _updatedAt: '2026-10-30T00:02:00Z' },
+    { _id: 'xmas', startsAt: '2026-12-07T15:00:00Z', endsAt: '2026-12-26T07:00:00Z', _updatedAt: '2026-10-30T00:03:00Z' },
+  ];
+
+  const on = (iso: string) => bannerShowingAt(queue, at(iso))?._id ?? null;
+
+  assert.equal(on('2026-11-02T12:00:00Z'), 'at-1');
+  // The handover instant: both are live, and the one ending now wins, so there
+  // is no moment with nothing up.
+  assert.equal(on('2026-11-09T15:00:00Z'), 'at-1');
+  assert.equal(on('2026-11-09T15:00:01Z'), 'thanks');
+  assert.equal(on('2026-11-23T12:00:00Z'), 'thanks');
+  // at-2 overlaps the closure deliberately; the closure keeps the slot.
+  assert.equal(on('2026-11-27T20:00:00Z'), 'thanks');
+  assert.equal(on('2026-11-28T12:00:00Z'), 'at-2');
+  assert.equal(on('2026-11-30T12:00:00Z'), 'at-2');
+  // The deliberate quiet week.
+  assert.equal(on('2026-12-03T12:00:00Z'), null);
+  assert.equal(on('2026-12-07T16:00:00Z'), 'xmas');
+  assert.equal(on('2026-12-25T12:00:00Z'), 'xmas');
+  assert.equal(on('2026-12-28T12:00:00Z'), null);
+
+  // Every banner in the queue gets the slot at some point — none is dead weight.
+  const shown = new Set(
+    ['2026-11-02', '2026-11-23', '2026-11-30', '2026-12-25'].map((d) => on(`${d}T12:00:00Z`))
+  );
+  assert.deepEqual([...shown].sort(), ['at-1', 'at-2', 'thanks', 'xmas']);
+});
+
+test('replacing an open-ended banner still works without switching it off', () => {
+  // The everyday case — "we are closed today" posted over last week's notice.
+  const old = { _id: 'old', _updatedAt: '2026-10-01T00:00:00Z' };
+  const fresh = { _id: 'fresh', _updatedAt: '2026-10-30T12:00:00Z' };
+  assert.equal(bannerShowingAt([old, fresh], at('2026-10-30T13:00:00Z'))?._id, 'fresh');
+});
