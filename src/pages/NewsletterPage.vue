@@ -453,6 +453,25 @@ const automationsUpdated = ref(false);
 const sendResult = ref<{ added: number; already: number; failed: number; failedEmails: string[]; markedSent: boolean } | null>(null);
 /** How far through the list the tagging has got, while it is running. */
 const sendProgress = ref<{ tagged: number; active: number } | null>(null);
+/**
+ * Seconds left of a rate-limit wait.
+ *
+ * Counted down out loud. AWeber allows 120 requests a minute and then stops
+ * answering for sixty seconds, so a send of 243 subscribers has to sit out two
+ * or three of these — and a button that goes quiet for a minute with no
+ * explanation looks exactly like one that has hung.
+ */
+const sendWaiting = ref(0);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** A visible countdown rather than one long silence. */
+async function waitOut(ms: number) {
+  sendWaiting.value = Math.ceil(ms / 1000);
+  while (sendWaiting.value > 0) {
+    await sleep(1000);
+    sendWaiting.value--;
+  }
+}
 
 /**
  * What to say when a request fails without saying why.
@@ -508,13 +527,35 @@ async function applyTag() {
      * that fails costs nothing but the time.
      */
     let added = 0, already = 0, failedEmails: string[] = [], markedSent = false;
+    // Gateway failures, which get a little patience and then stop the run.
+    let stumbles = 0;
     for (let pass = 0; ; pass++) {
       const res = await apiFetch('/.netlify/functions/newsletter-aweber', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ month: month.value, confirm: confirmTag.value, automationsUpdated: automationsUpdated.value }),
       });
       const d = await res.json().catch(() => ({}));
+
       if (!res.ok) {
+        // A rate limit is an instruction, not a refusal: wait it out and pick
+        // up where it stopped.
+        if (res.status === 429) {
+          await waitOut(d.retryAfterMs ?? 60_000);
+          continue;
+        }
+        /**
+         * A gateway failure, which is worth one patient retry.
+         *
+         * 502 is what Netlify returns when the function itself threw, and the
+         * honest answer is that we cannot tell a transient AWeber problem from
+         * a real one from out here. Retrying twice with a wait costs a couple
+         * of minutes; giving up costs a half-tagged list.
+         */
+        if ((res.status === 502 || res.status === 504) && stumbles < 2) {
+          stumbles++;
+          await waitOut(60_000);
+          continue;
+        }
         // A refusal carries the reasons; show them rather than only the count.
         if (sendState.value && Array.isArray(d.blocking)) {
           sendState.value = { ...sendState.value, ready: false, blocking: d.blocking };
@@ -534,12 +575,24 @@ async function applyTag() {
       sendProgress.value = { tagged: d.tagged ?? 0, active: d.active ?? 0 };
 
       if (d.done) break;
-      // A pass that reached its time limit without tagging anybody will not do
-      // better on the next one, and looping on it would hammer AWeber.
+
+      // Rate limited before it could tag anyone. Not progress, but not a
+      // problem either — the wait is the whole fix.
+      if (d.stoppedBy === 'throttled' && !d.added) {
+        await waitOut(d.retryAfterMs ?? 60_000);
+        continue;
+      }
+      // A pass that spent its time or its quota and still tagged nobody will
+      // not do better next time, and looping on it would hammer AWeber.
       if (!d.added) {
         throw new Error(`Stopped with ${d.remaining} subscribers still untagged — the last pass tagged nobody. ${d.failed ? `Failed: ${failedEmails.join(', ')}` : 'Check AWeber, then run it again.'}`);
       }
       if (pass > 60) throw new Error(`Gave up after ${pass} passes with ${d.remaining} still untagged. Run it again — anyone already tagged is skipped.`);
+
+      // AWeber's quota is per minute, and a pass spends most of one. Coming
+      // straight back would earn a 403 and a sixty-second lockout, which is
+      // what stopped October's send at 175 of 243.
+      await waitOut(d.retryAfterMs ?? 60_000);
     }
 
     sendResult.value = { added, already, failed: failedEmails.length, failedEmails, markedSent };
@@ -550,6 +603,7 @@ async function applyTag() {
   } finally {
     sending.value = false;
     sendProgress.value = null;
+    sendWaiting.value = 0;
   }
 }
 
@@ -1575,7 +1629,12 @@ const fullVersion = (v: Version) => {
                   <strong>Check last month's automations are off</strong>, so an old one cannot fire on a
                   subscriber who has just been tagged.
                 </li>
-                <li><strong>Apply the tag below.</strong> That is the send.</li>
+                <li>
+                  <strong>Apply the tag below.</strong> That is the send. Expect it to take a few
+                  minutes and to pause along the way: AWeber allows 120 requests a minute, tagging is
+                  one request per subscriber, and it waits out each limit and carries on by itself.
+                  Leave the tab open until it says the month is sent.
+                </li>
               </ol>
 
               <label class="attest">
@@ -1590,12 +1649,19 @@ const fullVersion = (v: Version) => {
                 <input v-model="confirmTag" type="text" :placeholder="sendState.tag" class="confirm" />
                 <button type="button" class="btn btn--danger btn--sm" :disabled="sending || !automationsUpdated || confirmTag !== sendState.tag" @click="applyTag">
                   {{ sending
-                    ? (sendProgress ? `Tagging… ${sendProgress.tagged} of ${sendProgress.active}` : 'Tagging subscribers…')
+                    ? (sendWaiting
+                        ? `Waiting out AWeber's limit — ${sendWaiting}s`
+                        : (sendProgress ? `Tagging… ${sendProgress.tagged} of ${sendProgress.active}` : 'Tagging subscribers…'))
                     : `Apply the tag to ${sendState.totals.toTag} subscribers` }}
                 </button>
               </div>
             </template>
           </template>
+
+          <p v-if="sending && sendWaiting" class="hint">
+            AWeber has had its 120 requests for this minute and stops answering for sixty seconds.
+            Nothing has gone wrong and nobody is tagged twice — this picks up where it stopped.
+          </p>
 
           <div v-if="sendResult" class="result">
             <p><strong>{{ sendResult.added }}</strong> tagged<span v-if="sendResult.already">, {{ sendResult.already }} already had it</span><span v-if="sendResult.failed">, <strong>{{ sendResult.failed }} failed</strong></span>.</p>

@@ -38,10 +38,49 @@ export function aweberConfig(): AweberConfig | null {
     : null;
 }
 
+/**
+ * AWeber is rate limiting us.
+ *
+ * Worth its own type because it is the one failure here that is not a failure:
+ * nothing is wrong, the answer is to wait. Told apart from a real error it
+ * becomes a pause; lumped in with them it ends a send three quarters of the way
+ * through, which is what it did to October.
+ *
+ * The limit is **120 requests per minute per account** and cannot be raised.
+ * Over it, AWeber answers 403 — not 429 — with "Rate Limit Error" in the body,
+ * and then refuses everything for sixty seconds. Both halves of that matter:
+ * handling only 429 misses it entirely, and a 403 has to be read before it is
+ * believed, because an expired token and a missing scope answer 403 too.
+ */
+export class AweberThrottled extends Error {
+  readonly retryAfterMs: number;
+  constructor(retryAfterMs = 60_000) {
+    super('AWeber is rate limiting — 120 requests a minute, then a sixty-second lockout.');
+    this.name = 'AweberThrottled';
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+const RATE_LIMITED = /rate limit/i;
+
+/**
+ * Every AWeber request this invocation has made.
+ *
+ * The scarce resource is requests per minute, not seconds of runtime, so it has
+ * to be counted — including the reads before the tagging loop, which cost the
+ * same as a tag. Reset at the top of each invocation because Netlify reuses a
+ * warm container and a counter left over from the last one would stop a pass
+ * before it started.
+ */
+let requestCount = 0;
+export const resetRequestCount = () => { requestCount = 0; };
+export const requestsMade = () => requestCount;
+
 let cached: { token: string; expiresAt: number } | null = null;
 
 export async function accessToken(cfg: AweberConfig): Promise<string> {
   if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
+  requestCount++;
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: {
@@ -74,16 +113,28 @@ async function api<T>(
   cfg: AweberConfig, path: string, init?: RequestInit, attempt = 0,
 ): Promise<{ status: number; body: T }> {
   const token = await accessToken(cfg);
+  requestCount++;
   const res = await fetch(`${API}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   });
-  if ((res.status === 429 || res.status >= 500) && attempt < 2) {
+  const body = (await res.json().catch(() => ({}))) as T & { error?: { message?: string } };
+
+  // Not retried here, and deliberately: the wait is sixty seconds and a
+  // function has ten. Thrown instead, for the caller to hand back to a client
+  // that can afford to wait.
+  if (res.status === 429 || (res.status === 403 && RATE_LIMITED.test(body?.error?.message ?? ''))) {
     const after = Number(res.headers.get('retry-after'));
-    await sleep(Number.isFinite(after) && after > 0 ? Math.min(after * 1000, 1000) : 300 * (attempt + 1));
+    throw new AweberThrottled(Number.isFinite(after) && after > 0 ? after * 1000 : 60_000);
+  }
+
+  // A wobble is worth one short retry on the spot. A rate limit is not a
+  // wobble, which is why it is handled above this.
+  if (res.status >= 500 && attempt < 2) {
+    await sleep(300 * (attempt + 1));
     return api<T>(cfg, path, init, attempt + 1);
   }
-  return { status: res.status, body: (await res.json().catch(() => ({}))) as T };
+  return { status: res.status, body: body as T };
 }
 
 /**
@@ -160,6 +211,10 @@ export interface TagRun {
   remaining: number;
   /** Every untagged subscriber was attempted — there is no more to do. */
   done: boolean;
+  /** Why it stopped, when it did not finish. */
+  stoppedBy?: 'time' | 'quota' | 'throttled';
+  /** How long to leave it before the next pass. */
+  retryAfterMs?: number;
 }
 
 /**
@@ -185,27 +240,58 @@ export async function tagEveryone(
   subscribers: Subscriber[],
   tag: string,
   apply: (s: Subscriber) => Promise<unknown>,
-  opts: { budgetMs: number; startedAt: number; now?: () => number },
+  opts: {
+    budgetMs: number;
+    startedAt: number;
+    /** Requests this invocation may spend in total, reads included. */
+    maxRequests: number;
+    now?: () => number;
+    spent?: () => number;
+  },
 ): Promise<TagRun> {
   const now = opts.now ?? Date.now;
+  const spent = opts.spent ?? requestsMade;
   const todo = subscribers.filter((s) => !s.tags.includes(tag));
   const already = subscribers.length - todo.length;
   const failed: string[] = [];
   let added = 0;
-  let done = true;
+  let stoppedBy: TagRun['stoppedBy'];
 
   for (const s of todo) {
-    if (now() - opts.startedAt >= opts.budgetMs) { done = false; break; }
+    // Three ways to stop, and only one of them is finishing. The clock is the
+    // function's ten-second limit; the quota is AWeber's hundred and twenty a
+    // minute; a throttle is that quota already spent, by this run or by the
+    // website taking a signup at the same moment.
+    if (now() - opts.startedAt >= opts.budgetMs) { stoppedBy = 'time'; break; }
+    if (spent() >= opts.maxRequests) { stoppedBy = 'quota'; break; }
     try {
       await apply(s);
       added++;
     } catch (err) {
+      if (err instanceof AweberThrottled) {
+        // Everyone after this one would fail the same way, so stop rather than
+        // writing the rest of the list into `failed` — which is how a rate
+        // limit turns into two hundred apparent delivery failures.
+        stoppedBy = 'throttled';
+        return {
+          added, already, failed, remaining: todo.length - added,
+          done: false, stoppedBy, retryAfterMs: err.retryAfterMs,
+        };
+      }
       failed.push(s.email);
       console.error('aweber: tagging failed for', s.email, err);
     }
   }
 
-  return { added, already, failed, remaining: todo.length - added, done };
+  return {
+    added, already, failed, remaining: todo.length - added,
+    done: !stoppedBy,
+    stoppedBy,
+    // Stopping on the clock means roughly eighty requests went out in under
+    // seven seconds, so the minute's quota is spent either way. Coming straight
+    // back would earn a 403 and a lockout.
+    retryAfterMs: stoppedBy ? 60_000 : undefined,
+  };
 }
 
 /**

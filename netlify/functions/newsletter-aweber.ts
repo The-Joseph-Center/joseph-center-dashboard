@@ -1,9 +1,10 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { turso, fetchOktaUsers } from './_lib/staff-directory';
 import { reviewNewsletter, aweberPlan, composeSection3, GREETING, type NewsletterDraft, type Video } from './_lib/newsletter';
+import type { Subscriber } from './_lib/aweber';
 import {
   aweberConfig, missingScopes, allSubscribers, addTag, describeAudience, REQUIRED_SCOPES,
-  listDrafts, createDraft, tagEveryone,
+  listDrafts, createDraft, tagEveryone, resetRequestCount, requestsMade, AweberThrottled,
 } from './_lib/aweber';
 import { TIERS, section4, closingSection, DONATE_URL } from './_lib/newsletter';
 import { newsletterHtml, promoteButtons } from './_lib/newsletter-html';
@@ -100,6 +101,16 @@ async function loadForReview(month: string) {
  */
 const PASS_BUDGET_MS = 6_500;
 
+/**
+ * Requests a pass may spend, out of AWeber's hundred and twenty a minute.
+ *
+ * Short of the limit on purpose. The newsletter is not the only thing using
+ * this account — the website's signup form shares the quota — and a visitor
+ * subscribing mid-send should not be the request that gets refused. The
+ * remainder is their headroom.
+ */
+const PASS_MAX_REQUESTS = 90;
+
 export async function handler(event: {
   httpMethod: string;
   headers: Record<string, string>;
@@ -107,6 +118,9 @@ export async function handler(event: {
   queryStringParameters: Record<string, string> | null;
 }) {
   const startedAt = Date.now();
+  // Netlify reuses warm containers, so the count has to be cleared per
+  // invocation or a pass inherits the last one's spending and does nothing.
+  resetRequestCount();
   const auth = await requireCapability(event.headers, 'newsletter');
   if (!auth.ok) return denial(auth);
 
@@ -302,13 +316,36 @@ export async function handler(event: {
       return { statusCode: 409, headers: JSON_HEADERS, body: JSON.stringify({ error: `"${draft.aweberTag}" has been used before. Subscribers can only enter an automation once, so everyone who received that newsletter would be skipped.` }) };
     }
 
-    const subscribers = await allSubscribers(cfg);
-    const active = subscribers.filter((s) => s.status === 'subscribed');
+    /**
+     * A pass that cannot even read the list.
+     *
+     * The three paged reads before the loop cost quota like anything else, so
+     * the throttle can land before a single tag is applied. That is a pause,
+     * not a failure, and answering 502 for it is what ended October's send at
+     * 175 with "Could not read subscribers (403)" on screen.
+     */
+    let active: Subscriber[];
+    try {
+      const subscribers = await allSubscribers(cfg);
+      active = subscribers.filter((s) => s.status === 'subscribed');
+    } catch (err) {
+      if (!(err instanceof AweberThrottled)) throw err;
+      return {
+        statusCode: 200,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          tag: draft.aweberTag,
+          added: 0, already: 0, failed: 0, failedEmails: [],
+          done: false, stoppedBy: 'throttled', retryAfterMs: err.retryAfterMs,
+          requests: requestsMade(), markedSent: false,
+        }),
+      };
+    }
 
     const run = await tagEveryone(
       active, draft.aweberTag,
       (s) => addTag(cfg, s, draft.aweberTag),
-      { budgetMs: PASS_BUDGET_MS, startedAt },
+      { budgetMs: PASS_BUDGET_MS, startedAt, maxRequests: PASS_MAX_REQUESTS },
     );
 
     // The month is sent once every active subscriber carries the tag, which is
@@ -331,8 +368,12 @@ export async function handler(event: {
         already: run.already,
         failed: run.failed.length,
         failedEmails: run.failed.slice(0, 20),
-        // What the page needs to decide whether to come back for another pass.
+        // What the page needs to decide whether to come back for another pass,
+        // and how long to leave it.
         done: run.done,
+        stoppedBy: run.stoppedBy,
+        retryAfterMs: run.retryAfterMs,
+        requests: requestsMade(),
         remaining: run.remaining,
         active: active.length,
         tagged: active.length - run.remaining,
@@ -341,6 +382,16 @@ export async function handler(event: {
     };
   } catch (err) {
     console.error('newsletter-aweber:', err);
+    if (err instanceof AweberThrottled) {
+      return {
+        statusCode: 429,
+        headers: { ...JSON_HEADERS, 'Retry-After': String(Math.ceil(err.retryAfterMs / 1000)) },
+        body: JSON.stringify({
+          error: 'AWeber is rate limiting — it allows 120 requests a minute and then stops answering for a minute. Nothing is wrong; wait a minute and try again.',
+          retryAfterMs: err.retryAfterMs,
+        }),
+      };
+    }
     const message = err instanceof Error ? err.message : 'Request failed';
     return { statusCode: 502, headers: JSON_HEADERS, body: JSON.stringify({ error: message }) };
   }
