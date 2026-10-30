@@ -26,6 +26,51 @@ export function windowsOverlap(
   return aStart <= bEnd && bStart <= aEnd;
 }
 
+/**
+ * Which banner the website would be showing at a given moment.
+ *
+ * There is one slot and banners can be scheduled, so two can be live at once —
+ * a closure inside a month-long campaign is the ordinary case. The site resolves
+ * that by showing the one that **ends soonest**, with an open-ended banner last:
+ * a near end date means a closure or a deadline, and a campaign running for
+ * weeks can wait its turn. Two that are equally open-ended fall back to the most
+ * recently edited.
+ *
+ * This exists so the dashboard can say the same thing the site will do. The
+ * rule lived only in a GROQ `order()` clause in SiteBanner.vue, which meant the
+ * dashboard had to guess — and it guessed "first in the list", so with two live
+ * banners it named the wrong one. The two repos cannot share code, so the test
+ * beside this pins the behaviour and the GROQ clause is written to match.
+ */
+export interface Scheduled {
+  _id: string;
+  active?: boolean;
+  startsAt?: string;
+  endsAt?: string;
+  _updatedAt?: string;
+}
+
+const startMs = (b: Scheduled) =>
+  b.startsAt ? new Date(b.startsAt).getTime() : Number.NEGATIVE_INFINITY;
+const endMs = (b: Scheduled) =>
+  b.endsAt ? new Date(b.endsAt).getTime() : Number.POSITIVE_INFINITY;
+
+/** On, started, and not yet finished. */
+export const isShowingAt = (b: Scheduled, at: number): boolean =>
+  b.active !== false && startMs(b) <= at && endMs(b) >= at;
+
+export function bannerShowingAt<T extends Scheduled>(list: T[], at: number): T | null {
+  const showing = list.filter((b) => isShowingAt(b, at));
+  if (!showing.length) return null;
+  return [...showing].sort((a, b) => {
+    const ea = endMs(a), eb = endMs(b);
+    // Both open-ended compare equal here — Infinity minus Infinity is NaN, so
+    // the inequality has to be checked rather than subtracted blind.
+    if (ea !== eb) return ea - eb;
+    return (b._updatedAt ?? '').localeCompare(a._updatedAt ?? '');
+  })[0]!;
+}
+
 /** Random enough for a _key; Sanity only requires uniqueness within the array. */
 const key = () => Math.random().toString(36).slice(2, 14);
 
