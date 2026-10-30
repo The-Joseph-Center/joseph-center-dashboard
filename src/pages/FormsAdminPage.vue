@@ -20,11 +20,15 @@ interface Form {
   activeDates: { start?: string; end?: string } | null;
   description: string; successMessage: string; notifyEmail: string; notifyMode: string;
   fields: Field[];
-  cap: { limit?: number; countField?: string; alreadyCounted?: number; fullMessage?: string } | null;
+  cap: {
+    limit?: number; countField?: string; alreadyCounted?: number;
+    estimateField?: string; fullMessage?: string;
+  } | null;
   capacity: {
     capped: boolean; limit: number; counted: number; recorded: number;
     alreadyCounted: number; remaining: number; full: boolean;
-    submissions: number; withoutCount: number;
+    uncounted: number; estimate: number; pending: boolean; enforced: boolean;
+    submissions: number;
   } | null;
   status: { open: boolean; state: 'closed' | 'open' | 'before-start' | 'after-end' | 'full' };
   years: { year: string; count: number }[];
@@ -46,7 +50,8 @@ const editing = ref<string | null>(null);
 const draft = ref<Record<string, {
   title: string; description: string; successMessage: string; notifyEmail: string;
   notifyMode: string; startAt: string; endAt: string; fields: Field[];
-  capLimit: string; capCountField: string; capAlreadyCounted: string; capFullMessage: string;
+  capLimit: string; capCountField: string; capAlreadyCounted: string;
+  capEstimateField: string; capFullMessage: string;
 }>>({});
 
 // Built here rather than on the server: Netlify runs in UTC, and a date
@@ -108,6 +113,7 @@ function edit(f: Form) {
       capLimit: f.cap?.limit ? String(f.cap.limit) : '',
       capCountField: f.cap?.countField ?? '',
       capAlreadyCounted: f.cap?.alreadyCounted ? String(f.cap.alreadyCounted) : '',
+      capEstimateField: f.cap?.estimateField ?? '',
       capFullMessage: f.cap?.fullMessage ?? '',
       fields: (f.fields ?? []).map((x) => ({ ...x, options: [...(x.options ?? [])] })),
     },
@@ -147,7 +153,8 @@ async function save(f: Form, confirmKeyChange = false) {
         successMessage: d.successMessage, notifyEmail: d.notifyEmail, notifyMode: d.notifyMode,
         startAt: fromLocalInput(d.startAt), endAt: fromLocalInput(d.endAt),
         capLimit: d.capLimit, capCountField: d.capCountField,
-        capAlreadyCounted: d.capAlreadyCounted, capFullMessage: d.capFullMessage,
+        capAlreadyCounted: d.capAlreadyCounted, capEstimateField: d.capEstimateField,
+        capFullMessage: d.capFullMessage,
         fields: d.fields, confirmKeyChange,
       }),
     });
@@ -221,7 +228,9 @@ const busy = computed(() => (id: string) => savingId.value === id);
               <template v-if="f.capacity.alreadyCounted">
                 ({{ f.capacity.recorded }} recorded + {{ f.capacity.alreadyCounted }} counted earlier)
               </template>
-              <template v-if="!f.capacity.full">· {{ f.capacity.remaining }} to go</template>
+              <template v-if="f.capacity.enforced && !f.capacity.full">
+                · {{ f.capacity.remaining }} to go
+              </template>
             </template>
           </p>
           </div>
@@ -300,17 +309,42 @@ const busy = computed(() => (id: string) => savingId.value === id);
               <span class="f__note">
                 Added to the total. The sign-ups taken before that question existed carry no number to add
                 up, so this is your own figure for them.
-                <template v-if="f.capacity?.withoutCount">
-                  <strong>{{ f.capacity.withoutCount }}</strong> stored
-                  sign-up{{ f.capacity.withoutCount === 1 ? '' : 's' }} currently
-                  {{ f.capacity.withoutCount === 1 ? 'has' : 'have' }} no number.
-                </template>
+              </span>
+            </label>
+            <label class="f">
+              <span>Use this answer as evidence</span>
+              <input v-model="draft[f._id]!.capEstimateField" type="text" placeholder="e.g. householdSize" />
+              <span class="f__note">
+                Only to help you fill in the figure above. The sign-ups with no count are added up by this
+                answer instead and shown below. It is never used to close the form — counting adults as
+                children would shut the sign-up early and turn families away.
               </span>
             </label>
             <label class="f">
               <span>What to say when it is full</span>
               <textarea v-model="draft[f._id]!.capFullMessage" rows="2" placeholder="Leave blank for the default" />
             </label>
+
+            <p v-if="f.capacity?.pending" class="warn">
+              <strong>This limit is not closing the form yet.</strong>
+              {{ f.capacity.uncounted }} sign-up{{ f.capacity.uncounted === 1 ? '' : 's' }}
+              {{ f.capacity.uncounted === 1 ? 'was' : 'were' }} taken before the counting question
+              existed, so the total is short by an unknown amount and acting on it would close the
+              form far too late.
+              <template v-if="f.capacity.estimate">
+                Those {{ f.capacity.uncounted }} come to
+                <strong>{{ f.capacity.estimate }}</strong>
+                by <code>{{ f.cap?.estimateField }}</code> — an upper bound, since not everyone in a
+                household is a child.
+              </template>
+              Enter a figure above and the limit starts working.
+            </p>
+            <p v-else-if="f.capacity?.enforced" class="block__hint">
+              Counting <code>{{ f.cap?.countField || 'sign-ups' }}</code>:
+              {{ f.capacity.counted }} of {{ f.capacity.limit }}.
+              <template v-if="f.capacity.full">The form is closed to new sign-ups.</template>
+              <template v-else>It closes itself at {{ f.capacity.limit }}.</template>
+            </p>
           </div>
 
           <h3 class="sub">Questions</h3>

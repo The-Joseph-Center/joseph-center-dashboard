@@ -81,7 +81,8 @@ type FormState = 'closed' | 'open' | 'before-start' | 'after-end' | 'full';
 function statusOf(f: Form, capacity?: CapStatus): { open: boolean; state: FormState } {
   if (f.active === false || f.active == null) return { open: false, state: 'closed' };
   // Before the dates, because a form that is full is full whatever the dates
-  // say, and "full" is the useful thing to read on the page.
+  // say, and "full" is the useful thing to read on the page. A cap that is not
+  // yet enforced never reads as full — see form-cap.ts.
   if (capacity?.full) return { open: false, state: 'full' };
   const now = Date.now();
   const start = f.activeDates?.start ? new Date(f.activeDates.start).getTime() : null;
@@ -129,12 +130,13 @@ export async function handler(event: {
        * asking how many children were in the household.
        */
       const capped = forms.filter((f) => f.cap?.limit && f.slug);
-      const capacities = new Map<string, CapStatus & { submissions: number; withoutCount: number }>();
+      const capacities = new Map<string, CapStatus & { submissions: number }>();
       for (const f of capped) {
         try {
-          const { recorded, submissions, withoutCount } =
-            await countRecorded(turso(), f.slug!, f.cap?.countField);
-          capacities.set(f._id, { ...capStatus(f.cap, recorded), submissions, withoutCount });
+          const count = await countRecorded(
+            turso(), f.slug!, f.cap?.countField, f.cap?.estimateField
+          );
+          capacities.set(f._id, { ...capStatus(f.cap, count), submissions: count.submissions });
         } catch (err) {
           console.error('admin-forms: could not count', f.slug, err);
         }
@@ -267,6 +269,7 @@ export async function handler(event: {
         limit,
         ...(clean(body.capCountField, 80) ? { countField: clean(body.capCountField, 80) } : {}),
         alreadyCounted: whole(body.capAlreadyCounted),
+        ...(clean(body.capEstimateField, 80) ? { estimateField: clean(body.capEstimateField, 80) } : {}),
         ...(clean(body.capFullMessage, 1000) ? { fullMessage: clean(body.capFullMessage, 1000) } : {}),
       };
     } else {
