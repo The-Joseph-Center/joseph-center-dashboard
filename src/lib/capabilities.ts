@@ -28,6 +28,7 @@ export type Capability =
   | 'taxData'     // year-end giving totals for acknowledgments and the 990
   | 'banners'     // the site-wide notice: closures, hours, announcements
   | 'newsletter'  // build the monthly newsletter
+  | 'coffeeChatInvite' // invite someone to apply as a Coffee Chat guest
   | 'billing'    // invoices, admin only
   | 'duties'     // read the recurring marketing duties list
   | 'dutiesEdit' // change a duty's status — Web Developer only for now
@@ -70,6 +71,23 @@ export type FormId =
  */
 const DEV = 'Web Developer';
 
+/**
+ * 'Executive Assistant' is deliberately absent from every list below.
+ *
+ * The role is vacant — the person who held it moved to Social Media & Content —
+ * and a group with no members is a grant waiting to be handed to whoever is
+ * hired, by a person doing onboarding rather than by anyone deciding. Left in
+ * place it would have given a new assistant the letter queue (home addresses),
+ * the Coffee Chat inbox, the seasonal forms and the site banner on their first
+ * day, as a side effect of a group name nobody re-read.
+ *
+ * So when the role is filled, add the group back to the lists the job actually
+ * needs. Removed: events, letters, coffee-chat, seasonal and subscribers here,
+ * plus content, banners and newsletter in RULES. Nothing was orphaned by taking
+ * it out — every one of those lists kept another owner, which is the check to
+ * repeat if a group is ever removed again.
+ */
+
 export const FORM_ACCESS: Record<FormId, string[]> = {
   // The general inbox, so the people who answer the phone and the door can see
   // it. All three director groups are named rather than left to ADMIN_GROUP:
@@ -81,15 +99,14 @@ export const FORM_ACCESS: Record<FormId, string[]> = {
   // The archived applications from the previous site's form. Same people,
   // same purpose, so the same groups read them.
   'volunteers-past': [DEV, ADMIN_GROUP, 'Operational Director', 'Social Media & Content'],
-  events: [DEV, 'Operational Director', 'Social Media & Content', 'Executive Assistant'],
+  events: [DEV, 'Operational Director', 'Social Media & Content'],
   // Mona's queue.
-  letters: [DEV, 'Executive Director', 'Executive Assistant'],
+  letters: [DEV, 'Executive Director'],
   // Guest applications for the podcast — booked and coordinated by the people
   // who make the episodes.
-  'coffee-chat': [DEV, 'Social Media & Content', 'Executive Assistant'],
-  seasonal: [DEV, 'Operational Director', 'Executive Assistant', 'Event Coordinator'],
-  // The Executive Assistant helps with social.
-  subscribers: [DEV, 'Social Media & Content', 'Executive Assistant'],
+  'coffee-chat': [DEV, 'Social Media & Content'],
+  seasonal: [DEV, 'Operational Director', 'Event Coordinator'],
+  subscribers: [DEV, 'Social Media & Content'],
 };
 
 /** '*' means every authenticated staff member. */
@@ -103,7 +120,7 @@ export const RULES: Record<Capability, string[] | '*'> = {
   // Deliberately not everyone. Site performance is the concern of the people
   // who act on it.
   analytics: [ADMIN_GROUP, 'Social Media & Content'],
-  content: [DEV, ADMIN_GROUP, 'Social Media & Content', 'Executive Assistant'],
+  content: [DEV, ADMIN_GROUP, 'Social Media & Content'],
   // Its own capability rather than folding into billing, so onboarding can be
   // delegated later without also handing over the invoices.
   staffAdmin: [ADMIN_GROUP],
@@ -124,9 +141,20 @@ export const RULES: Record<Capability, string[] | '*'> = {
   // Posting to the front page of the site is not a front-desk task, even for
   // something urgent — this stays with the people accountable for what the
   // organization says publicly.
-  banners: [DEV, ADMIN_GROUP, 'Operational Director', 'Executive Assistant'],
+  banners: [DEV, ADMIN_GROUP, 'Operational Director'],
   // Same people who write the blog — it is the same job, done monthly.
-  newsletter: [DEV, ADMIN_GROUP, 'Social Media & Content', 'Executive Assistant'],
+  newsletter: [DEV, ADMIN_GROUP, 'Social Media & Content'],
+  // Deliberately NOT derived from FORM_ACCESS['coffee-chat'], though the two
+  // overlap. Reading a guest application and inviting someone to make one are
+  // different acts: the first is inbox work, the second sends mail to a person
+  // outside the organization, signed in the sender's own name, with their
+  // address as the reply-to. That is the organization speaking to a stranger,
+  // so leadership holds it — the three director groups — plus the people who
+  // make the episodes.
+  //
+  // Written out rather than derived from FORM_ACCESS['coffee-chat'] because the
+  // two are meant to be able to differ, even where they agree today.
+  coffeeChatInvite: [DEV, 'Executive Director', 'Operational Director', 'Director', 'Social Media & Content'],
   billing: [ADMIN_GROUP],
   // Reaching the page. WHICH rows are visible is decided per row by the duty's
   // access_group, which is data rather than code — so this list must contain

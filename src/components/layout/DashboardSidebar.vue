@@ -22,6 +22,7 @@ import {
   Megaphone,
   PenLine,
   Send,
+  Mic,
   CreditCard,
   LogOut,
   Sun,
@@ -94,6 +95,9 @@ const ALL_NAV: NavItem[] = [
   { to: '/banner', label: 'Site banner', icon: Megaphone, capability: 'banners' },
   { to: '/blog', label: 'Blog', icon: PenLine, capability: 'content' },
   { to: '/newsletter', label: 'Newsletter', icon: Send, capability: 'newsletter' },
+  // Next to Submissions in purpose but placed here with the other outbound
+  // tools: this one sends mail, the inbox receives it.
+  { to: '/coffee-chat-invite', label: 'Coffee Chat invite', icon: Mic, capability: 'coffeeChatInvite' },
   { to: '/support', label: 'Support', icon: MessageSquare, capability: 'support' },
   { to: '/billing', label: 'Billing', icon: CreditCard, capability: 'billing' },
   { to: '/duties', label: 'Duties', icon: ListChecks, capability: 'duties', when: () => duties.available === true },
