@@ -278,6 +278,49 @@ async function toggleMute(card: Card, kind: 'no-okta-account' | 'hidden-ok') {
   await load();
 }
 
+/**
+ * Clearing the no-Okta backlog in one go.
+ *
+ * Acts on exactly the rows currently listed, so the count in the button and
+ * the rows on screen can never disagree — narrow with the filters first and
+ * the button follows. Each card still gets its own recorded decision; this is
+ * twenty clicks collapsed into one, not a switch that hides the section.
+ */
+const clearableNoOkta = computed(() =>
+  filtered.value.filter((c) => !c.linkedLogin && !isMuted(c, 'no-okta-account')),
+);
+
+const clearing = ref(false);
+async function clearNoOktaBacklog() {
+  const n = clearableNoOkta.value.length;
+  if (!n) return;
+  const note = window.prompt(
+    `Mark ${n} card${n === 1 ? '' : 's'} as not needing an Okta account.\n\n` +
+      'Why? (optional — the same reason is recorded against all of them)',
+    'Does not use a computer at work',
+  );
+  if (note === null) return;  // cancelled
+  clearing.value = true; error.value = '';
+  try {
+    const res = await apiFetch('/.netlify/functions/admin-staff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'mute-many',
+        kind: 'no-okta-account',
+        _ids: clearableNoOkta.value.map((c) => c._id),
+        note,
+      }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not clear them.';
+  } finally {
+    clearing.value = false;
+  }
+}
+
 // ── Removing a card ──
 // Two clicks, because it cannot be undone. Hiding is the right tool for someone
 // who has left; this is for a card that should never have existed.
@@ -451,6 +494,21 @@ async function removeCard(card: Card) {
           <button v-if="filtering" type="button" class="linkish" @click="clearFilters">Clear</button>
         </div>
 
+        <!--
+          The weekly report no longer lists these, so this is the only place
+          they surface. Most of the staff will never have an Okta account, and
+          saying so once is what keeps the rest of this page meaningful.
+        -->
+        <div v-if="clearableNoOkta.length > 1" class="bulk">
+          <p class="bulk__text">
+            {{ clearableNoOkta.length }} of the cards listed have no Okta account and
+            aren't marked as expected.
+          </p>
+          <button type="button" class="btn btn--sm" :disabled="clearing" @click="clearNoOktaBacklog">
+            {{ clearing ? 'Clearing…' : 'None of these need one' }}
+          </button>
+        </div>
+
         <p v-if="filtering && !filtered.length" class="block__hint find__empty">
           No cards match. <button type="button" class="linkish" @click="clearFilters">Clear the filters</button>
         </p>
@@ -589,6 +647,19 @@ async function removeCard(card: Card) {
 .queue__who { display: flex; flex-direction: column; }
 .queue__login { font-size: .75rem; color: var(--color-text-secondary); }
 .queue__status { font-size: .7rem; color: #8a5a1f; }
+
+.bulk {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #e4e4e4;
+  border-radius: 8px;
+  background: #fafafa;
+}
+.bulk__text { margin: 0; font-size: 13px; color: #5C5C5C; }
 
 .find { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
 .find__q { flex: 1 1 16rem; min-width: 0; }

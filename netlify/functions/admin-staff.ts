@@ -270,6 +270,54 @@ export async function handler(event: {
       return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ muted: true }) };
     }
 
+    /**
+     * The same decision as `mute`, for a whole backlog at once.
+     *
+     * Most of the staff do not use a computer at work and will never have an
+     * Okta account, so the first honest pass over this page is twenty clicks of
+     * "they don't need one". That is enough friction that it does not happen,
+     * and the weekly report then repeats all twenty every Monday.
+     *
+     * Still a recorded decision per card rather than a flag that hides the
+     * section: each row gets a row in staff_reconcile_mutes with who decided
+     * and when, and each can be put back on its own. The note is shared,
+     * because the reason is the same one for everybody in the batch.
+     */
+    if (action === 'mute-many') {
+      const kind = clean(body.kind, 30) as MuteKind;
+      const ids: string[] = Array.isArray(body._ids)
+        ? [...new Set(body._ids.map((v: unknown) => clean(v, 120)).filter(Boolean) as string[])]
+        : [];
+      if (kind !== 'no-okta-account' && kind !== 'hidden-ok') {
+        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Unknown kind' }) };
+      }
+      if (!ids.length) {
+        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Nothing was selected' }) };
+      }
+      // A cap, so a malformed request cannot turn into an unbounded write. Well
+      // above the size of the staff list, which is what this is for.
+      if (ids.length > 200) {
+        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Too many at once' }) };
+      }
+      const db = turso();
+      await ensureMuteTable(db);
+      const note = clean(body.note, 300);
+      const by = auth.email ?? 'unknown';
+      // One batch: either the whole decision is recorded or none of it is, so a
+      // half-cleared list can never be mistaken for a finished one.
+      await db.batch(
+        ids.map((id) => ({
+          sql: `INSERT INTO staff_reconcile_mutes (kind, staff_id, note, muted_by, muted_at)
+                VALUES (?, ?, ?, ?, unixepoch())
+                ON CONFLICT(kind, staff_id) DO UPDATE SET
+                  note=excluded.note, muted_by=excluded.muted_by, muted_at=excluded.muted_at`,
+          args: [kind, id, note, by],
+        })),
+        'write',
+      );
+      return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ muted: ids.length }) };
+    }
+
     const name = clean(body.name, 120);
     const title = clean(body.title, 200);
     const email = clean(body.email, 200);

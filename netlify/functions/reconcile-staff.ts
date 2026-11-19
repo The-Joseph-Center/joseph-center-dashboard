@@ -4,6 +4,7 @@ import {
   DEPARTED_STATUSES, turso, ensureIdentityTable, unpublishCard, fetchMutes, type OktaUser,
 } from './_lib/staff-directory';
 import { SANITY_DATASET } from './_lib/sanity-dataset';
+import { renderEmail, type Report } from './_lib/reconcile-email.ts';
 
 /**
  * Reconciliation between Okta and the public staff page.
@@ -30,56 +31,6 @@ import { SANITY_DATASET } from './_lib/sanity-dataset';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-interface Report {
-  unpublished: { name: string; login: string; reason: string }[];
-  newLinks: { name: string; login: string; via: string }[];
-  needsAttention: { name: string; login: string; note: string }[];
-  cardsWithoutAccount: string[];
-  accountsWithoutCard: string[];
-}
-
-function renderEmail(r: Report, kind: 'now' | 'weekly') {
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const section = (title: string, items: string[], tone = '#5C5C5C') =>
-    items.length
-      ? `<p style="margin:18px 0 6px;font-size:13px;color:${tone};font-weight:600;">${title}</p>
-         <ul style="margin:0;padding-left:18px;font-size:14px;">${items.map((i) => `<li style="margin:3px 0;">${esc(i)}</li>`).join('')}</ul>`
-      : '';
-
-  const html = `
-<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#262626;max-width:640px;">
-  <h2 style="font-size:17px;margin:0 0 4px;">Staff page — Okta reconciliation</h2>
-  <p style="margin:0;color:#5C5C5C;font-size:14px;">${kind === 'weekly'
-    ? 'The week\'s standing picture. Checks run daily; this goes out on Mondays, and anything that changes the site emails the same day.'
-    : 'Something changed on the site today.'} Changes are one-way: leaving Okta unpublishes a card, nothing here republishes one.</p>
-  ${section('Unpublished from the website', r.unpublished.map((u) => `${u.name} (${u.login}) — ${u.reason}`), '#8a1f1f')}
-  ${section('Needs your attention', r.needsAttention.map((u) => `${u.name} (${u.login}) — ${u.note}`), '#8a5a1f')}
-  ${section('Newly linked to an Okta account', r.newLinks.map((u) => `${u.name} → ${u.login} (matched by ${u.via})`), '#1D5F55')}
-  ${section('Staff cards with no Okta account', r.cardsWithoutAccount)}
-  ${section('Okta accounts with no staff card', r.accountsWithoutCard)}
-</div>`.trim();
-
-  const text = [
-    'STAFF PAGE — OKTA RECONCILIATION',
-    'One-way: leaving Okta unpublishes a card; nothing here republishes one.',
-    '',
-    ...(r.unpublished.length ? ['UNPUBLISHED:', ...r.unpublished.map((u) => `  ${u.name} (${u.login}) — ${u.reason}`), ''] : []),
-    ...(r.needsAttention.length ? ['NEEDS ATTENTION:', ...r.needsAttention.map((u) => `  ${u.name} (${u.login}) — ${u.note}`), ''] : []),
-    ...(r.newLinks.length ? ['NEWLY LINKED:', ...r.newLinks.map((u) => `  ${u.name} -> ${u.login} (${u.via})`), ''] : []),
-    ...(r.cardsWithoutAccount.length ? ['CARDS WITH NO OKTA ACCOUNT:', ...r.cardsWithoutAccount.map((s) => `  ${s}`), ''] : []),
-    ...(r.accountsWithoutCard.length ? ['OKTA ACCOUNTS WITH NO CARD:', ...r.accountsWithoutCard.map((s) => `  ${s}`), ''] : []),
-  ].join('\n');
-
-  const headline = r.unpublished.length
-    ? `${r.unpublished.length} unpublished`
-    : r.needsAttention.length
-      ? `${r.needsAttention.length} needing attention`
-      : r.newLinks.length
-        ? `${r.newLinks.length} newly linked`
-        : `${r.cardsWithoutAccount.length + r.accountsWithoutCard.length} to look at`;
-  const prefix = kind === 'weekly' ? 'Staff page, this week' : 'Staff page';
-  return { subject: `${prefix} — ${headline}`, html, text };
-}
 
 export async function handler() {
   const PROJECT = process.env.VITE_SANITY_PROJECT_ID!;
@@ -94,7 +45,10 @@ export async function handler() {
     return { statusCode: 500, body: 'not configured' };
   }
 
-  const report: Report = { unpublished: [], newLinks: [], needsAttention: [], cardsWithoutAccount: [], accountsWithoutCard: [] };
+  const report: Report = {
+    unpublished: [], newLinks: [], needsAttention: [],
+    cardsWithoutAccount: [], accountsWithoutCard: [], newApplicants: [],
+  };
 
   try {
     const [users, cards, serviceAccounts] = await Promise.all([
@@ -217,9 +171,52 @@ export async function handler() {
     const urgent = report.unpublished.length > 0 || collisions.length > 0;
     const digestDay = Number(process.env.STAFF_DIGEST_DAY ?? 1); // Monday, UTC
     const isDigestDay = new Date().getUTCDay() === digestDay;
+
+    /**
+     * The week's Coffee Chat guest applications.
+     *
+     * Not reconciliation, but it belongs in the one report that is already
+     * read on a Monday, and somebody is waiting on a reply: an application is
+     * how a guest gets booked with Mona.
+     *
+     * Its own try/catch, and deliberately not awaited alongside anything that
+     * writes. This function unpublishes cards from the public website; a
+     * missing table or a slow query must not be able to take that down, so a
+     * failure here costs the section and nothing else.
+     *
+     * Names and dates only. The impact statement, the legal-matters answer and
+     * the sensitive-topics field stay in the dashboard behind the capability
+     * that guards them — `careful` carries the one bit that changes how you
+     * read it, without putting any of it in an inbox.
+     */
+    if (isDigestDay) {
+      try {
+        const apps = await db.execute(
+          `SELECT full_name, connection, has_legal_matters, sensitive_topics, submitted_at
+             FROM coffee_chat_applications
+            WHERE submitted_at >= unixepoch() - 7 * 86400
+            ORDER BY submitted_at DESC
+            LIMIT 50`,
+        );
+        report.newApplicants = apps.rows.map((r) => ({
+          name: String(r.full_name ?? '').trim() || 'Name not given',
+          connection: String(r.connection ?? '').trim() || 'connection not given',
+          at: Number(r.submitted_at ?? 0),
+          careful: Number(r.has_legal_matters ?? 0) === 1 || !!String(r.sensitive_topics ?? '').trim(),
+        }));
+      } catch (err) {
+        console.error('reconcile-staff: could not read the week\u2019s applications:', err);
+      }
+    }
+
+    /**
+     * What is worth an email. cardsWithoutAccount is absent on purpose: it is
+     * no longer rendered, so counting it here would send a message whose only
+     * contents had been left out.
+     */
     const anythingToSay =
       report.needsAttention.length + report.newLinks.length +
-      report.cardsWithoutAccount.length + report.accountsWithoutCard.length > 0;
+      report.accountsWithoutCard.length + report.newApplicants.length > 0;
 
     if (isDigestDay && !urgent && anythingToSay) {
       // The week's links, not just this morning's — the digest is the only

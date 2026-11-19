@@ -1,6 +1,6 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import {
-  RULES, FORM_ACCESS, ADMIN_GROUP,
+  RULES, FORM_ACCESS, ADMIN_GROUP, CAPABILITY_LABELS,
   type Capability, type FormId,
 } from '../../src/lib/capabilities';
 import { FORMS } from '../../src/lib/submissionForms';
@@ -28,24 +28,6 @@ interface OktaGroup { id: string; type: string; profile: { name: string; descrip
 interface Member { profile?: { firstName?: string; lastName?: string; email?: string; login?: string }; status?: string }
 
 const norm = (s: string) => s.trim().toLowerCase();
-
-/** What each capability is for, in the words a person would use. */
-const CAPABILITY_LABELS: Record<Capability, string> = {
-  myCard: 'Their own staff card and quote',
-  links: 'Quick links',
-  support: 'Raise a support request',
-  analytics: 'Site analytics',
-  content: 'Blog and post-building tools',
-  staffAdmin: 'Edit anyone’s staff card; create and remove cards',
-  submissions: 'The form inbox (which forms is decided per form)',
-  formsAdmin: 'Open, close and edit the seasonal forms',
-  letterQueue: 'Work through Mona’s year-end letters',
-  taxData: 'Year-end giving totals, donor list and exports',
-  banners: 'The site-wide notice banner',
-  newsletter: 'Build the monthly newsletter',
-  billing: 'Invoices and payment method',
-  access: 'This page',
-};
 
 export async function handler(event: { httpMethod: string; headers: Record<string, string> }) {
   const auth = await requireCapability(event.headers, 'access');

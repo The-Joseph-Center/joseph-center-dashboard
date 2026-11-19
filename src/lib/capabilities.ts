@@ -178,6 +178,40 @@ export const RULES: Record<Capability, string[] | '*'> = {
   access: [DEV],
 };
 
+/**
+ * What each capability is for, in the words a person would use.
+ *
+ * Lives here rather than beside the page that shows it, for the same reason
+ * RULES does: this is the second half of the same table. It was previously
+ * declared inside admin-access.ts, where it silently fell three keys behind the
+ * Capability union — `duties`, `dutiesEdit` and `coffeeChatInvite` had no label
+ * at all, so the Access page listed them blank. Typed Record<Capability, …>
+ * here means adding a capability without describing it does not compile.
+ *
+ * Phrased in the third person ("their own card"), because both readers are
+ * looking at someone else: the Access page asks who can do this, and the
+ * Request Access form asks what someone is missing.
+ */
+export const CAPABILITY_LABELS: Record<Capability, string> = {
+  myCard: 'Their own staff card and quote',
+  links: 'Quick links',
+  support: 'Raise a support request',
+  analytics: 'Site analytics',
+  content: 'Blog and post-building tools',
+  staffAdmin: 'Edit anyone\u2019s staff card; create and remove cards',
+  submissions: 'The form inbox (which forms is decided per form)',
+  formsAdmin: 'Open, close and edit the seasonal forms',
+  letterQueue: 'Work through Mona\u2019s year-end letters',
+  taxData: 'Year-end giving totals, donor list and exports',
+  banners: 'The site-wide notice banner',
+  newsletter: 'Build the monthly newsletter',
+  coffeeChatInvite: 'Invite someone to apply as a Coffee Chat guest',
+  duties: 'The recurring marketing duties list',
+  dutiesEdit: 'Change a duty\u2019s status',
+  billing: 'Invoices and payment method',
+  access: 'The access map \u2014 who can reach what',
+};
+
 const norm = (s: string) => s.trim().toLowerCase();
 
 export function hasCapability(groups: string[] | undefined, capability: Capability): boolean {
@@ -203,6 +237,25 @@ export function canSeeForm(groups: string[] | undefined, form: FormId): boolean 
 /** Every form these groups may read, in the order declared above. */
 export function formsFor(groups: string[] | undefined): FormId[] {
   return (Object.keys(FORM_ACCESS) as FormId[]).filter((f) => canSeeForm(groups, f));
+}
+
+/**
+ * The capabilities these groups do NOT unlock — what the Request Access grid
+ * offers. Capabilities granted to everyone ('*') can never appear here, so the
+ * grid cannot offer something the person already has.
+ *
+ * `access` is excluded deliberately. It is the map of every inbox and group in
+ * the directory, it is granted to one person on purpose, and listing it as a
+ * tick box invites a request that will always be declined.
+ */
+export function requestableCapabilities(groups: string[] | undefined): Capability[] {
+  return (Object.keys(RULES) as Capability[])
+    .filter((c) => c !== 'access' && !hasCapability(groups, c));
+}
+
+/** Which groups would grant this capability — what the request email needs. */
+export function grantedBy(capability: Capability): string[] | '*' {
+  return RULES[capability];
 }
 
 /** Every capability the given groups unlock — handy for debugging and /whoami. */
