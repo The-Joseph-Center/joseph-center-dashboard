@@ -1,4 +1,5 @@
 import { requireCapability, denial } from './_lib/verify-okta';
+import { hasCapability } from '../../src/lib/capabilities';
 import {
   fetchOktaUsers, fetchServiceAccountLogins, fetchNoCard, ensureNoCardTable,
   ensureIdentityTable, oktaLogin, DEPARTED_STATUSES, turso, fetchMutes, ensureMuteTable,
@@ -215,6 +216,22 @@ export async function handler(event: {
     const body = JSON.parse(event.body || '{}');
     const action = clean(body.action, 20);
 
+    /**
+     * Opening this page is staffAdmin; silencing a row in the weekly report is
+     * a separate, narrower claim, checked here rather than only in the
+     * template. A hidden button whose endpoint still answers is not access
+     * control — the page and the API have to agree, and this is the half that
+     * is enforced.
+     */
+    const mayMute = hasCapability(auth.groups, 'reconcileMutes');
+    const mutesDenied = {
+      statusCode: 403,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        error: 'Only the Web Developer can change what the weekly staff report says.',
+      }),
+    };
+
     // ── Mark an account as never needing a card, or put it back ──
     if (action === 'dismiss' || action === 'restore') {
       const login = clean(body.login, 200).toLowerCase();
@@ -249,6 +266,7 @@ export async function handler(event: {
      * anyone can access, and a departure still unpublishes the card.
      */
     if (action === 'mute' || action === 'unmute') {
+      if (!mayMute) return mutesDenied;
       const id = clean(body._id, 120);
       const kind = clean(body.kind, 30) as MuteKind;
       if (!id || (kind !== 'no-okta-account' && kind !== 'hidden-ok')) {
@@ -284,6 +302,7 @@ export async function handler(event: {
      * because the reason is the same one for everybody in the batch.
      */
     if (action === 'mute-many') {
+      if (!mayMute) return mutesDenied;
       const kind = clean(body.kind, 30) as MuteKind;
       const ids: string[] = Array.isArray(body._ids)
         ? [...new Set(body._ids.map((v: unknown) => clean(v, 120)).filter(Boolean) as string[])]

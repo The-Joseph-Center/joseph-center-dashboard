@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
 import { apiFetch } from '@/lib/api';
+import { useAuthStore } from '@/stores/useAuthStore';
 
 // Editing the public staff page. Okta owns identity, access and employment
 // status; everything here is the copy that appears on the website, plus the
@@ -31,6 +32,18 @@ const LABELS: Record<string, string> = {
   maintenance: 'Maintenance', security: 'Security', operations: 'Operations',
   unknown: 'Unknown / Needs Review',
 };
+
+/**
+ * Whether this person may turn a report row off.
+ *
+ * Any admin can open this page and edit a card. Deciding that a discrepancy is
+ * fine as it is belongs to whoever reads the weekly report, so for everyone
+ * else the state still shows — "no Okta account", "hidden from the website" —
+ * and only the control to silence it is absent. The endpoint enforces the same
+ * claim; this just stops offering a button that would be refused.
+ */
+const auth = useAuthStore();
+const mayMute = computed(() => auth.can('reconcileMutes'));
 
 const cards = ref<Card[]>([]);
 const needsCard = ref<NeedsCard[]>([]);
@@ -499,7 +512,7 @@ async function removeCard(card: Card) {
           they surface. Most of the staff will never have an Okta account, and
           saying so once is what keeps the rest of this page meaningful.
         -->
-        <div v-if="clearableNoOkta.length > 1" class="bulk">
+        <div v-if="mayMute && clearableNoOkta.length > 1" class="bulk">
           <p class="bulk__text">
             {{ clearableNoOkta.length }} of the cards listed have no Okta account and
             aren't marked as expected.
@@ -550,21 +563,21 @@ async function removeCard(card: Card) {
                 </template>
                 <template v-else-if="isMuted(card, 'no-okta-account')">
                   <span class="row__muted">No Okta account, and that is expected{{ muteNote(card, 'no-okta-account') ? ` — ${muteNote(card, 'no-okta-account')}` : '' }}</span>
-                  <button type="button" class="linkish" :disabled="busy === card._id" @click="toggleMute(card, 'no-okta-account')">Report it again</button>
+                  <button v-if="mayMute" type="button" class="linkish" :disabled="busy === card._id" @click="toggleMute(card, 'no-okta-account')">Report it again</button>
                 </template>
                 <template v-else>
                   <span class="row__link--none">No Okta account linked — link one from the queue above.</span>
-                  <button type="button" class="linkish" :disabled="busy === card._id" @click="toggleMute(card, 'no-okta-account')">They don't need one</button>
+                  <button v-if="mayMute" type="button" class="linkish" :disabled="busy === card._id" @click="toggleMute(card, 'no-okta-account')">They don't need one</button>
                 </template>
               </p>
               <p v-if="card.hidden" class="row__link">
                 <template v-if="isMuted(card, 'hidden-ok')">
                   <span class="row__muted">Off the website on purpose{{ muteNote(card, 'hidden-ok') ? ` — ${muteNote(card, 'hidden-ok')}` : '' }}</span>
-                  <button type="button" class="linkish" :disabled="busy === card._id" @click="toggleMute(card, 'hidden-ok')">Report it again</button>
+                  <button v-if="mayMute" type="button" class="linkish" :disabled="busy === card._id" @click="toggleMute(card, 'hidden-ok')">Report it again</button>
                 </template>
                 <template v-else>
                   <span class="row__link--none">Hidden from the website.</span>
-                  <button type="button" class="linkish" :disabled="busy === card._id" @click="toggleMute(card, 'hidden-ok')">This is intended, stop reporting it</button>
+                  <button v-if="mayMute" type="button" class="linkish" :disabled="busy === card._id" @click="toggleMute(card, 'hidden-ok')">This is intended, stop reporting it</button>
                 </template>
               </p>
 

@@ -22,6 +22,7 @@ export type Capability =
   | 'analytics'  // site analytics
   | 'content'    // blog, newsletter and post-building tools (in progress)
   | 'staffAdmin'  // edit anyone's public staff details, create cards
+  | 'reconcileMutes' // silence a row in the weekly staff report — Web Developer only
   | 'submissions' // the form inbox — which forms is decided per form, below
   | 'formsAdmin'  // open, close and edit the seasonal forms
   | 'letterQueue' // work through Mona's year-end letters
@@ -124,6 +125,21 @@ export const RULES: Record<Capability, string[] | '*'> = {
   // Its own capability rather than folding into billing, so onboarding can be
   // delegated later without also handing over the invoices.
   staffAdmin: [ADMIN_GROUP],
+  /**
+   * Deciding that a row in the weekly report is fine as it is.
+   *
+   * Narrower than staffAdmin on purpose, the same way dutiesEdit is narrower
+   * than duties. Editing a card is ordinary administration; silencing a
+   * discrepancy is a judgement about what the report is allowed to stop
+   * saying, and it is made on behalf of the one person who reads that report
+   * every Monday. Someone else clearing a row they believed was settled would
+   * remove the only signal that anybody is watching.
+   *
+   * It takes nothing away: a card with no account, or a card deliberately off
+   * the website, is still labelled as such for every admin who opens the page.
+   * What is restricted is turning the label off.
+   */
+  reconcileMutes: [DEV],
   // Derived, never hand-maintained: anyone who can read at least one form can
   // reach the page, and the page then shows only the forms they may read. A
   // separately written union here would drift the first time a form is added.
@@ -199,6 +215,7 @@ export const CAPABILITY_LABELS: Record<Capability, string> = {
   analytics: 'Site analytics',
   content: 'Blog and post-building tools',
   staffAdmin: 'Edit anyone\u2019s staff card; create and remove cards',
+  reconcileMutes: 'Silence a row in the weekly staff report',
   submissions: 'The form inbox (which forms is decided per form)',
   formsAdmin: 'Open, close and edit the seasonal forms',
   letterQueue: 'Work through Mona\u2019s year-end letters',

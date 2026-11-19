@@ -124,3 +124,29 @@ test('submissions stays derived from the per-form lists', () => {
 test('reading the letter requests and working the queue are the same list', () => {
   assert.deepEqual(RULES.letterQueue, FORM_ACCESS.letters);
 });
+
+test('only the Web Developer may silence a row in the weekly staff report', () => {
+  // Any admin can open the Staff page and edit a card. Deciding that a
+  // discrepancy is fine as it is belongs to whoever reads the report, because
+  // someone else clearing a row they believed was settled would remove the
+  // only signal that anybody is watching.
+  assert.ok(hasCapability(['Web Developer'], 'reconcileMutes'));
+  for (const g of [ADMIN_GROUP, 'Executive Director', 'Operational Director', 'Director', 'Front Desk']) {
+    assert.ok(!hasCapability([g], 'reconcileMutes'), `${g} should not be able to silence rows`);
+  }
+});
+
+test('silencing a row is strictly narrower than administering the cards', () => {
+  // If it ever became the same list, the restriction would be decorative.
+  const admins = RULES.staffAdmin;
+  const muters = RULES.reconcileMutes;
+  assert.ok(Array.isArray(admins) && Array.isArray(muters));
+  assert.notDeepEqual([...muters].sort(), [...admins].sort());
+  assert.ok(admins.every((g) => !muters.includes(g)) || muters.length < admins.length);
+});
+
+test('an admin who cannot silence rows can still administer cards', () => {
+  // The page must stay usable for them — only the controls go.
+  assert.ok(hasCapability([ADMIN_GROUP], 'staffAdmin'));
+  assert.ok(!hasCapability([ADMIN_GROUP], 'reconcileMutes'));
+});
