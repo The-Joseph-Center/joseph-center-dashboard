@@ -410,11 +410,49 @@ function addStatRow() {
   draft.value.stats = { ...draft.value.stats, '': '' };
 }
 
-/** A row the tool had no field for — a new metric, or a month that counts something different. */
-function addStat(label: string, value: string) {
+/**
+ * A row the tool had no field for — a new metric, or a month that counts
+ * something different.
+ *
+ * Two separate things made this button look dead.
+ *
+ * A sheet row carries its department ("Front Desk › Families served") and the
+ * email prints a label exactly as stored, so the department was dropped. That
+ * made the key collide with the figure the month was seeded with — "Families
+ * served" is already there — and the spread overwrote it in place. The list
+ * never grew, so the click looked like nothing, while a figure further down
+ * quietly changed to a different number. Two departments counting the same
+ * thing collapsed into one row the same way.
+ *
+ * And the figures sit below this panel, which is long enough that a new row at
+ * the end is off screen — so even an add that worked showed nothing.
+ *
+ * Now a taken name keeps its department instead of standing on the existing
+ * row, and the click says which label it landed on.
+ */
+const statAdded = ref<{ index: number; label: string; replaced: boolean } | null>(null);
+let statAddedTimer: ReturnType<typeof setTimeout> | undefined;
+
+function addStat(label: string, value: string, index: number) {
   if (!draft.value) return;
-  const name = label.split('›').pop()!.trim() || label;
-  draft.value.stats = { ...draft.value.stats, [name]: value };
+  const parts = label.split('›').map((s) => s.trim()).filter(Boolean);
+  const bare = parts[parts.length - 1] || label.trim();
+  const stats = draft.value.stats;
+
+  // Keep the department only when the plain name is taken — "Families served"
+  // reads better in an email than "Front Desk — Families served", and the label
+  // is editable in the row below either way.
+  let name = bare;
+  if (name in stats && parts.length > 1) name = parts.join(' — ');
+
+  // Still taken means this row has already been added: say "Updated" rather
+  // than claiming an add that puts no new row on screen.
+  const replaced = name in stats;
+  draft.value.stats = { ...stats, [name]: value };
+
+  statAdded.value = { index, label: name, replaced };
+  clearTimeout(statAddedTimer);
+  statAddedTimer = setTimeout(() => { statAdded.value = null; }, 8000);
 }
 
 function applySheet() {
@@ -665,6 +703,25 @@ const pastPreviews = computed(() => {
     .map((m) => ({ month: m.month, text: (m.previewText ?? '').trim() }))
     .filter((p) => (seen.has(p.text) ? false : seen.add(p.text)))
     .slice(0, 4);
+});
+
+/**
+ * The month before this one, from the index.
+ *
+ * Both the guest and the program are rotation decisions, and the reason to see
+ * last month's while typing is to not repeat it. "What has already run" below
+ * holds every month, but it is collapsed and sorted by recency rather than
+ * answering the one question asked at this point — what did we just do?
+ *
+ * Derived from the month being edited, not from "the previous row", because the
+ * index can have gaps: a month nobody drafted would otherwise make the month
+ * before it look like last month.
+ */
+const lastMonth = computed(() => {
+  const [y, m] = (month.value || '').split('-').map(Number);
+  if (!y || !m) return null;
+  const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+  return months.value.find((x) => x.month === prev) ?? null;
 });
 
 const musts = computed(() => issues.value.filter((i) => i.severity === 'must'));
@@ -1049,7 +1106,13 @@ const fullVersion = (v: Version) => {
       <section class="widget block">
         <h2 class="block__title">This month</h2>
         <div class="grid2">
-          <label class="f"><span>Guest or partner (first name)</span><input v-model="draft.guestName" type="text" /></label>
+          <label class="f">
+            <span>Guest or partner (first name)</span>
+            <input v-model="draft.guestName" type="text" />
+            <em v-if="lastMonth" class="lastmo">
+              Last month ({{ lastMonth.monthName }}): {{ lastMonth.guest || 'no guest recorded' }}
+            </em>
+          </label>
           <label class="f">
             <span>Story frame</span>
             <select v-model="draft.guestFrame">
@@ -1058,7 +1121,13 @@ const fullVersion = (v: Version) => {
             </select>
           </label>
         </div>
-        <label class="f"><span>Section 2 program or theme</span><input v-model="draft.program" type="text" placeholder="Day Shelter, Food Pantry, IFS, The Golden Girls Project, Family Center…" /></label>
+        <label class="f">
+          <span>Section 2 program or theme</span>
+          <input v-model="draft.program" type="text" placeholder="Day Shelter, Food Pantry, IFS, The Golden Girls Project, Family Center…" />
+          <em v-if="lastMonth" class="lastmo">
+            Last month ({{ lastMonth.monthName }}): {{ lastMonth.program || 'no program recorded' }}
+          </em>
+        </label>
         <label class="f">
           <span>This month's Coffee Chat episode <span class="req">required</span></span>
           <input v-model="coffeeChatUrl" type="url" placeholder="https://youtu.be/…" />
@@ -1370,8 +1439,11 @@ const fullVersion = (v: Version) => {
                 <tr v-for="r in sheetRows" :key="r.index">
                   <td>{{ r.label }}</td>
                   <td class="num"><strong>{{ r.value }}</strong></td>
-                  <td class="num">
-                    <button type="button" class="linkish" @click="addStat(r.label, r.value)">Add as a stat</button>
+                  <td class="num num--add">
+                    <button type="button" class="linkish" @click="addStat(r.label, r.value, r.index)">Add as a stat</button>
+                    <span v-if="statAdded && statAdded.index === r.index" class="added">
+                      {{ statAdded.replaced ? 'Updated' : 'Added' }} “{{ statAdded.label }}” in the figures below
+                    </span>
                   </td>
                 </tr>
               </tbody>
@@ -1389,7 +1461,12 @@ const fullVersion = (v: Version) => {
           <input v-model="draft.stats[k]" type="text" placeholder="Figure" />
           <button type="button" class="linkish linkish--danger" @click="removeStat(k)">Remove</button>
         </div>
-        <button type="button" class="linkish" @click="addStatRow">+ Add a figure</button>
+        <div class="actions">
+          <button type="button" class="linkish" @click="addStatRow">+ Add a figure</button>
+          <span class="hint">
+            {{ Object.keys(draft.stats).length }} figure{{ Object.keys(draft.stats).length === 1 ? '' : 's' }} in this month
+          </span>
+        </div>
 
         <h3 class="sub">
           Last month's Coffee Chat videos
@@ -1730,6 +1807,23 @@ const fullVersion = (v: Version) => {
 .block { margin-bottom: 1.25rem; }
 .block__title { font-family: var(--font-heading); font-size: 1rem; margin: 0 0 .35rem; display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
 .block__hint { font-size: .8125rem; color: var(--color-text-secondary); margin: 0 0 1rem; line-height: 1.55; }
+.lastmo {
+  display: block;
+  margin-top: 4px;
+  font-style: italic;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.added {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--color-text-secondary);
+  text-align: right;
+}
+.num--add { white-space: normal; }
+
 .state { color: var(--color-text-secondary); }
 .state--err { color: #8a1f1f; }
 .sub { font-family: var(--font-heading); font-size: .8125rem; margin: 1.1rem 0 .5rem; }
