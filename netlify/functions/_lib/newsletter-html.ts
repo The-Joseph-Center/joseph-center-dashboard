@@ -210,8 +210,24 @@ export function newsletterHtml(d: HtmlInput): string {
     `<p style="margin:28px 0 0;padding-top:18px;border-top:1px solid #e2ded2;font-family:${FONT};font-size:16px;line-height:1.6;color:${CHARCOAL};">&mdash; ${esc(d.signature)}</p>`,
   ].filter(Boolean).join('\n\n');
 
-  // 600px is the width every email client agrees on, and the outer table is
-  // what centers it in the ones that ignore margin:auto.
+  return shell(body);
+}
+
+/**
+ * The card every Joseph Center email sits in.
+ *
+ * 600px is the width every mail client agrees on, and the outer table is what
+ * centers it in the ones that ignore margin:auto. Shared rather than copied:
+ * the whole reason a campaign email can be said to "match the newsletter" is
+ * that it is this same function, so a change to the padding or the page colour
+ * cannot reach one and miss the other.
+ *
+ * There is deliberately no logo and no header bar here. The newsletter has
+ * never had either — October's send is this card and nothing else, with
+ * AWeber's own footer appended at send time — so adding one to a campaign
+ * email would make it the one JC email that does not match.
+ */
+function shell(body: string): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#FAFAF7;">
   <tr><td align="center" style="padding:24px 12px;">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:8px;">
@@ -221,6 +237,90 @@ ${body.split('\n').map((l) => (l ? '        ' + l : l)).join('\n')}
     </table>
   </td></tr>
 </table>`;
+}
+
+/** The signature, under the same hairline rule the newsletter ends on. */
+const signatureHtml = (signature: string) =>
+  `<p style="margin:28px 0 0;padding-top:18px;border-top:1px solid #e2ded2;font-family:${FONT};font-size:16px;line-height:1.6;color:${CHARCOAL};">&mdash; ${esc(signature)}</p>`;
+
+export interface CampaignHtmlInput {
+  /** The whole message, in the same plain writing format as a newsletter section. */
+  body: string;
+  buttonLabel: string;
+  buttonUrl: string;
+  /**
+   * Whether the message carries the button at all.
+   *
+   * Recurring donors are already giving every month, and asking them again on
+   * Giving Tuesday reads as not having noticed. They get `closingNote` in its
+   * place.
+   */
+  showButton: boolean;
+  /** What stands where the button would, when there is no button. */
+  closingNote?: string;
+  signature: string;
+}
+
+/**
+ * A one-off campaign email: Giving Tuesday, a year-end appeal, Angel Tree.
+ *
+ * Every component here is the newsletter's own — the same shell, the same
+ * `GREETING`, the same `blocksToHtml`, the same `button`, the same signature
+ * rule. Nothing is re-styled and no value is retyped, which is the only way
+ * "matching the newsletter" survives the next change to either one.
+ *
+ * One button, at most once, per the campaign brief: a second ask in eighty
+ * words reads as a form rather than an invitation.
+ */
+export function campaignHtml(d: CampaignHtmlInput): string {
+  const body = [
+    `<p style="${P}">${esc(GREETING)}</p>`,
+    blocksToHtml(d.body),
+    d.showButton && d.buttonLabel.trim() && d.buttonUrl.trim()
+      ? button(d.buttonLabel, d.buttonUrl)
+      : '',
+    !d.showButton && (d.closingNote ?? '').trim() ? blocksToHtml(d.closingNote!) : '',
+    signatureHtml(d.signature),
+  ].filter(Boolean).join('\n\n');
+  return shell(body);
+}
+
+/**
+ * The same campaign email as plain text.
+ *
+ * Built from the same `body` string as the HTML, so the two cannot say
+ * different things — the newsletter learned that the hard way in October, when
+ * each version was assembled separately and the plain one lost two lines.
+ *
+ * Markdown is flattened rather than stripped: a link becomes "Label: URL",
+ * because a plain-text reader who cannot see the anchor still needs somewhere
+ * to go. Emphasis markers come out entirely; a reader seeing `**` in their mail
+ * client is reading the markup, not the message.
+ */
+export function campaignText(d: CampaignHtmlInput): string {
+  const flatten = (text: string) =>
+    (text ?? '')
+      .replace(/\[([^\]]*)\]\(([^)]*)\)/g, (_, label: string, href: string) => {
+        const url = absolute(href);
+        const clean = label.replace(/\s*→\s*$/, '').trim();
+        // A link whose label is already the URL would otherwise read twice.
+        return clean && clean !== url ? `${clean}: ${url}` : url;
+      })
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/^#{1,3}\s+/gm, '')
+      .replace(/^>\s?/gm, '')
+      .replace(/^[*•–—]\s+/gm, '- ');
+
+  return [
+    GREETING,
+    flatten(d.body),
+    d.showButton && d.buttonUrl.trim()
+      ? `${d.buttonLabel.replace(/\s*→\s*$/, '').trim()}: ${absolute(d.buttonUrl)}`
+      : '',
+    !d.showButton ? flatten(d.closingNote ?? '') : '',
+    `— ${d.signature}`,
+  ].filter((part) => part.trim()).join('\n\n').replace(/\n{3,}/g, '\n\n');
 }
 
 /**

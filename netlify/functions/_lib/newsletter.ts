@@ -832,10 +832,28 @@ export function reviewWithDismissals(d: NewsletterDraft): {
   /** Dismissals that match nothing any more — the problem went away. */
   stale: Override[];
 } {
-  const all = runChecks(d);
-  const byId = new Map((d.overrides ?? []).filter((o) => o?.id).map((o) => [o.id, o]));
-  const issues: Issue[] = [];
-  const dismissed: Dismissed[] = [];
+  return applyOverrides(runChecks(d), d.overrides);
+}
+
+export function reviewNewsletter(d: NewsletterDraft): Issue[] {
+  return reviewWithDismissals(d).issues;
+}
+
+/**
+ * Split a review into what is outstanding and what has been set aside.
+ *
+ * Generic over the issue type so the campaign-email review gets the same
+ * behaviour from the same code: one place decides what a dismissal means, and
+ * one place decides that a section marked un-dismissable stays that way.
+ */
+export function applyOverrides<T extends Issue>(all: T[], overrides: Override[] | undefined): {
+  issues: T[];
+  dismissed: (T & { reason: string; by?: string; at?: number })[];
+  stale: Override[];
+} {
+  const byId = new Map((overrides ?? []).filter((o) => o?.id).map((o) => [o.id, o]));
+  const issues: T[] = [];
+  const dismissed: (T & { reason: string; by?: string; at?: number })[] = [];
   const matched = new Set<string>();
 
   for (const issue of all) {
@@ -850,12 +868,7 @@ export function reviewWithDismissals(d: NewsletterDraft): {
       issues.push(issue);
     }
   }
-  const stale = [...byId.values()].filter((o) => !matched.has(o.id));
-  return { issues, dismissed, stale };
-}
-
-export function reviewNewsletter(d: NewsletterDraft): Issue[] {
-  return reviewWithDismissals(d).issues;
+  return { issues, dismissed, stale: [...byId.values()].filter((o) => !matched.has(o.id)) };
 }
 
 function runChecks(d: NewsletterDraft): Issue[] {

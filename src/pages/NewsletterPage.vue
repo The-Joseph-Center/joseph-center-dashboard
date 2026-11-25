@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import DashboardLayout from '@/components/layout/DashboardLayout.vue';
+import CampaignEmail from '@/components/newsletter/CampaignEmail.vue';
 import { assembleTranscript, describeFile, isCaptionExport } from '@/lib/transcript';
 import { apiFetch } from '@/lib/api';
 // The one composer, shared with the functions that build the email. Section 3
@@ -41,6 +42,18 @@ interface Draft {
   partners: { name: string; url: string }[]; previewText: string; status: string;
   sentAt: number | null; updatedBy: string | null; updatedAt: number;
 }
+
+/**
+ * Which tool this page is showing.
+ *
+ * The monthly newsletter and a one-off campaign email are different enough to
+ * be different tools — a campaign email has no guest, no program, no stats and
+ * no videos — and similar enough that they belong behind one door: both are
+ * email to the same list, built from the same components, pasted into the same
+ * AWeber. Keeping them on one page is what stops the second one being built
+ * from a copy of the first one's styles.
+ */
+const tool = ref<'newsletter' | 'campaign'>('newsletter');
 
 const months = ref<{
   month: string; monthName: string; status: string; guest: string | null; program: string | null;
@@ -1207,6 +1220,26 @@ const fullVersion = (v: Version) => {
 
 <template>
   <DashboardLayout page-title="Newsletter">
+    <!--
+      Outside the loading and error guards below on purpose: a campaign email
+      is a separate row in a separate table, so a month that will not load is
+      no reason the campaign tool should be unreachable.
+    -->
+    <div class="widget tools">
+      <button type="button" class="tool" :class="{ 'tool--on': tool === 'newsletter' }"
+        @click="tool = 'newsletter'">Monthly newsletter</button>
+      <button type="button" class="tool" :class="{ 'tool--on': tool === 'campaign' }"
+        @click="tool = 'campaign'">Campaign email</button>
+      <span class="tools__note">
+        {{ tool === 'newsletter'
+          ? 'The monthly letter — guest story, program spotlight, numbers and episodes.'
+          : 'A one-off dated send: Giving Tuesday, a year-end appeal, Angel Tree.' }}
+      </span>
+    </div>
+
+    <CampaignEmail v-if="tool === 'campaign'" />
+
+    <template v-else>
     <p v-if="loading" class="state">Loading…</p>
     <p v-else-if="!draft" class="state state--err">{{ error || 'Could not load.' }}</p>
 
@@ -2014,10 +2047,16 @@ const fullVersion = (v: Version) => {
         </template>
       </section>
     </template>
+    </template>
   </DashboardLayout>
 </template>
 
 <style scoped>
+.tools { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.25rem; padding: .7rem 1.25rem; }
+.tool { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .4rem .85rem; font: inherit; font-size: .8125rem; color: var(--color-text-secondary); cursor: pointer; }
+.tool--on { background: var(--color-surface); color: var(--color-text); border-color: var(--color-primary-strong); font-weight: 600; }
+.tools__note { font-size: .75rem; color: var(--color-text-secondary); margin-left: .4rem; }
+
 .block { margin-bottom: 1.25rem; }
 .block__title { font-family: var(--font-heading); font-size: 1rem; margin: 0 0 .35rem; display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
 .block__hint { font-size: .8125rem; color: var(--color-text-secondary); margin: 0 0 1rem; line-height: 1.55; }
