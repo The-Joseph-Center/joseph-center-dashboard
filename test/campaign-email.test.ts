@@ -18,6 +18,7 @@ import assert from 'node:assert/strict';
 
 import {
   CAMPAIGN_VARIANTS, blankCampaign, reviewCampaign, variantSpec, PREVIEW_LIMIT,
+  reviewEveryVersion, blockingFor,
   type CampaignEmail,
 } from '../netlify/functions/_lib/campaign-email.ts';
 import { campaignHtml, campaignText, newsletterHtml } from '../netlify/functions/_lib/newsletter-html.ts';
@@ -402,4 +403,65 @@ test('every issue carries a unique handle', () => {
   assert.ok(found.length > 3);
   for (const i of found) assert.match(i.id, /^[0-9a-z]+$/);
   assert.equal(new Set(found.map((i) => i.id)).size, found.length);
+});
+
+// ── The gate the AWeber build goes through ─────────────────────────────────
+//
+// Three callers read this: the editor's Review panel, the readiness check, and
+// the server's refusal to create drafts. They have to agree, so there is one
+// of it.
+
+test('a clean campaign has nothing blocking the drafts', () => {
+  assert.deepEqual(blockingFor(GOOD), []);
+  assert.deepEqual(reviewEveryVersion(GOOD).issues, []);
+});
+
+test('a problem in one version alone still blocks the build', () => {
+  // The donor version is fine and the community one says "16 beds". Building
+  // two good drafts and one bad one is the worst of the three outcomes.
+  const c = vary('community-friend', { body: 'Today is Giving Tuesday. Golden Girls has 16 beds for women in crisis, and any amount helps us keep them open for the guests who need them most this winter.' });
+  const blocking = blockingFor(c);
+  assert.ok(blocking.some((i) => /16 beds/.test(i.problem)), JSON.stringify(blocking));
+  assert.ok(blockingFor(GOOD).length < blocking.length);
+});
+
+test('one pass covers every version plus the campaign-wide fields', () => {
+  // A broken link is one item, not three, even though three versions were read.
+  const c = { ...GOOD, link: 'josephcentergj.com/donate' };
+  const linkIssues = reviewEveryVersion(c).issues.filter((i) => i.where === 'Link');
+  assert.equal(linkIssues.length, 1, JSON.stringify(linkIssues));
+});
+
+test('setting an item aside unblocks the build', () => {
+  const c = vary('donor', { body: `${GOOD.variants.donor!.body}\n\nRocky Mountain stood with us this year.` });
+  const name = reviewEveryVersion(c).issues.find((i) => /reads as a full name/.test(i.problem));
+  assert.ok(name);
+  // That one is a 'should', so it was never blocking — but it must leave the
+  // list the panel shows, and the two must not disagree about why.
+  const after = reviewEveryVersion(c, [{ id: name!.id, reason: 'A foundation, not a person.' }]);
+  assert.ok(!after.issues.some((i) => i.id === name!.id));
+  assert.equal(after.dismissed.length, 1);
+  assert.equal(after.stale.length, 0);
+});
+
+test('an override that matched one version only is not called stale', () => {
+  // It is raised on the community version and not the donor one. Computing
+  // staleness per version would report it stale on two passes out of three.
+  const c = vary('community-friend', { body: `${GOOD.variants['community-friend']!.body}\n\nHigh Desert stood with us.` });
+  const name = reviewEveryVersion(c).issues.find((i) => /High Desert/.test(i.problem));
+  assert.ok(name, JSON.stringify(reviewEveryVersion(c).issues));
+  const after = reviewEveryVersion(c, [{ id: name!.id, reason: 'A foundation, not a person.' }]);
+  assert.equal(after.stale.length, 0);
+  assert.equal(after.dismissed.length, 1);
+});
+
+test('two versions may share a subject line, which is why drafts track by id', () => {
+  // The newsletter dedupes its AWeber drafts by subject and can, because each
+  // tier's subject is generated from the month. These are written by hand and
+  // Giving Tuesday's two donor versions deliberately match: same message, same
+  // reader, and the difference is the ask rather than the envelope. Subject
+  // matching would have built two drafts and skipped the third.
+  const subjects = CAMPAIGN_VARIANTS.map((v) => GOOD.variants[v.id]!.subject);
+  assert.equal(new Set(subjects).size, 2, 'the fixture has a deliberate collision');
+  assert.equal(subjects[1], subjects[2]);
 });

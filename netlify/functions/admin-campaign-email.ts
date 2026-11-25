@@ -1,7 +1,7 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { turso } from './_lib/staff-directory';
 import {
-  CAMPAIGN_VARIANTS, blankCampaign, reviewCampaign, variantSpec,
+  CAMPAIGN_VARIANTS, blankCampaign, reviewEveryVersion, variantSpec,
   type CampaignEmail, type CampaignVariantCopy, type Override,
 } from './_lib/campaign-email';
 import { campaignHtml, campaignText } from './_lib/newsletter-html';
@@ -116,30 +116,6 @@ function render(campaign: CampaignEmail) {
   });
 }
 
-/**
- * The review, per tier plus the campaign-wide fields.
- *
- * Run once per version rather than once for the campaign, because the same
- * rule can be broken in one version and not another and "the donor one says
- * 16 beds" is the useful report. The campaign-wide items (the link, the
- * button) would then appear three times, so they are run separately and
- * deduplicated by id.
- */
-function reviewAll(campaign: CampaignEmail, overrides: Override[]) {
-  const seen = new Set<string>();
-  const issues = [];
-  const dismissed = [];
-  for (const variantId of [undefined, ...CAMPAIGN_VARIANTS.map((v) => v.id)]) {
-    const r = reviewCampaign({ campaign, variantId, overrides });
-    for (const i of r.issues) if (!seen.has(i.id)) { seen.add(i.id); issues.push(i); }
-    for (const d of r.dismissed) if (!seen.has(d.id)) { seen.add(d.id); dismissed.push(d); }
-  }
-  // Stale is computed against every check that ran, so it is taken from the
-  // widest pass rather than any one tier's.
-  const matched = new Set([...issues, ...dismissed].map((i) => i.id));
-  return { issues, dismissed, stale: overrides.filter((o) => !matched.has(o.id)) };
-}
-
 export async function handler(event: {
   httpMethod: string;
   headers: Record<string, string>;
@@ -188,7 +164,7 @@ export async function handler(event: {
       const campaign = row ? toCampaign(row) : blankCampaign(slug);
       const workbench = row ? parse<Record<string, unknown>>(row.workbench, {}) : {};
       const overrides = Array.isArray(workbench.overrides) ? workbench.overrides as Override[] : [];
-      const { issues, dismissed, stale } = reviewAll(campaign, overrides);
+      const { issues, dismissed, stale } = reviewEveryVersion(campaign, overrides);
 
       return {
         statusCode: 200,
@@ -272,7 +248,7 @@ export async function handler(event: {
       workbench: JSON.stringify(workbench), status: prior?.status ?? 'draft',
       sent_at: null, updated_by: auth.email ?? 'unknown', updated_at: Math.floor(Date.now() / 1000),
     });
-    const { issues, dismissed, stale } = reviewAll(campaign, workbench.overrides);
+    const { issues, dismissed, stale } = reviewEveryVersion(campaign, workbench.overrides);
 
     return {
       statusCode: 200,

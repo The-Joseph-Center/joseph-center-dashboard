@@ -72,6 +72,36 @@ const copied = ref('');
 const dismissing = ref('');
 const dismissReason = ref('');
 
+/**
+ * Building the drafts in AWeber.
+ *
+ * Deliberately stops one step short of what the newsletter tool can do. That
+ * one can apply the monthly tag, which is the send; this builds drafts and
+ * nothing else. A campaign email goes out as a broadcast to a segment at a
+ * chosen minute, and both of those choices are the job — there is nothing a
+ * button here could do with them except get them wrong on somebody's behalf.
+ */
+interface BuildState {
+  ready: boolean;
+  blocking?: Issue[];
+  missingScopes?: string[];
+  error?: string;
+  apiDraftCount?: number;
+  versions?: {
+    id: string; label: string; subject: string;
+    builtId: number | null; builtAt: number | null; missingInAweber: boolean;
+  }[];
+}
+const buildOpen = ref(false);
+const buildState = ref<BuildState | null>(null);
+const checkingAweber = ref(false);
+const building = ref(false);
+const buildResult = ref<{
+  drafts: { tier: string; id: string; subject: string; broadcastId?: number; skipped?: boolean; error?: string }[];
+  recorded: boolean;
+  previewTexts: Record<string, string>;
+} | null>(null);
+
 let autosave: ReturnType<typeof setTimeout> | undefined;
 
 const musts = computed(() => issues.value.filter((i) => i.severity === 'must'));
@@ -220,6 +250,54 @@ async function copy(text: string, key: string) {
     setTimeout(() => { if (copied.value === key) copied.value = ''; }, 2000);
   } catch {
     error.value = 'The clipboard refused. Select the text and copy it by hand.';
+  }
+}
+
+/** Reads only: scopes, the review, and which drafts already exist. */
+async function checkAweber() {
+  if (!campaign.value) return;
+  checkingAweber.value = true; error.value = ''; buildResult.value = null;
+  try {
+    // The function reads the saved row, so an unsaved edit would be reported
+    // on as though it were not there.
+    if (dirty.value) await save();
+    const res = await apiFetch(`/.netlify/functions/campaign-aweber?slug=${encodeURIComponent(campaign.value.slug)}`);
+    const d = await res.json().catch(() => ({}));
+    buildState.value = res.ok ? d : { ready: false, error: d.error || `The request failed (${res.status}).` };
+    buildOpen.value = true;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not reach AWeber.';
+  } finally {
+    checkingAweber.value = false;
+  }
+}
+
+/** Builds the drafts. `rebuild` names versions to make again. */
+async function buildDrafts(rebuild: string[] = []) {
+  if (!campaign.value) return;
+  const again = rebuild.length;
+  if (!window.confirm(again
+    ? `This creates ${again === 1 ? 'a new draft' : `${again} new drafts`} in AWeber, alongside anything already there. Nothing is sent. Continue?`
+    : 'This creates three drafts in AWeber. Nothing is scheduled and nothing is sent — you choose the segment and the time there. Continue?')) return;
+  building.value = true; error.value = '';
+  try {
+    if (dirty.value) await save();
+    const res = await apiFetch('/.netlify/functions/campaign-aweber', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: campaign.value.slug, action: 'drafts', rebuild }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok && !d.drafts) {
+      if (Array.isArray(d.blocking)) buildState.value = { ready: false, blocking: d.blocking, error: d.error };
+      throw new Error(d.error || `The request failed (${res.status}).`);
+    }
+    buildResult.value = d;
+    if (d.error) error.value = d.error;
+    await checkAweber();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not build the drafts.';
+  } finally {
+    building.value = false;
   }
 }
 
@@ -522,6 +600,114 @@ watch(campaign, () => {
           </details>
         </template>
 
+      </section>
+
+      <!-- Build the drafts in AWeber -->
+      <section class="widget block">
+        <h2 class="block__title">Build the drafts in AWeber</h2>
+        <p class="block__hint">
+          Creates one draft per version, from the saved copy, the same way the monthly newsletter does. It stops
+          there: a campaign email goes out as a broadcast to a segment at a chosen minute, and choosing the segment
+          and the minute stays with you. Nothing here schedules or sends anything.
+        </p>
+
+        <div class="outrow">
+          <button type="button" class="btn btn--sm btn--ghost" :disabled="checkingAweber || building" @click="checkAweber()">
+            {{ checkingAweber ? 'Checking…' : 'Check AWeber' }}
+          </button>
+          <button
+            v-if="buildState?.ready" type="button" class="btn btn--sm" :disabled="building"
+            @click="buildDrafts()">{{ building ? 'Building…' : 'Build the three drafts' }}</button>
+        </div>
+
+        <template v-if="buildOpen && buildState">
+          <p v-if="buildState.error" class="warn">{{ buildState.error }}</p>
+
+          <ul v-if="buildState.missingScopes?.length" class="issues">
+            <li class="issue issue--must">
+              <span class="sev sev--must">Fix</span>
+              <div class="issue__body">
+                <p class="issue__problem">AWeber has not granted {{ buildState.missingScopes.join(', ') }}.</p>
+                <p class="issue__fix">Re-authorize with the wider scopes — scripts/aweber-oauth.mjs.</p>
+              </div>
+            </li>
+          </ul>
+
+          <template v-else-if="buildState.blocking?.length">
+            <p class="warn">
+              {{ buildState.blocking.length }} thing{{ buildState.blocking.length === 1 ? '' : 's' }} still to fix
+              before the drafts can be built. A draft sitting in AWeber is a draft somebody will send, so the
+              server refuses while anything is outstanding — set an item aside above if the check is wrong.
+            </p>
+            <ul class="issues">
+              <li v-for="i in buildState.blocking" :key="i.id" class="issue issue--must">
+                <span class="sev sev--must">Fix</span>
+                <div class="issue__body">
+                  <p class="issue__problem"><strong>{{ i.where }}</strong> — {{ i.problem }}</p>
+                  <p class="issue__fix">{{ i.fix }}</p>
+                </div>
+              </li>
+            </ul>
+          </template>
+
+          <template v-else-if="buildState.versions">
+            <ul class="built">
+              <li v-for="v in buildState.versions" :key="v.id">
+                <strong>{{ v.label }}</strong>
+                <template v-if="v.builtId && !v.missingInAweber">
+                  — draft <code>{{ v.builtId }}</code> built{{ v.builtAt ? ` ${when(v.builtAt)}` : '' }}
+                  <a :href="`https://www.aweber.com/users/messages/edit/${v.builtId}`" target="_blank" rel="noopener">open in AWeber</a>
+                  <button type="button" class="linkish" :disabled="building" @click="buildDrafts([v.id])">rebuild</button>
+                </template>
+                <template v-else-if="v.missingInAweber">
+                  <span class="built__gone">— draft {{ v.builtId }} is no longer in AWeber; somebody deleted it there.</span>
+                  <button type="button" class="linkish" :disabled="building" @click="buildDrafts([v.id])">build it again</button>
+                </template>
+                <template v-else>— not built yet</template>
+                <span class="built__subject">“{{ v.subject || 'no subject' }}”</span>
+              </li>
+            </ul>
+            <p class="block__hint block__hint--tight">
+              Two versions may share a subject line, so what has been built is tracked by broadcast id rather than
+              by subject — the newsletter's check would have built two and skipped the third.
+            </p>
+          </template>
+        </template>
+
+        <template v-if="buildResult">
+          <p class="ready">
+            {{ buildResult.drafts.filter((d) => d.broadcastId && !d.skipped).length }} built,
+            {{ buildResult.drafts.filter((d) => d.skipped).length }} already there.
+          </p>
+          <p v-if="!buildResult.recorded" class="warn">
+            The drafts were created but the record of them could not be saved. They are in AWeber — check there
+            before building again, or you will get duplicates.
+          </p>
+          <!--
+            The one thing the API cannot carry. AWeber's broadcast endpoint has
+            no field for a preview line, so it has to be typed in their editor
+            or the inbox shows the first line of the HTML — which is the
+            greeting. October went out that way.
+          -->
+          <div class="hand">
+            <p><strong>Set by hand in AWeber, per draft:</strong></p>
+            <ul>
+              <li>
+                <strong>Preview text</strong> — the API has no field for it.
+                <span v-for="v in versions" :key="v.id" class="hand__row">
+                  <em>{{ v.label }}:</em>
+                  <button type="button" class="linkish" :disabled="!v.previewText"
+                    @click="copy(v.previewText, 'pt-' + v.id)">
+                    {{ copied === 'pt-' + v.id ? 'Copied' : (v.previewText || 'not set') }}
+                  </button>
+                </span>
+              </li>
+              <li><strong>The segment</strong> — one per version, on the tier tags listed above each one.</li>
+              <li><strong>The schedule</strong> — 7:30 AM Mountain on {{ campaign.sendDate || 'the send date' }}.</li>
+            </ul>
+          </div>
+        </template>
+
         <p v-if="campaign.status !== 'sent'" class="finish">
           <button type="button" class="linkish" @click="markSent()">Record this campaign as sent</button>
           — bookkeeping only, after you have sent it in AWeber.
@@ -600,6 +786,17 @@ textarea { width: 100%; resize: vertical; line-height: 1.6; font-family: var(--f
 .render { width: 100%; height: 34rem; border: 1px solid var(--color-border); border-radius: var(--border-radius); background: #FAFAF7; }
 .preview { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--border-radius); padding: .9rem; font-size: .75rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; max-height: 32rem; overflow-y: auto; margin: 0; }
 .finish { border-top: 1px solid var(--color-border); margin-top: 1rem; padding-top: .8rem; font-size: .75rem; color: var(--color-text-secondary); }
+.built { list-style: none; margin: .2rem 0 .6rem; padding: 0; font-size: .8125rem; display: grid; gap: .35rem; }
+.built li { padding: .4rem .6rem; background: var(--color-bg); border-radius: var(--border-radius); line-height: 1.6; }
+.built a { color: var(--color-text-secondary); font-size: .75rem; }
+.built__gone { color: #8a5a1f; }
+.built__subject { display: block; color: var(--color-text-secondary); font-size: .75rem; }
+.hand { font-size: .8125rem; background: var(--color-bg); border-radius: var(--border-radius); padding: .7rem .8rem; line-height: 1.6; }
+.hand p { margin: 0 0 .3rem; }
+.hand ul { margin: 0; padding-left: 1.1rem; }
+.hand li { margin-bottom: .3rem; }
+.hand__row { display: block; margin-left: .2rem; }
+.hand__row em { color: var(--color-text-secondary); font-style: normal; font-size: .75rem; margin-right: .3rem; }
 
 .btn { background: var(--color-primary-strong); color: #fff; border: 0; border-radius: var(--border-radius); font-weight: 600; cursor: pointer; }
 .btn--sm { padding: .4rem .9rem; font-size: .8125rem; }

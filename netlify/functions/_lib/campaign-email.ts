@@ -404,6 +404,44 @@ function runChecks(campaign: CampaignEmail, variantId?: string): Issue[] {
   return issues;
 }
 
+/**
+ * The review across the campaign-wide fields and all three versions at once.
+ *
+ * Run per version rather than once for the campaign, because the same rule can
+ * be broken in one version and not another and "the donor one says 16 beds" is
+ * the useful report. The campaign-wide items — the link, the button label —
+ * would then appear three times, so they run in a pass of their own and the
+ * whole thing is deduplicated by issue id.
+ *
+ * Shared because three callers need exactly this: the editor's Review panel,
+ * the AWeber readiness check, and the server's refusal to build drafts while
+ * anything is outstanding. They have to agree, and the way to make them agree
+ * is for there to be one of this.
+ */
+export function reviewEveryVersion(campaign: CampaignEmail, overrides: Override[] = []): {
+  issues: Issue[];
+  dismissed: Dismissed[];
+  stale: Override[];
+} {
+  const seen = new Set<string>();
+  const issues: Issue[] = [];
+  const dismissed: Dismissed[] = [];
+  for (const variantId of [undefined, ...CAMPAIGN_VARIANTS.map((v) => v.id)]) {
+    const r = reviewCampaign({ campaign, variantId, overrides });
+    for (const i of r.issues) if (!seen.has(i.id)) { seen.add(i.id); issues.push(i); }
+    for (const d of r.dismissed) if (!seen.has(d.id)) { seen.add(d.id); dismissed.push(d); }
+  }
+  // Staleness is a fact about the widest pass, not about any one version: an
+  // override that matched the donor version is not stale because the community
+  // one never raised it.
+  const matched = new Set([...issues, ...dismissed].map((i) => i.id));
+  return { issues, dismissed, stale: overrides.filter((o) => !matched.has(o.id)) };
+}
+
+/** What stops the drafts being built: the outstanding must-fixes, deduplicated. */
+export const blockingFor = (campaign: CampaignEmail, overrides: Override[] = []): Issue[] =>
+  reviewEveryVersion(campaign, overrides).issues.filter((i) => i.severity === 'must');
+
 export function reviewCampaign(input: ReviewInput): {
   issues: Issue[];
   dismissed: Dismissed[];
