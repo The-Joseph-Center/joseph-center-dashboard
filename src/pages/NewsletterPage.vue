@@ -19,7 +19,17 @@ import { composeSection3, GREETING, partnersForMonth, quarterOf } from '../../ne
 // newsletter to every active subscriber; this page tells you exactly what to
 // set and leaves the sending to a person.
 
-interface Issue { severity: 'must' | 'should'; where: string; problem: string; fix: string }
+interface Issue {
+  severity: 'must' | 'should'; where: string; problem: string; fix: string;
+  /** Stable handle, so a dismissal silences this item and not next month's. */
+  id: string;
+  /** False where the tool does not offer a dismissal — see `lockedReason`. */
+  overridable: boolean;
+}
+/** A review item set aside, with the reason and who gave it. */
+interface Dismissed extends Issue { reason: string; by?: string; at?: number }
+/** What is stored: the verdict, not the issue it was given on. */
+interface Override { id: string; reason: string; label?: string; by?: string; at?: number }
 interface Version {
   id: string; label: string; tag: string; excludes: string[];
   subject: string; signature: string; section4: string; closing: string;
@@ -39,6 +49,27 @@ const months = ref<{
 const month = ref('');
 const draft = ref<Draft | null>(null);
 const issues = ref<Issue[]>([]);
+/**
+ * Review items the writer has judged wrong.
+ *
+ * Every check in this tool is a string test standing in for a judgement, and
+ * November's draft found three that were simply wrong about a correct draft —
+ * a partner's phone number read as a leak, the last four digits of it read as
+ * an unsourced statistic, and a closing line that had been adapted for the
+ * program read as missing. Two of those are fixed properly; this is for the
+ * next one. A check that cannot be told it is wrong gets ignored wholesale,
+ * and then the checks that are right get ignored with it.
+ *
+ * `overrides` is what is saved. `dismissed` is what the server made of it, so
+ * the list on screen is the server's own reading and not a hopeful copy.
+ */
+const overrides = ref<Override[]>([]);
+const dismissed = ref<Dismissed[]>([]);
+/** Dismissals that match nothing any more, because the copy has since changed. */
+const staleOverrides = ref<Override[]>([]);
+/** The issue whose reason box is open, and what has been typed into it. */
+const dismissing = ref('');
+const dismissReason = ref('');
 const versions = ref<Version[]>([]);
 const plan = ref<{ tag: string; waitDays: number; endOfMonth: string } | null>(null);
 const partnerHistory = ref<{ name: string; url: string; months: string[]; lastUsed: string }[]>([]);
@@ -504,6 +535,9 @@ interface SendState {
   totals?: { subscribers: number; active: number; alreadyTagged: number; toTag: number };
   blocking?: Issue[];
   issues?: Issue[];
+  dismissed?: Dismissed[];
+  /** How many of the set-aside items would otherwise be blocking the send. */
+  dismissedMusts?: number;
   plan?: { tag: string; waitDays: number; endOfMonth: string };
   partiallyTagged?: boolean;
   audience?: {
@@ -571,6 +605,7 @@ async function checkSend() {
     // it can be out of date with the review that actually blocks the send.
     // The check returns its own list — take it, so the two cannot disagree.
     if (res.ok && Array.isArray(d.issues)) issues.value = d.issues;
+    if (res.ok && Array.isArray(d.dismissed)) dismissed.value = d.dismissed;
     sendOpen.value = true;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not reach AWeber.';
@@ -757,6 +792,68 @@ const lastMonth = computed(() => {
 
 const musts = computed(() => issues.value.filter((i) => i.severity === 'must'));
 const shoulds = computed(() => issues.value.filter((i) => i.severity === 'should'));
+const dismissedMusts = computed(() => dismissed.value.filter((i) => i.severity === 'must').length);
+
+/**
+ * Why a particular check is not offering a dismissal.
+ *
+ * Said out loud rather than leaving the button off without explanation —
+ * "there is no way past this one" is the kind of thing that reads as a bug.
+ */
+function lockedReason(where: string): string {
+  if (where === 'AWeber') {
+    return 'This one cannot be set aside. A tag that has been used before does not send twice — it sends to nobody, because a subscriber can only enter an automation once — and a tag with no year in it fires again next year. Neither is a judgement call.';
+  }
+  if (where === 'Names to withhold') {
+    return 'This one cannot be set aside. You put that name on the withhold list yourself; if it may stay after all, take it off the list, where the next person can see it was reconsidered.';
+  }
+  return '';
+}
+
+function startDismiss(i: Issue) {
+  dismissing.value = i.id;
+  dismissReason.value = '';
+}
+
+/**
+ * Set one review item aside.
+ *
+ * Moved across on screen at once and saved with the month, so the Review panel
+ * and the server's refusal to tag the list are reading the same decision. The
+ * reason is required: a silenced check with no note beside it is indistinguishable
+ * from a check that never ran, and the next person to open this month has no
+ * way to tell which.
+ */
+function confirmDismiss(i: Issue) {
+  const reason = dismissReason.value.trim();
+  if (reason.length < 5) return;
+  overrides.value = [
+    ...overrides.value.filter((o) => o.id !== i.id),
+    { id: i.id, reason, label: `${i.where} — ${i.problem}` },
+  ];
+  // `by` and `at` are the server's to set from the signed-in session, so they
+  // are absent until the next load rather than guessed at here.
+  dismissed.value = [...dismissed.value, { ...i, reason }];
+  issues.value = issues.value.filter((x) => x.id !== i.id);
+  dismissing.value = '';
+  dismissReason.value = '';
+}
+
+/** Put a set-aside item back in the review. */
+function restore(d: Dismissed) {
+  overrides.value = overrides.value.filter((o) => o.id !== d.id);
+  staleOverrides.value = staleOverrides.value.filter((o) => o.id !== d.id);
+  dismissed.value = dismissed.value.filter((x) => x.id !== d.id);
+  const { reason: _reason, by: _by, at: _at, ...issue } = d;
+  issues.value = [...issues.value, issue];
+}
+
+/** Drop the dismissals that no longer match anything the review found. */
+function clearStale() {
+  const gone = new Set(staleOverrides.value.map((o) => o.id));
+  overrides.value = overrides.value.filter((o) => !gone.has(o.id));
+  staleOverrides.value = [];
+}
 
 /** Unix seconds as a plain date. */
 function when(seconds: number) {
@@ -781,6 +878,8 @@ async function load() {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
     const d = await res.json();
     draft.value = d.draft; issues.value = d.issues; versions.value = d.versions;
+    dismissed.value = d.dismissed ?? []; staleOverrides.value = d.staleOverrides ?? [];
+    dismissing.value = ''; dismissReason.value = '';
     plan.value = d.plan; section3Header.value = d.section3Header; bridge.value = d.bridgeLine;
     partnerHistory.value = d.partners ?? []; history.value = d.history ?? [];
     carriedPartners.value = !!d.carriedPartners;
@@ -822,6 +921,7 @@ const workbench = computed(() => ({
   facts: { people: factPeople.value, timeline: factTimeline.value, programs: factPrograms.value, uncertain: factUncertain.value },
   factsOpen: factsOpen.value,
   spotlightNotes: spotlightNotes.value,
+  overrides: overrides.value,
 }));
 
 function applyWorkbench(w: Record<string, unknown> | undefined) {
@@ -830,7 +930,11 @@ function applyWorkbench(w: Record<string, unknown> | undefined) {
     withholdNames?: string[]; notPeople?: string[]; coffeeChatUrl?: string;
     transcriptFiles?: { name: string; speaker: string; bonus: boolean }[];
     facts?: { people?: string; timeline?: string; programs?: string; uncertain?: string[] };
+    overrides?: Override[];
   };
+  // The dismissals themselves, so a save carries them back unchanged. What the
+  // review made of them arrives separately, in `dismissed`.
+  overrides.value = wb.overrides ?? [];
   transcript.value = wb.transcript ?? '';
   transcriptFiles.value = wb.transcriptFiles ?? [];
   notes.value = wb.notes ?? '';
@@ -1575,21 +1679,84 @@ const fullVersion = (v: Version) => {
           Review
           <span v-if="!issues.length" class="pill pill--ok">nothing outstanding</span>
           <span v-else class="pill pill--warn">{{ musts.length }} to fix, {{ shoulds.length }} to check</span>
+          <span v-if="dismissed.length" class="pill pill--set">{{ dismissed.length }} set aside</span>
         </h2>
-        <p class="block__hint">Every one of these is a mistake that has been caught in review before.</p>
+        <p class="block__hint">
+          Every one of these is a mistake that has been caught in review before. Each one is a string test
+          standing in for a judgement, though, so one of them will sometimes be wrong about a correct draft —
+          when it is, set it aside with a reason rather than editing good copy to satisfy it.
+        </p>
         <p v-if="!issues.length" class="ready">
           Checked and clear: terminology, the bridge line and its month, first names only, the stats and video
           titles, the AWeber tag and its year, the preview text, and this month's guest and partners.
+          <template v-if="dismissed.length">
+            {{ dismissed.length === 1 ? 'One item was' : `${dismissed.length} items were` }} set aside to get
+            here — {{ dismissed.length === 1 ? 'it is' : 'they are' }} listed below with the reason.
+          </template>
         </p>
         <ul v-if="issues.length" class="issues">
-          <li v-for="(i, n) in issues" :key="n" class="issue" :class="`issue--${i.severity}`">
+          <li v-for="i in issues" :key="i.id" class="issue" :class="`issue--${i.severity}`">
             <span class="sev" :class="`sev--${i.severity}`">{{ i.severity === 'must' ? 'Fix' : 'Check' }}</span>
-            <div>
+            <div class="issue__body">
               <p class="issue__problem"><strong>{{ i.where }}</strong> — {{ i.problem }}</p>
               <p class="issue__fix">{{ i.fix }}</p>
+
+              <!--
+                The way out of a check that is wrong. A reason is required and
+                is kept with the month, because a silenced check with nothing
+                beside it cannot be told apart from one that never ran.
+              -->
+              <form v-if="dismissing === i.id" class="setaside__form" @submit.prevent="confirmDismiss(i)">
+                <label :for="`why-${i.id}`">Why is this one wrong?</label>
+                <input
+                  :id="`why-${i.id}`" v-model="dismissReason" type="text" maxlength="400"
+                  placeholder="The number is the Peace &amp; Justice Center's, Suite A of our building — it should stay" />
+                <div class="setaside__row">
+                  <button type="submit" class="btn btn--sm" :disabled="dismissReason.trim().length < 5">
+                    Set it aside
+                  </button>
+                  <button type="button" class="linkish" @click="dismissing = ''">Cancel</button>
+                  <span class="setaside__note">
+                    {{ i.severity === 'must' ? 'This unblocks the send.' : 'This stops it being raised.' }}
+                    This month only, and only for this exact wording.
+                  </span>
+                </div>
+              </form>
+              <button
+                v-else-if="i.overridable" type="button" class="linkish setaside__open"
+                @click="startDismiss(i)">This one is wrong — set it aside</button>
+              <p v-else class="setaside__locked">{{ lockedReason(i.where) }}</p>
             </div>
           </li>
         </ul>
+
+        <details v-if="dismissed.length" class="setaside">
+          <summary>
+            {{ dismissed.length }} set aside<template v-if="dismissedMusts"> — {{ dismissedMusts }} of
+            {{ dismissedMusts === 1 ? 'them a Fix that would otherwise block the send' : 'them Fixes that would otherwise block the send' }}</template>
+          </summary>
+          <ul class="issues">
+            <li v-for="d in dismissed" :key="d.id" class="issue issue--set">
+              <span class="sev sev--set">{{ d.severity === 'must' ? 'Fix' : 'Check' }}</span>
+              <div class="issue__body">
+                <p class="issue__problem"><strong>{{ d.where }}</strong> — {{ d.problem }}</p>
+                <p class="issue__fix">
+                  “{{ d.reason }}”<template v-if="d.by"> — {{ d.by }}</template><template v-if="d.at">, {{ when(d.at) }}</template>
+                </p>
+                <button type="button" class="linkish setaside__open" @click="restore(d)">
+                  Put it back in the review
+                </button>
+              </div>
+            </li>
+          </ul>
+        </details>
+
+        <p v-if="staleOverrides.length" class="block__hint">
+          {{ staleOverrides.length }} earlier set-aside{{ staleOverrides.length === 1 ? '' : 's' }}
+          {{ staleOverrides.length === 1 ? 'matches' : 'match' }} nothing in the review now — the copy has
+          changed since, so {{ staleOverrides.length === 1 ? 'it is' : 'they are' }} doing nothing.
+          <button type="button" class="linkish" @click="clearStale()">Clear them</button>
+        </p>
       </section>
 
       <!-- Sending -->
@@ -1695,6 +1862,15 @@ const fullVersion = (v: Version) => {
 
             <template v-else>
               <p class="ready">Nothing outstanding in the review.</p>
+              <!--
+                A dismissed Fix is the reason this says "nothing outstanding"
+                rather than being clear on its own merits, and the moment to
+                say so is the one before the tag goes on.
+              -->
+              <p v-if="sendState.dismissedMusts" class="hint">
+                {{ sendState.dismissedMusts }} must-fix{{ sendState.dismissedMusts === 1 ? ' was' : 'es were' }} set
+                aside to get here. The reasons are in the Review block above.
+              </p>
 
               <!--
                 The tag is the last step, not the next one. Everything between
@@ -1893,6 +2069,20 @@ const fullVersion = (v: Version) => {
 .sev--should { color: #8a5a1f; background: color-mix(in srgb, #8a5a1f 12%, transparent); }
 .issue__problem { margin: 0; font-size: .8125rem; }
 .issue__fix { margin: .15rem 0 0; font-size: .75rem; color: var(--color-text-secondary); line-height: 1.5; }
+.issue__body { min-width: 0; }
+.issue--set { border-left-color: var(--color-border); opacity: .85; }
+.sev--set { color: var(--color-text-secondary); background: color-mix(in srgb, var(--color-text-secondary) 10%, transparent); }
+.pill--set { color: var(--color-text-secondary); background: color-mix(in srgb, var(--color-text-secondary) 12%, transparent); }
+.setaside { margin-top: .7rem; font-size: .8125rem; }
+.setaside > summary { cursor: pointer; color: var(--color-text-secondary); font-size: .75rem; padding: .2rem 0; }
+.setaside > ul { margin-top: .45rem; }
+.setaside__open { margin-top: .3rem; font-size: .72rem; }
+.setaside__locked { margin: .3rem 0 0; font-size: .72rem; color: var(--color-text-secondary); line-height: 1.5; }
+.setaside__form { margin-top: .45rem; display: grid; gap: .3rem; }
+.setaside__form label { font-size: .7rem; font-weight: 600; color: var(--color-text-secondary); }
+.setaside__form input { width: 100%; }
+.setaside__row { display: flex; gap: .55rem; align-items: center; flex-wrap: wrap; }
+.setaside__note { font-size: .7rem; color: var(--color-text-secondary); }
 
 .f { display: block; margin-bottom: .7rem; }
 .f > span { display: block; font-family: var(--font-heading); font-size: .65rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-secondary); margin-bottom: .25rem; }

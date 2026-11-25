@@ -15,7 +15,7 @@ import {
   section1Parts, sensitiveMentions, watchLabel, composeSection3, SECTION3_INTRO,
   episodesLabel, section4, TIERS, APPLY_URL, programKey, PROGRAM_BULLETS, PROGRAM_CTA,
   PUBLIC_PHONE, JC_PHONES, availableBullets, closingLineFor, CLOSING_SECOND_SENTENCE,
-  quarterOf, partnersForMonth,
+  quarterOf, partnersForMonth, reviewWithDismissals, issueId, PARTNER_PHONES,
   type NewsletterDraft,
 } from '../netlify/functions/_lib/newsletter.ts';
 import { OCTOBER_AS_SENT, OCTOBER_CORRECTED } from './fixtures/newsletters.ts';
@@ -500,4 +500,171 @@ test('October as sent trips every fault the comparison found', () => {
 test('the corrected version passes clean', () => {
   const issues = review(OCTOBER_CORRECTED);
   assert.deepEqual(issues, [], `expected no issues, got:\n${text(OCTOBER_CORRECTED)}`);
+});
+
+// ── A check that is wrong about a correct draft ─────────────────────────────
+//
+// All three of these were reported on November's draft, and all three were the
+// check's fault rather than the copy's. They are the reason the Review panel
+// can now set an item aside: two are fixed here, and the next one will not be.
+
+/** November's spotlight mentioned the organisation in Suite A, by name and number. */
+const withNeighbour = (base: NewsletterDraft): NewsletterDraft => ({
+  ...base,
+  section2: `${base.section2}\n\nIn October, the Peace & Justice Center next door took walk-ins on (970) 985-4253.`,
+});
+
+test("a neighbour's own published number is a check, not a leak", () => {
+  const d = withNeighbour(OCTOBER_CORRECTED);
+  const found = review(d).filter((i) => i.problem.includes('985-4253'));
+  assert.equal(found.length, 1, text(d));
+  assert.equal(found[0]!.severity, 'should');
+  assert.match(found[0]!.problem, /Peace & Justice Center/);
+  assert.ok(PARTNER_PHONES.some((p) => p.phone === '(970) 985-4253'));
+});
+
+test('the last four digits of a phone number are not an unsourced figure', () => {
+  // It was offered as "Figures in the spotlight that are not in this month's
+  // stats or your notes: 4253" — a statistic to source or delete, which was
+  // the tail of a phone number. The old guard knew only JC's own numbers, so
+  // any other number in the paragraph shed its digit groups into that list.
+  const d = withNeighbour(OCTOBER_CORRECTED);
+  assert.ok(!flags(d, /Figures in the spotlight/), text(d));
+  // The number is still named once, by the contact check, which is its job.
+  assert.ok(!review(d).some((i) => i.where === 'Section 2' && /4253/.test(i.problem)), text(d));
+});
+
+test("a stranger's number is still a must-fix, and still sheds no figures", () => {
+  const d = { ...OCTOBER_CORRECTED, section2: `${OCTOBER_CORRECTED.section2}\n\nIn October, call Dana on (970) 555-0134.` };
+  assert.ok(musts(d).some((i) => i.where === 'Contact details' && i.problem.includes('555-0134')));
+  assert.ok(!flags(d, /Figures in the spotlight/), text(d));
+});
+
+test('opening hours in a monthly paragraph are not figures either', () => {
+  const d = { ...OCTOBER_CORRECTED, section2: `${OCTOBER_CORRECTED.section2}\n\nIn October we were open 9am–1pm, Tuesday–Friday.` };
+  assert.ok(!flags(d, /Figures in the spotlight/), text(d));
+});
+
+/** A program with no settled closing line, so the shape is what is checked. */
+const FAMILY_CENTER: NewsletterDraft = {
+  ...OCTOBER_CORRECTED,
+  program: 'Family Center',
+  section2: `## Where Reunification Begins: Family Center
+
+The Family Center works with parents on a plan they write themselves.
+
+**What we provide:**
+- Parenting classes
+- Supervised visitation
+- A plan the parent writes themselves
+- Referrals to the rest of the bridge
+
+Every parent who walks through our doors working toward reunification is walking across the bridge. Where they go from there depends on what they need — but they never walk alone.
+
+Know a parent who needs support? [Complete a Referral Form →](josephcentergj.com/forms/referral)`,
+};
+
+test('the closing line may name whoever the program serves', () => {
+  // "Every parent who …" was reported as the standard closing line being
+  // missing, because the check looked for the literal words "Every person who".
+  assert.ok(!flags(FAMILY_CENTER, /bridge closing line is missing/), text(FAMILY_CENTER));
+  assert.ok(!flags(FAMILY_CENTER, /closing line/), text(FAMILY_CENTER));
+});
+
+test('a closing line that stops after one sentence says exactly that', () => {
+  const d: NewsletterDraft = {
+    ...FAMILY_CENTER,
+    section2: FAMILY_CENTER.section2.replace(` ${CLOSING_SECOND_SENTENCE}`, ''),
+  };
+  const found = review(d).filter((i) => /closing line/.test(i.problem));
+  assert.equal(found.length, 1, text(d));
+  assert.match(found[0]!.problem, /stops after its first sentence/);
+  assert.ok(found[0]!.fix.includes(CLOSING_SECOND_SENTENCE));
+});
+
+test('no closing line at all is still reported as missing', () => {
+  const d: NewsletterDraft = {
+    ...FAMILY_CENTER,
+    section2: FAMILY_CENTER.section2.replace(/Every parent who[^\n]*\n/, ''),
+  };
+  assert.ok(flags(d, /bridge closing line is missing/), text(d));
+});
+
+test('settled copy still matches after a word processor has had it', () => {
+  // The same sentence to a reader, two different sentences to `includes`.
+  const retyped = CLOSING_SECOND_SENTENCE.replace('—', '--');
+  const d = { ...OCTOBER_CORRECTED, section2: OCTOBER_CORRECTED.section2.replace(CLOSING_SECOND_SENTENCE, retyped) };
+  assert.notEqual(d.section2, OCTOBER_CORRECTED.section2);
+  assert.ok(!flags(d, /settled wording/), text(d));
+});
+
+test('a label naming what was donated says what is being counted', () => {
+  const d = { ...OCTOBER_CORRECTED, stats: { ...OCTOBER_CORRECTED.stats, 'Inkind Donations': '212' } };
+  assert.ok(!flags(d, /Inkind Donations/), text(d));
+});
+
+// ── Setting an item aside ──────────────────────────────────────────────────
+
+test('a dismissed item leaves the review and keeps its reason', () => {
+  const base = { ...OCTOBER_CORRECTED, section2: `${OCTOBER_CORRECTED.section2}\n\nCall Dana on (970) 555-0134.` };
+  const leak = review(base).find((i) => i.problem.includes('555-0134'));
+  assert.ok(leak, text(base));
+  const d: NewsletterDraft = {
+    ...base,
+    overrides: [{ id: leak!.id, reason: 'It is the referral desk in Delta, and the sentence says so.' }],
+  };
+  const { issues, dismissed, stale } = reviewWithDismissals(d);
+  assert.ok(!issues.some((i) => i.id === leak!.id));
+  assert.equal(dismissed.length, 1);
+  assert.equal(dismissed[0]!.reason, 'It is the referral desk in Delta, and the sentence says so.');
+  assert.equal(stale.length, 0);
+  // And the list the send gate reads is the same one.
+  assert.ok(!reviewNewsletter(d).some((i) => i.id === leak!.id));
+});
+
+test('a dismissal is tied to the wording it was given on', () => {
+  // Setting one number aside must not silence a different one next month.
+  const one = issueId('Contact details', 'A phone number appears in the story: (970) 555-0134.');
+  const other = issueId('Contact details', 'A phone number appears in the story: (970) 555-0199.');
+  assert.notEqual(one, other);
+  assert.equal(one, issueId('Contact details', 'A phone number appears in the story: (970) 555-0134.'));
+});
+
+test('an AWeber tag cannot be set aside, however it is asked', () => {
+  // A reused tag does not send twice, it sends to nobody.
+  const d = { ...OCTOBER_CORRECTED, usedTags: [...OCTOBER_CORRECTED.usedTags, OCTOBER_CORRECTED.aweberTag] };
+  const reused = review(d).find((i) => i.where === 'AWeber');
+  assert.ok(reused, text(d));
+  assert.equal(reused!.overridable, false);
+  const forced = reviewWithDismissals({ ...d, overrides: [{ id: reused!.id, reason: 'I know what I am doing.' }] });
+  assert.ok(forced.issues.some((i) => i.id === reused!.id), 'it stays in the review');
+  assert.equal(forced.dismissed.length, 0);
+});
+
+test('a name on the withhold list cannot be set aside', () => {
+  const found = review(OCTOBER_AS_SENT).find((i) => i.where === 'Names to withhold');
+  assert.ok(found);
+  assert.equal(found!.overridable, false);
+});
+
+test('a dismissal that matches nothing any more is reported as stale', () => {
+  const d: NewsletterDraft = {
+    ...OCTOBER_CORRECTED,
+    overrides: [{ id: 'nothingatall', reason: 'this was fixed properly last week' }],
+  };
+  const { dismissed, stale } = reviewWithDismissals(d);
+  assert.equal(dismissed.length, 0);
+  assert.equal(stale.length, 1);
+  assert.equal(stale[0]!.id, 'nothingatall');
+});
+
+test('every issue carries a unique handle and says whether it can be set aside', () => {
+  const issues = review(OCTOBER_AS_SENT);
+  assert.ok(issues.length > 5, 'the fixture is the one with every fault in it');
+  for (const i of issues) {
+    assert.match(i.id, /^[0-9a-z]+$/, `${i.where}: ${i.problem}`);
+    assert.equal(typeof i.overridable, 'boolean');
+  }
+  // Two items sharing a handle would mean dismissing one silenced the other.
+  assert.equal(new Set(issues.map((i) => i.id)).size, issues.length);
 });

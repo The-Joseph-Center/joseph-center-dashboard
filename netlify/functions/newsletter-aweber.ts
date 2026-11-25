@@ -1,6 +1,9 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { turso, fetchOktaUsers } from './_lib/staff-directory';
-import { reviewNewsletter, aweberPlan, composeSection3, GREETING, type NewsletterDraft, type Video } from './_lib/newsletter';
+import {
+  reviewWithDismissals, aweberPlan, composeSection3, GREETING,
+  type NewsletterDraft, type Video, type Override,
+} from './_lib/newsletter';
 import type { Subscriber } from './_lib/aweber';
 import {
   aweberConfig, missingScopes, allSubscribers, addTag, describeAudience, REQUIRED_SCOPES,
@@ -63,7 +66,7 @@ async function loadForReview(month: string) {
   // three, and the transcript besides.
   const wb = parse<{
     coffeeChatUrl?: string; withholdNames?: string[]; notPeople?: string[];
-    transcript?: string; spotlightNotes?: string;
+    transcript?: string; spotlightNotes?: string; overrides?: Override[];
   }>(row.workbench, {});
 
   const draft: NewsletterDraft = {
@@ -86,8 +89,12 @@ async function loadForReview(month: string) {
     notPeople: Array.isArray(wb.notPeople) ? wb.notPeople : [],
     transcript: typeof wb.transcript === 'string' ? wb.transcript : '',
     spotlightNotes: typeof wb.spotlightNotes === 'string' ? wb.spotlightNotes : '',
+    // The dismissals come from the saved row, never from the request, so the
+    // refusal below cannot be talked out of anything by a crafted POST.
+    overrides: Array.isArray(wb.overrides) ? wb.overrides : [],
   };
-  return { draft, status: String(row.status ?? 'draft'), issues: reviewNewsletter(draft) };
+  const { issues, dismissed } = reviewWithDismissals(draft);
+  return { draft, status: String(row.status ?? 'draft'), issues, dismissed };
 }
 
 /**
@@ -143,8 +150,11 @@ export async function handler(event: {
     if (!loaded) {
       return { statusCode: 404, headers: JSON_HEADERS, body: JSON.stringify({ error: 'That month has not been saved yet.' }) };
     }
-    const { draft, status, issues } = loaded;
+    const { draft, status, issues, dismissed } = loaded;
     const blocking = issues.filter((i) => i.severity === 'must');
+    // Set aside, not fixed. Reported with every check and every send so the
+    // decision stays in front of whoever is about to tag the list.
+    const dismissedMusts = dismissed.filter((i) => i.severity === 'must');
 
     // ── check: read-only ──
     if (event.httpMethod === 'GET') {
@@ -187,6 +197,8 @@ export async function handler(event: {
           },
           blocking,
           issues,
+          dismissed,
+          dismissedMusts: dismissedMusts.length,
           audience,
           // Not blocking: a tag already on some subscribers usually means a
           // half-finished earlier run, and re-running skips them safely. Worth

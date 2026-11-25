@@ -104,6 +104,19 @@ export const JC_PHONES = ['(970) 245-9425', PUBLIC_PHONE, '(970) 985-5114'];
  * so it is a correction to make, not a privacy leak to stop the month over.
  */
 export const RETIRED_PHONES = ['(970) 985-6133'];
+/**
+ * Numbers that belong to somebody else and are meant to be in print.
+ *
+ * The contact check treats a number in the story as a leak from the
+ * transcript, which is right for a guest's mobile and wrong for the
+ * organisation sharing the building. The Peace & Justice Center is Suite A and
+ * The Joseph Center is Suite B; a newsletter that mentions them should be able
+ * to say how to reach them. Anything not on this list is still flagged, and
+ * the Review panel can set a one-off aside without it being added here.
+ */
+export const PARTNER_PHONES: { phone: string; who: string }[] = [
+  { phone: '(970) 985-4253', who: 'the Peace & Justice Center, Suite A of the same building' },
+];
 export const JC_EMAILS = ['jc@josephcentergj.com', 'ephifer@josephcentergj.com', 'josephcentergj@gmail.com'];
 
 /** First names that appear in newsletter copy by design, from the brand reference. */
@@ -459,7 +472,73 @@ export function aweberPlan(month: string, today: Date) {
 // ── Review ────────────────────────────────────────────────────────────────
 
 export type Severity = 'must' | 'should';
-export interface Issue { severity: Severity; where: string; problem: string; fix: string }
+export interface Issue {
+  severity: Severity;
+  where: string;
+  problem: string;
+  fix: string;
+  /** Stable handle for a dismissal — see `issueId`. */
+  id: string;
+  /** False where a dismissal could not be right. See `NOT_OVERRIDABLE`. */
+  overridable: boolean;
+}
+
+/**
+ * A review item the writer has judged wrong, with their reason.
+ *
+ * Every check here is a string test standing in for a judgement, and a string
+ * test is sometimes wrong: November's draft named the Peace & Justice Center's
+ * own phone number (they are Suite A of the same building) and the contact
+ * check read it as a leak from the transcript. A check that cries wolf and
+ * cannot be told otherwise gets ignored wholesale, which costs more than the
+ * occasional false negative — so a writer can set one aside, in writing.
+ *
+ * `label` is the issue as it read when it was dismissed. It is never matched
+ * on; it is there so a row in the database can be understood by a person.
+ */
+export interface Override { id: string; reason: string; label?: string; by?: string; at?: number }
+/** An issue that has been set aside, carrying who did it and why. */
+export interface Dismissed extends Issue { reason: string; by?: string; at?: number }
+
+/**
+ * A stable handle for one review item.
+ *
+ * Built from the section and the problem text, so dismissing "a phone number
+ * appears: 970-985-4253" does not also silence a different number next month.
+ * It follows that rewording a check retires its dismissals — which is the
+ * behaviour we want: a check that now says something different deserves a
+ * fresh look rather than inheriting an old verdict.
+ */
+export function issueId(where: string, problem: string): string {
+  const s = `${where}|${problem}`
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u201c\u201d]/g, "'")
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // FNV-1a. Short, stable across deploys, and it has to survive being stored
+  // in a JSON blob and compared as a string — nothing more is asked of it.
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * Sections where a dismissal cannot be right, so the tool does not offer one.
+ *
+ * AWeber: a reused tag does not send the newsletter twice, it sends it to
+ * nobody — subscribers can only enter an automation once — and a tag with no
+ * year in it re-triggers next year. Neither is a judgement call; both are
+ * facts about the account, and the fix is mechanical.
+ *
+ * Names to withhold: the writer typed that name into the withhold list
+ * themselves. If it may stay, the honest edit is to take it off the list,
+ * where the next person can see that it was reconsidered.
+ */
+const NOT_OVERRIDABLE = new Set(['AWeber', 'Names to withhold']);
 
 export interface NewsletterDraft {
   month: string;            // 'YYYY-MM'
@@ -497,6 +576,14 @@ export interface NewsletterDraft {
   transcript?: string;
   /** The writer's Section 2 notes — a figure they supplied counts as sourced. */
   spotlightNotes?: string;
+  /**
+   * Review items the writer has judged wrong, with their reasons.
+   *
+   * Applied in `reviewWithDismissals`, which every gate goes through, so a
+   * dismissal silences an item in the Review panel and in the server's refusal
+   * to tag the list at the same moment and for the same reason.
+   */
+  overrides?: Override[];
 }
 
 /**
@@ -614,6 +701,35 @@ const CONTACT_EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
 const onlyDigits = (s: string) => s.replace(/\D+/g, '');
 const JC_PHONE_DIGITS = new Set(JC_PHONES.map(onlyDigits));
 const RETIRED_PHONE_DIGITS = new Set(RETIRED_PHONES.map(onlyDigits));
+const PARTNER_PHONE_DIGITS = new Map(PARTNER_PHONES.map((p) => [onlyDigits(p.phone), p.who]));
+/**
+ * Text with the punctuation a word processor changes flattened.
+ *
+ * Settled copy is compared by string, and a paragraph that has been through
+ * Word or Google Docs comes back with curly quotes and an em dash where the
+ * template has straight ones. Those are the same sentence to a reader and two
+ * different sentences to `includes`.
+ */
+const norm = (s: string) => (s ?? '')
+  .replace(/[\u2018\u2019]/g, "'")
+  .replace(/[\u201c\u201d]/g, '"')
+  .replace(/[\u2013\u2014]/g, '-')
+  .replace(/-{2,}/g, '-')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+/**
+ * The shape of Section 2's closing line.
+ *
+ * "Every person who [action]" is the template, and the subject belongs to the
+ * program: "Every parent who walks through our doors working toward
+ * reunification" is the Family Center's version of it. A check looking for the
+ * literal words "Every person who" reported that one as missing.
+ */
+const CLOSING_SHAPE = /\bEvery\b[^.!?]{0,160}\bis walking across the bridge\b/i;
+
+/** Opening hours, which are not figures. "9am-1pm", "noon", "2:30 p.m." */
+const CLOCK_TIME = /\b\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)\b/gi;
 const JC_EMAIL_SET = new Set(JC_EMAILS.map((e) => e.toLowerCase()));
 
 /** Wording that goes out of date between drafting and sending, or never got filled in. */
@@ -640,7 +756,7 @@ const PLACEHOLDERS: { re: RegExp; what: string }[] = [
 const PLACEHOLDER_STAT_LABELS = ['program spotlight stat', 'spotlight stat', 'program stat', 'stat label'];
 
 /** A stat label has to say what is being counted. */
-const UNIT_NOUN = /\b(people|persons?|individuals?|guests?|clients?|families|households|women|men|adults|seniors|children|kids|parents|moms|veterans|residents|neighbors|participants|volunteers|meals|lunches|plates|boxes|bags|packs|pounds|nights|stays|beds|visits|hours|calls|appointments|applications|referrals|loads|showers|rides|classes|sessions)\b/i;
+const UNIT_NOUN = /\b(people|persons?|individuals?|guests?|clients?|families|households|women|men|adults|seniors|children|kids|parents|moms|veterans|residents|neighbors|participants|volunteers|meals|lunches|plates|boxes|bags|packs|pounds|nights|stays|beds|visits|hours|calls|appointments|applications|referrals|loads|showers|rides|classes|sessions|donations?|gifts?|items?|toys?|coats?|blankets?|diapers?|dollars?|books?|backpacks?|baskets?|turkeys?|cards?|units?|packages?|deliveries|pickups?|trips?|enrollments?|placements?|graduates?|certificates?|screenings?|assessments?|rooms?|loaves)\b/i;
 
 const MUST_TERMS: { re: RegExp; problem: string; fix: string }[] = [
   { re: /\bhomeless people\b/i, problem: '"Homeless people" appears outside a quotation.', fix: 'Say "people experiencing homelessness".' },
@@ -701,10 +817,55 @@ export function section1Parts(section1: string): { headline: string; body: strin
 /** The first sentence of the prose, for the "straight into the story" rule. */
 const firstSentence = (body: string) => (body.split(/(?<=[.!?])\s/)[0] ?? '').trim();
 
+/**
+ * The review, split into what is outstanding and what has been set aside.
+ *
+ * `reviewNewsletter` is the live list and is what every gate reads, so a
+ * dismissal takes effect everywhere at once — the Review panel, the pre-send
+ * check and the server's refusal to tag the list all go through here. The
+ * dismissals themselves are returned beside it rather than thrown away: a
+ * verdict nobody can see is indistinguishable from a check that never ran.
+ */
+export function reviewWithDismissals(d: NewsletterDraft): {
+  issues: Issue[];
+  dismissed: Dismissed[];
+  /** Dismissals that match nothing any more — the problem went away. */
+  stale: Override[];
+} {
+  const all = runChecks(d);
+  const byId = new Map((d.overrides ?? []).filter((o) => o?.id).map((o) => [o.id, o]));
+  const issues: Issue[] = [];
+  const dismissed: Dismissed[] = [];
+  const matched = new Set<string>();
+
+  for (const issue of all) {
+    const o = byId.get(issue.id);
+    // A section that cannot be dismissed cannot be dismissed by an old
+    // override either — if the policy tightens, the stored record stops
+    // working rather than quietly outliving it.
+    if (o && issue.overridable) {
+      matched.add(issue.id);
+      dismissed.push({ ...issue, reason: o.reason, by: o.by, at: o.at });
+    } else {
+      issues.push(issue);
+    }
+  }
+  const stale = [...byId.values()].filter((o) => !matched.has(o.id));
+  return { issues, dismissed, stale };
+}
+
 export function reviewNewsletter(d: NewsletterDraft): Issue[] {
+  return reviewWithDismissals(d).issues;
+}
+
+function runChecks(d: NewsletterDraft): Issue[] {
   const issues: Issue[] = [];
   const add = (severity: Severity, where: string, problem: string, fix: string) =>
-    issues.push({ severity, where, problem, fix });
+    issues.push({
+      severity, where, problem, fix,
+      id: issueId(where, problem),
+      overridable: !NOT_OVERRIDABLE.has(where),
+    });
 
   const body = [d.section1, d.section2].join('\n\n');
   const everything = [body, d.previewText].join('\n\n');
@@ -829,6 +990,14 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
       continue;
     }
     if (JC_PHONE_DIGITS.has(nationalDigits(found))) continue;
+    // Somebody else's number that is meant to be in print. Said out loud
+    // rather than passed over: it is still worth knowing it is there.
+    const partner = PARTNER_PHONE_DIGITS.get(nationalDigits(found));
+    if (partner) {
+      add('should', 'Contact details', `${found} is ${partner}, not a Joseph Center number.`,
+        'Fine to print if the story is about them. Make sure the sentence around it does not read as a way to reach The Joseph Center.');
+      continue;
+    }
     add('must', 'Contact details', `A phone number appears in the story: ${found}.`,
       `Only JC's own published numbers belong in the newsletter: ${JC_PHONES.join(', ')}.`);
   }
@@ -989,21 +1158,27 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
     };
     for (const v of Object.values(d.stats ?? {})) addNumbers(String(v ?? ''));
     addNumbers(d.spotlightNotes ?? '');
-    // The retired number counts as a phone number here too: it has its own
-    // should-fix, and listing its digits as unsourced figures on top of that
-    // tells the writer nothing.
-    for (const phone of [...JC_PHONES, ...RETIRED_PHONES]) sourced.add(onlyDigits(phone));
-
     const monthly = d.section2.split(/\n{2,}/).filter((para) =>
       new RegExp(`\\b(?:this month|${escapeRe(d.monthName)})\\b`, 'i').test(para));
 
     const unsourced = new Set<string>();
     for (const para of monthly) {
-      for (const m of para.matchAll(/\d[\d,]*/g)) {
+      /**
+       * Contact details and opening hours come out before the numbers are
+       * read, because their digits are not counts of anything.
+       *
+       * November's spotlight carried the Peace & Justice Center's number and
+       * this check reported "4253" as an unsourced figure — the last four
+       * digits of a phone number, offered to the writer as a statistic to
+       * source or delete. The old guard only knew the digits of JC's own
+       * numbers, so any other number in the paragraph shed its groups into
+       * this list. "9am-1pm" did the same with 9 and 1.
+       */
+      const counts = para.replace(CONTACT_PHONE, ' ').replace(CLOCK_TIME, ' ');
+      for (const m of counts.matchAll(/\d[\d,]*/g)) {
         const n = m[0].replace(/,/g, '');
         if (sourced.has(n)) continue;
         if (/^(?:19|20)\d{2}$/.test(n)) continue;          // a year, not a count
-        if (onlyDigits(para).includes(n) && [...JC_PHONES, ...RETIRED_PHONES].some((ph) => onlyDigits(ph).includes(n))) continue;
         unsourced.add(m[0]);
       }
     }
@@ -1042,11 +1217,19 @@ export function reviewNewsletter(d: NewsletterDraft): Issue[] {
     add('must', 'Preview text', `Preview text is ${d.previewText.trim().length} characters; inboxes cut it off at about 140.`, 'Keep it to a single sentence.');
 
   const settledClosing = closingLineFor(d.program);
-  if (settledClosing && d.section2.trim() && !d.section2.includes(settledClosing)) {
+  const section2Norm = norm(d.section2);
+  if (settledClosing && d.section2.trim() && !section2Norm.includes(norm(settledClosing))) {
     add('should', 'Section 2', `The closing line is not ${d.program}'s settled wording.`, `"${settledClosing}"`);
-  } else if (!settledClosing && !d.section2.includes('Every person who')) {
-    add('should', 'Section 2', 'The standard bridge closing line is missing.',
-      `"Every person who [action] is walking across the bridge. ${CLOSING_SECOND_SENTENCE}"`);
+  } else if (!settledClosing) {
+    // The shape, not the literal subject — and then the second sentence,
+    // which is settled copy and is the half that gets dropped.
+    if (!CLOSING_SHAPE.test(section2Norm)) {
+      add('should', 'Section 2', 'The standard bridge closing line is missing.',
+        `"Every person who [action] is walking across the bridge. ${CLOSING_SECOND_SENTENCE}"`);
+    } else if (!section2Norm.includes(norm(CLOSING_SECOND_SENTENCE))) {
+      add('should', 'Section 2', 'The closing line stops after its first sentence.',
+        `It ends on settled copy, verbatim: "${CLOSING_SECOND_SENTENCE}"`);
+    }
   }
 
   return issues;

@@ -1,8 +1,9 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { turso, fetchOktaUsers } from './_lib/staff-directory';
 import {
-  TIERS, section4, closingSection, aweberPlan, reviewNewsletter, bridgeLine,
-  DONATE_URL, section3Header, partnersForMonth, quarterOf, type NewsletterDraft, type Video,
+  TIERS, section4, closingSection, aweberPlan, reviewWithDismissals, bridgeLine,
+  DONATE_URL, section3Header, partnersForMonth, quarterOf,
+  type NewsletterDraft, type Video, type Override,
 } from './_lib/newsletter';
 import { newsletterHtml, promoteButtons, sectionsHtml } from './_lib/newsletter-html';
 import { SANITY_DATASET as DATASET } from './_lib/sanity-dataset';
@@ -26,6 +27,43 @@ const clean = (v: unknown, max = 20000) => (typeof v === 'string' ? v.trim().sli
 const parse = <T,>(v: unknown, fallback: T): T => {
   try { return typeof v === 'string' ? JSON.parse(v) as T : fallback; } catch { return fallback; }
 };
+
+/** How many review items one month may have set aside. */
+const MAX_OVERRIDES = 100;
+
+/**
+ * Dismissed review items, stamped where the browser cannot be trusted to.
+ *
+ * The reason is the writer's to give. Who gave it and when are not theirs to
+ * assert, so both are taken from the verified sign-in the first time a
+ * dismissal is seen and then left alone — a reason reworded later keeps its
+ * original stamp, because it is the same decision better explained. A
+ * dismissal with no reason is dropped: the page asks for one, and this is the
+ * half of that which cannot be skipped by posting to the function directly.
+ */
+function mergeOverrides(posted: unknown, prior: Override[], by: string): Override[] {
+  const before = new Map(prior.filter((o) => o?.id).map((o) => [o.id, o]));
+  const now = Math.floor(Date.now() / 1000);
+  const out: Override[] = [];
+  const seen = new Set<string>();
+  for (const raw of Array.isArray(posted) ? posted : []) {
+    const o = (raw ?? {}) as Partial<Override>;
+    const id = clean(o.id, 24);
+    const reason = clean(o.reason, 400);
+    if (!id || !reason || seen.has(id)) continue;
+    seen.add(id);
+    const kept = before.get(id);
+    out.push({
+      id,
+      reason,
+      label: clean(o.label, 300) || kept?.label,
+      by: kept?.by ?? by,
+      at: kept?.at ?? now,
+    });
+    if (out.length >= MAX_OVERRIDES) break;
+  }
+  return out;
+}
 
 const SANITY_PROJECT = process.env.VITE_SANITY_PROJECT_ID!;
 const SANITY_DATASET = DATASET;
@@ -211,9 +249,9 @@ export async function handler(event: {
        */
       const wb = (draft.workbench ?? {}) as {
         coffeeChatUrl?: string; withholdNames?: string[]; notPeople?: string[];
-        transcript?: string; spotlightNotes?: string;
+        transcript?: string; spotlightNotes?: string; overrides?: Override[];
       };
-      const issues = reviewNewsletter({
+      const { issues, dismissed, stale } = reviewWithDismissals({
         ...draft,
         usedTags,
         staffSurnames: surnames,
@@ -223,6 +261,7 @@ export async function handler(event: {
         notPeople: Array.isArray(wb.notPeople) ? wb.notPeople : [],
         transcript: typeof wb.transcript === 'string' ? wb.transcript : '',
         spotlightNotes: typeof wb.spotlightNotes === 'string' ? wb.spotlightNotes : '',
+        overrides: Array.isArray(wb.overrides) ? wb.overrides : [],
       } as NewsletterDraft);
       const plan = aweberPlan(month, new Date());
 
@@ -230,7 +269,7 @@ export async function handler(event: {
         statusCode: 200,
         headers: JSON_HEADERS,
         body: JSON.stringify({
-          draft, issues, plan, usedTags, partners, history,
+          draft, issues, dismissed, staleOverrides: stale, plan, usedTags, partners, history,
           carriedPartners: !row && !!previous && quarterOf(previous.month) === quarterOf(month),
           bridgeLine: bridgeLine(draft.monthName),
           section3Header: section3Header(month, draft.monthName),
@@ -253,8 +292,23 @@ export async function handler(event: {
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'A month is required, as YYYY-MM.' }) };
     }
-    const row = (await db.execute({ sql: 'SELECT status, aweber_tag FROM newsletters WHERE month = ?', args: [month] }))
-      .rows[0] as { status?: string; aweber_tag?: string } | undefined;
+    /**
+     * Read with the workbench where there is one.
+     *
+     * The column arrives with migration 019 and the write below already copes
+     * without it, so the read has to as well — otherwise a save would fail on
+     * an un-migrated database for the sake of a list of dismissals.
+     */
+    let row: { status?: string; aweber_tag?: string; workbench?: string } | undefined;
+    try {
+      row = (await db.execute({ sql: 'SELECT status, aweber_tag, workbench FROM newsletters WHERE month = ?', args: [month] }))
+        .rows[0] as typeof row;
+    } catch (err) {
+      if (!/no such column: workbench/i.test(String(err))) throw err;
+      row = (await db.execute({ sql: 'SELECT status, aweber_tag FROM newsletters WHERE month = ?', args: [month] }))
+        .rows[0] as typeof row;
+    }
+    const priorOverrides = parse<{ overrides?: Override[] }>(row?.workbench, {}).overrides ?? [];
 
     /**
      * The three versions as email HTML, from whatever is on screen.
@@ -354,7 +408,10 @@ export async function handler(event: {
         clean(body.previewText, 300),
         // Capped: a transcript is the big one, and an hour of conversation is
         // around 20k characters.
-        JSON.stringify(body.workbench ?? {}).slice(0, 200000),
+        JSON.stringify({
+          ...(body.workbench ?? {}),
+          overrides: mergeOverrides((body.workbench ?? {}).overrides, priorOverrides, auth.email ?? 'unknown'),
+        }).slice(0, 200000),
         auth.email ?? 'unknown',
       ].filter((_, i) => withWorkbench || i !== 11),
     });
