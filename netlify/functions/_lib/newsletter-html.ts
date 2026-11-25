@@ -304,7 +304,11 @@ export function campaignText(d: CampaignHtmlInput): string {
         const url = absolute(href);
         const clean = label.replace(/\s*→\s*$/, '').trim();
         // A link whose label is already the URL would otherwise read twice.
-        return clean && clean !== url ? `${clean}: ${url}` : url;
+        // Compared with the scheme and any trailing slash off, because
+        // "[josephcentergj.com](https://josephcentergj.com)" is the ordinary
+        // way to write a visible domain and it is the same thing twice.
+        const bare = (u: string) => u.replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase();
+        return clean && bare(clean) !== bare(url) ? `${clean}: ${url}` : url;
       })
       .replace(/\*\*([^*]+)\*\*/g, '$1')
       .replace(/\*([^*]+)\*/g, '$1')

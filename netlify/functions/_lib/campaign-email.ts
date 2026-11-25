@@ -367,7 +367,7 @@ function runChecks(campaign: CampaignEmail, variantId?: string): Issue[] {
     }
   } else if (!campaign.closingNote.trim()) {
     add('should', where, 'This version has no button and nothing in its place.',
-      'Recurring donors are not being asked for a gift, so the space wants the share line — "if you know someone who would want to hear about this, feel free to pass it along".');
+      'Recurring donors are not being asked for a gift, so the space wants the share ask: one name, pointed at the website. Not a forward of this email — a forwarded copy greets the new reader by the forwarder\'s first name, tells them they already give every month, and carries no call to action, because this is the one version with no button.');
   }
 
   // ── numbers ──
@@ -467,7 +467,7 @@ export function blankCampaign(slug: string, name = ''): CampaignEmail {
     link: `https://${DONATE_URL}?campaign=${slug}`,
     buttonLabel: 'Give Today →',
     closingNote:
-      'If you know someone who would want to hear about this, feel free to pass it along.',
+      'It is a name. If somebody comes to mind who should know we are here, point them to [josephcentergj.com](https://josephcentergj.com).',
     variants: Object.fromEntries(
       CAMPAIGN_VARIANTS.map((v) => [v.id, { subject: '', previewText: '', body: '' }]),
     ),

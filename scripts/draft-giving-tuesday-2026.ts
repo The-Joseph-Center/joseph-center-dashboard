@@ -42,7 +42,7 @@ export const CAMPAIGN: CampaignEmail = {
   link: `https://josephcentergj.com/donate?campaign=${SLUG}`,
   buttonLabel: 'Give Today →',
   closingNote:
-    'If you know someone who would want to hear about this, feel free to pass it along.',
+    'It is a name. If somebody comes to mind who should know we are here, point them to [josephcentergj.com](https://josephcentergj.com).',
   variants: {
     // ── A: everyone who is not tagged as a donor ──
     'community-friend': {
@@ -70,12 +70,15 @@ export const CAMPAIGN: CampaignEmail = {
 
     // ── B without the ask: recurring-donor ──
     'recurring-donor': {
-      subject: 'Thank you, today and every day',
-      previewText: 'No ask today — just our thanks, on our first Giving Tuesday.',
+      subject: 'Thank you — and one small favor',
+      previewText: 'Your monthly gift already covers today. There is one other thing.',
       body: [
-        'Today is Giving Tuesday, our first, and you are already giving every month — so there is no ask in this one.',
+        // Deliberately not "there is no ask in this one": announcing the
+        // absence of an ask is a negative lede, and this version does ask for
+        // something. The pivot is the third line.
+        'Today is Giving Tuesday, our first — and you are already giving every month.',
         'Your monthly partnership is what lets us plan rather than hope: meals cooked, doors unlocked, and a yes available when somebody walks in on a Tuesday with nowhere else to go. It is the quiet, steady kind of support that makes a program something a person can rely on.',
-        'Thank you for standing where you stand.',
+        'So the one thing we would ask of you today is not money.',
       ].join('\n\n'),
     },
   },

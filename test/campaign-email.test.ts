@@ -54,11 +54,11 @@ const GOOD: CampaignEmail = {
     },
     'recurring-donor': {
       subject: 'Thank you, today and every day',
-      previewText: 'No ask today — just our thanks, on our first Giving Tuesday.',
+      previewText: 'Your monthly gift already covers today. There is one other thing.',
       body: [
-        'Today is Giving Tuesday, our first, and you are already giving every month. So there is no ask in this one.',
+        'Today is Giving Tuesday, our first — and you are already giving every month.',
         'Your monthly partnership is what lets us plan ahead instead of hoping — to keep meals cooked and doors unlocked across the Western Slope without waiting to see what arrives, and to say yes when somebody walks in on a Tuesday with nowhere else to go.',
-        'Thank you for standing where you stand.',
+        'So the one thing we would ask of you today is not money.',
       ].join('\n\n'),
     },
   },
@@ -149,13 +149,44 @@ test('the button is the newsletter\'s button component, bgcolor and all', () => 
   assert.ok(html.includes('color:#2C3531;text-decoration:none'));
 });
 
-test('recurring donors get the share line instead of an ask', () => {
+test('recurring donors get the share ask instead of a donation ask', () => {
   const { html, text } = render('recurring-donor');
   assert.ok(!html.includes(LINK), 'no donate link at all');
   assert.ok(!html.includes('bgcolor="#60B567"'), 'and therefore no button');
-  assert.ok(html.includes('feel free to pass it along'));
-  assert.ok(text.includes('feel free to pass it along'));
   assert.equal(variantSpec('recurring-donor')!.showButton, false);
+
+  // The ask points at the website, which is built to introduce JC to somebody
+  // who has never heard of it.
+  assert.ok(html.includes('href="https://josephcentergj.com"'), 'the share ask links the site');
+  assert.ok(text.includes('josephcentergj.com'), 'and survives the flattening into plain text');
+});
+
+test('the recurring version never asks for a forward of itself', () => {
+  // A forwarded copy is wrong for the new reader in three ways: AWeber has
+  // already substituted the FORWARDER's first name into the greeting, the copy
+  // tells them they are giving every month, and this is the one version with
+  // no button, so there is nowhere to go. The ask is a name, not a forward.
+  const { html, text } = render('recurring-donor');
+  for (const body of [html, text]) {
+    assert.ok(!/forward this/i.test(body), 'no "forward this"');
+    assert.ok(!/pass (?:it|this) along/i.test(body), 'and not the passive version either');
+  }
+});
+
+test('a link labelled with its own domain is not flattened twice', () => {
+  // The share ask writes the domain as the visible label, which is how a
+  // reader recognises it. In plain text "josephcentergj.com:
+  // https://josephcentergj.com" is the same thing said twice.
+  const { text } = render('recurring-donor');
+  assert.ok(text.includes('https://josephcentergj.com'), 'the URL is there to follow');
+  assert.ok(!/josephcentergj\.com: https/.test(text), 'but not announced by itself first');
+
+  // A label that says something different still carries both.
+  const labelled = campaignText({
+    body: 'See [the donate page](https://josephcentergj.com/donate).',
+    buttonLabel: '', buttonUrl: '', showButton: false, signature: 'Test',
+  });
+  assert.ok(labelled.includes('the donate page: https://josephcentergj.com/donate'));
 });
 
 test('the button appears at most once', () => {
@@ -461,6 +492,10 @@ test('two versions may share a subject line, which is why drafts track by id', (
   // Giving Tuesday's two donor versions deliberately match: same message, same
   // reader, and the difference is the ask rather than the envelope. Subject
   // matching would have built two drafts and skipped the third.
+  //
+  // The shipping copy no longer collides — the recurring subject was rewritten
+  // when that version gained a share ask — but the property has to hold for
+  // the next campaign, so the fixture keeps the collision.
   const subjects = CAMPAIGN_VARIANTS.map((v) => GOOD.variants[v.id]!.subject);
   assert.equal(new Set(subjects).size, 2, 'the fixture has a deliberate collision');
   assert.equal(subjects[1], subjects[2]);
