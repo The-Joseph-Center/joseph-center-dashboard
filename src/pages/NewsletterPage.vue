@@ -104,8 +104,22 @@ const draftHistory = ref<{ label: string; text: string; which: 'section1' | 'sec
 const transcriptFiles = ref<{ name: string; speaker: string; bonus: boolean }[]>([]);
 const dragging = ref(false);
 
+/**
+ * Files that were handed over and not read.
+ *
+ * The filter used to drop anything that was not .txt/.srt/.vtt and return
+ * without a word, so dragging in the wrong export looked identical to dragging
+ * in nothing — and the panel then said "drop the transcript files in", which is
+ * what had just been done.
+ */
+const transcriptSkipped = ref<string[]>([]);
+
+const READABLE = /\.(txt|srt|vtt)$/i;
+
 async function loadTranscriptFiles(list: FileList | null | undefined) {
-  const picked = Array.from(list ?? []).filter((f) => /\.(txt|srt|vtt)$/i.test(f.name));
+  const all = Array.from(list ?? []);
+  const picked = all.filter((f) => READABLE.test(f.name));
+  transcriptSkipped.value = all.filter((f) => !READABLE.test(f.name)).map((f) => f.name);
   if (!picked.length) return;
   const files = await Promise.all(picked.map(async (f) => ({ name: f.name, text: await f.text() })));
   const captions = files.filter((f) => isCaptionExport(f.text));
@@ -312,13 +326,30 @@ async function openSheet() {
  * read the source. Each of these names the next thing to do instead.
  */
 const transcriptBlocker = computed(() => {
-  if (!draft.value?.guestName?.trim()) return 'Set the guest or partner name above first.';
-  if (transcript.value.trim().length < 400) return 'Drop the transcript files in, or paste a transcript, first.';
+  // Named for the field as it is labelled on screen, and for the section it
+  // sits in: it is in "This month", a long way above this panel, so "above"
+  // alone sent people looking in the wrong place.
+  if (!draft.value?.guestName?.trim()) {
+    return 'Set “Guest or partner (first name)”, in “This month” near the top of the page.';
+  }
+  const chars = transcript.value.trim().length;
+  if (!chars) {
+    // Files listed and nothing to show for them is its own failure, and the
+    // old message denied that anything had been dropped at all.
+    return transcriptFiles.value.length
+      ? 'Those files loaded, but no captions could be read out of them. Check they are the caption export rather than an edit list, or paste the transcript into the box above.'
+      : 'Drop the transcript files in, or paste a transcript, first.';
+  }
+  if (chars < 400) {
+    return `The transcript is ${chars} characters long and needs at least 400 — this looks like part of one.`;
+  }
   return '';
 });
 
 const spotlightBlocker = computed(() =>
-  draft.value?.program?.trim() ? '' : 'Set the Section 2 program or theme above first.'
+  draft.value?.program?.trim()
+    ? ''
+    : 'Set “Section 2 program or theme”, in “This month” near the top of the page.'
 );
 
 /**
@@ -1204,6 +1235,10 @@ const fullVersion = (v: Version) => {
               @change="loadTranscriptFiles(($event.target as HTMLInputElement).files); ($event.target as HTMLInputElement).value = ''" />
             <span>Drop the transcript files here, or <u>choose files</u></span>
           </label>
+          <p v-if="transcriptSkipped.length" class="warn">
+            Not read, because only .txt, .srt and .vtt can be:
+            <strong>{{ transcriptSkipped.join(', ') }}</strong>
+          </p>
           <ul v-if="transcriptFiles.length" class="dropzone__files">
             <li v-for="f in transcriptFiles" :key="f.name">
               {{ f.name }} → <strong>{{ f.speaker }}</strong><span v-if="f.bonus"> · bonus</span>
@@ -1236,13 +1271,17 @@ const fullVersion = (v: Version) => {
           <input id="draft-notpeople" v-model="notPeople" type="text"
             placeholder="Seventh Day Adventist Church, Horizon Drive" />
 
+          <p v-if="transcriptBlocker" class="warn">
+            Both buttons below are off until this is settled: {{ transcriptBlocker }}
+          </p>
+
           <div class="actions">
             <button type="button" class="btn btn--ghost btn--sm"
-              :disabled="reading || transcript.trim().length < 400 || !draft.guestName" @click="readTranscript">
+              :disabled="reading || !!transcriptBlocker" @click="readTranscript">
               {{ reading ? 'Reading…' : factsOpen ? 'Read it again' : 'Read the transcript first' }}
             </button>
-            <span class="hint">
-              {{ transcriptBlocker || 'Check who is who and what happened when, before it writes.' }}
+            <span v-if="!transcriptBlocker" class="hint">
+              Check who is who and what happened when, before it writes.
             </span>
           </div>
 
@@ -1264,10 +1303,9 @@ const fullVersion = (v: Version) => {
           </div>
 
           <div class="actions">
-            <button type="button" class="btn btn--sm" :disabled="drafting || transcript.trim().length < 400 || !draft.guestName" @click="draftSection1(false)">
+            <button type="button" class="btn btn--sm" :disabled="drafting || !!transcriptBlocker" @click="draftSection1(false)">
               {{ drafting ? 'Reading the transcript…' : `Draft the ${draft.guestFrame === 'calling' ? 'partner' : 'guest'} story` }}
             </button>
-            <span v-if="transcriptBlocker" class="hint">{{ transcriptBlocker }}</span>
           </div>
         </div>
 
@@ -1344,7 +1382,7 @@ const fullVersion = (v: Version) => {
           <textarea v-model="spotlightNotes" rows="3" class="body"
             placeholder="41 food boxes went out in August. The Marillac clinic now runs twice a month."></textarea>
           <div class="actions">
-            <button type="button" class="btn btn--sm" :disabled="spotlightDrafting || !draft.program" @click="draftSection2(false)">
+            <button type="button" class="btn btn--sm" :disabled="spotlightDrafting || !!spotlightBlocker" @click="draftSection2(false)">
               {{ spotlightDrafting ? 'Drafting…' : 'Draft the spotlight' }}
             </button>
             <span class="hint">
