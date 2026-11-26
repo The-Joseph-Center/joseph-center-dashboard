@@ -2,6 +2,7 @@ import { verifyRequest, denial } from './_lib/verify-okta';
 import { canSeeForm, formsFor, type FormId } from '../../src/lib/capabilities';
 import { FORMS, formById, type FormDef, type Column } from '../../src/lib/submissionForms';
 import { turso } from './_lib/staff-directory';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Reads form submissions out of Turso.
@@ -17,7 +18,6 @@ import { turso } from './_lib/staff-directory';
  * where a query built from a parameter would not be.
  */
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const MAX_ROWS = 500;
 
 /**

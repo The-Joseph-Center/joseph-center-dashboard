@@ -4,6 +4,7 @@ import {
   type Capability, type FormId,
 } from '../../src/lib/capabilities';
 import { FORMS } from '../../src/lib/submissionForms';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * The access map: what each capability requires, and who is actually in those
@@ -19,7 +20,6 @@ import { FORMS } from '../../src/lib/submissionForms';
  * it from here would mean this dashboard holding credentials that can rewrite
  * the directory it depends on for its own authentication.
  */
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const json = (statusCode: number, body: unknown) => ({
   statusCode, headers: JSON_HEADERS, body: JSON.stringify(body),
 });

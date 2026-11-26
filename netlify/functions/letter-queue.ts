@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 import { requireCapability, denial } from './_lib/verify-okta';
 import { turso } from './_lib/staff-directory';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Mona's year-end letters — the whole list, not just the people who asked.
@@ -32,7 +33,6 @@ import { turso } from './_lib/staff-directory';
  * which acknowledgments are additionally required, not about who is worth
  * thanking — see tax-summary.ts.
  */
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const MST_OFFSET = 7 * 3600;
 const ACKNOWLEDGMENT_THRESHOLD_CENTS = 25000;
 const LOCAL_YEAR = "strftime('%Y', submitted_at, 'unixepoch', '-7 hours')";

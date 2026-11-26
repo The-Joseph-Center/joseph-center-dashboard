@@ -2,6 +2,7 @@ import { Resend } from 'resend';
 import { verifyRequest, denial } from './_lib/verify-okta';
 import { staffIdForLogin, fetchCard } from './_lib/staff-card';
 import { quoteRequestEmail } from './_lib/quote-request-email';
+import { JSON_HEADERS } from './_lib/http';
 
 // A quote is a REQUEST, not a save.
 //
@@ -12,7 +13,6 @@ import { quoteRequestEmail } from './_lib/quote-request-email';
 // thinks they published something and finds it absent a week later is a worse
 // outcome than one who knows it is pending.
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const MAX_QUOTE = 400;
 
 const resend = new Resend(process.env.RESEND_API_KEY);

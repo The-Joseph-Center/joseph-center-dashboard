@@ -2,6 +2,7 @@ import { requireCapability, denial } from './_lib/verify-okta';
 import { BRAND_REFERENCE_FULL } from './_lib/brand-reference';
 import { bridgeLine, sensitiveMentions } from './_lib/newsletter';
 import { section1System, spotlightSystem } from './_lib/newsletter-prompts';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Drafts Section 1 from a Coffee Chat transcript.
@@ -19,7 +20,6 @@ import { section1System, spotlightSystem } from './_lib/newsletter-prompts';
  * them as though they were is its own kind of wrong.
  */
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 // Sonnet. Opus was tried for the reading and drafting passes and did not earn
 // its keep on this material once the transcript carried timestamps and the
 // fact sheet was being corrected by hand — the reading pass is doing the work

@@ -11,6 +11,7 @@ import {
 } from './_lib/aweber';
 import { TIERS, section4, closingSection, DONATE_URL } from './_lib/newsletter';
 import { newsletterHtml, promoteButtons } from './_lib/newsletter-html';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * The AWeber end of sending the newsletter.
@@ -42,7 +43,6 @@ import { newsletterHtml, promoteButtons } from './_lib/newsletter-html';
  * Campaigns at all — that stays a person in their web app.
  */
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const monthName = (m: string) => MONTHS[Number(m.split('-')[1]) - 1] ?? '';
 const parse = <T,>(v: unknown, fallback: T): T => {

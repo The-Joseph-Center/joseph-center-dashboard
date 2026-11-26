@@ -1,4 +1,5 @@
 import { requireCapability, denial } from './_lib/verify-okta';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Last month's Coffee Chat videos, from the channel itself.
@@ -11,8 +12,6 @@ import { requireCapability, denial } from './_lib/verify-okta';
  * that shorts are often older footage and must be labeled accurately, and a
  * minute is the line YouTube itself draws.
  */
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 /** ISO 8601 duration (PT1M30S) to seconds. */
 function seconds(iso: string): number {

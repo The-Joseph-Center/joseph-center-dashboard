@@ -3,6 +3,7 @@ import { requireCapability, denial } from './_lib/verify-okta';
 import { staffIdForLogin, fetchCard } from './_lib/staff-card';
 import { coffeeChatInviteEmail } from './_lib/coffee-chat-invite-email';
 import { turso } from './_lib/staff-directory';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Invites one person to apply as a Coffee Chat guest.
@@ -25,8 +26,6 @@ import { turso } from './_lib/staff-directory';
  * the same person. The same ordering as submit-dynamic-form, for the same
  * reason.
  */
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 

@@ -5,6 +5,7 @@ import {
   type CampaignEmail, type CampaignVariantCopy, type Override,
 } from './_lib/campaign-email';
 import { campaignHtml, campaignText } from './_lib/newsletter-html';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * One-off campaign emails, assembled.
@@ -19,7 +20,6 @@ import { campaignHtml, campaignText } from './_lib/newsletter-html';
  * something different from the one on screen.
  */
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const clean = (v: unknown, max = 20000) => (typeof v === 'string' ? v.trim().slice(0, max) : '');

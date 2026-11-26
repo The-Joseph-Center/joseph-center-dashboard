@@ -2,6 +2,7 @@ import { verifyRequest, denial } from './_lib/verify-okta';
 import { canSeeForm, type FormId } from '../../src/lib/capabilities';
 import { formById } from '../../src/lib/submissionForms';
 import { turso } from './_lib/staff-directory';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Records who followed up on a submission, and what came of it.
@@ -14,7 +15,6 @@ import { turso } from './_lib/staff-directory';
  * `updated_by` is taken from the verified token, never from the request body —
  * otherwise anyone could file their follow-up under someone else's name.
  */
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const json = (statusCode: number, body: unknown) => ({
   statusCode, headers: JSON_HEADERS, body: JSON.stringify(body),

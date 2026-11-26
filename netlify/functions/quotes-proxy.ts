@@ -1,4 +1,5 @@
 import { verifyRequest, denial } from './_lib/verify-okta';
+import { JSON_HEADERS } from './_lib/http';
 
 // Feeds the quote picker. Proxied rather than called from the browser so the
 // upstream rate limit is shared and cached across everyone, and so CORS and any
@@ -9,8 +10,6 @@ import { verifyRequest, denial } from './_lib/verify-okta';
 // like "Should I give him my firstborn child as payment for my rebellion" and
 // "So he called one of the slaves and asked what was happening". Staff are
 // picking something to sit under their photo on a public page.
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export interface Quote {
   text: string;

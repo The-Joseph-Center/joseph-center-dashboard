@@ -7,6 +7,7 @@ import {
 } from './_lib/newsletter';
 import { newsletterHtml, promoteButtons, sectionsHtml } from './_lib/newsletter-html';
 import { SANITY_DATASET as DATASET } from './_lib/sanity-dataset';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * The monthly newsletter, assembled.
@@ -18,8 +19,6 @@ import { SANITY_DATASET as DATASET } from './_lib/sanity-dataset';
  * is not an action a tool should be able to take on someone's behalf — the last
  * step stays a human in AWeber, with this page telling them exactly what to set.
  */
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const monthName = (month: string) => MONTHS[Number(month.split('-')[1]) - 1] ?? '';

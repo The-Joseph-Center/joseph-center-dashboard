@@ -2,6 +2,7 @@ import { verifyRequest, denial } from './_lib/verify-okta';
 import { hasCapability, formsFor, type FormId } from '../../src/lib/capabilities';
 import { FORMS } from '../../src/lib/submissionForms';
 import { turso } from './_lib/staff-directory';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * What is waiting on the person who just signed in.
@@ -21,8 +22,6 @@ import { turso } from './_lib/staff-directory';
  * recorded — even "No reply needed" — has been dealt with by a person, and
  * continuing to count it would train everyone to ignore the number.
  */
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export interface Waiting {
   /** Stable key, so the page can order and test them. */

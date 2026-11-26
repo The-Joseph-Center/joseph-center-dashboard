@@ -2,6 +2,7 @@ import { requireCapability, denial } from './_lib/verify-okta';
 import { hasCapability } from '../../src/lib/capabilities';
 import { turso } from './_lib/staff-directory';
 import type { MonthlyReport } from './_lib/report';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * The stored monthly reports, for reading.
@@ -15,8 +16,6 @@ import type { MonthlyReport } from './_lib/report';
  * can open the page, so two people discussing "September" are discussing the
  * same September.
  */
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export async function handler(event: {
   headers: Record<string, string | undefined>;

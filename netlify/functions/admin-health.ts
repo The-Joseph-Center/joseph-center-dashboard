@@ -3,6 +3,7 @@ import { requireCapability, denial } from './_lib/verify-okta';
 import { turso } from './_lib/staff-directory';
 import { accessToken } from './_lib/google-sheets';
 import { SANITY_DATASET } from './_lib/sanity-dataset';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Is each integration actually reachable right now?
@@ -21,7 +22,6 @@ import { SANITY_DATASET } from './_lib/sanity-dataset';
  * message, which is what identifies the problem; the value that produced it
  * stays where it is.
  */
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const json = (statusCode: number, body: unknown) => ({
   statusCode, headers: JSON_HEADERS, body: JSON.stringify(body),
 });

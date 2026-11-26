@@ -1,6 +1,7 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { isAdmin, hasCapability, RULES } from '../../src/lib/capabilities';
 import { turso } from './_lib/staff-directory';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * The recurring marketing duties list.
@@ -42,7 +43,6 @@ import { turso } from './_lib/staff-directory';
  * to settle who owns what, so until that conversation has happened the statuses
  * are one person's record rather than a shared scratchpad.
  */
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const json = (statusCode: number, body: unknown) => ({
   statusCode, headers: JSON_HEADERS, body: JSON.stringify(body),
 });

@@ -1,5 +1,6 @@
 import { verifyRequest, denial } from './_lib/verify-okta';
 import { accessToken, googleAuthMode } from './_lib/google-sheets';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Free/busy for the calendars involved in booking a Coffee Chat.
@@ -16,7 +17,6 @@ import { accessToken, googleAuthMode } from './_lib/google-sheets';
  * indistinguishable from a genuinely open morning, and that is exactly the
  * mistake that double-books someone.
  */
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const json = (statusCode: number, body: unknown) => ({
   statusCode, headers: JSON_HEADERS, body: JSON.stringify(body),
 });

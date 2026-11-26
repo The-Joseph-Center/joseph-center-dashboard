@@ -2,6 +2,7 @@ import { requireCapability, denial } from './_lib/verify-okta';
 import { capStatus, countRecorded, type CapStatus, type FormCap } from './_lib/form-cap';
 import { turso } from './_lib/staff-directory';
 import { SANITY_DATASET } from './_lib/sanity-dataset';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Opening, closing and editing the seasonal forms.
@@ -19,8 +20,6 @@ import { SANITY_DATASET } from './_lib/sanity-dataset';
  *          are hardcoded routes in the frontend, so a new document would have
  *          no page to appear on. Creating one needs a deploy, not a toggle.
  */
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const PROJECT = process.env.VITE_SANITY_PROJECT_ID!;
 const DATASET = SANITY_DATASET;

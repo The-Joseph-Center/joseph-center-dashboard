@@ -8,6 +8,7 @@ import {
   type CampaignEmail, type CampaignVariantCopy, type Override,
 } from './_lib/campaign-email';
 import { campaignHtml, campaignText } from './_lib/newsletter-html';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Builds the campaign email's three drafts in AWeber.
@@ -41,8 +42,6 @@ import { campaignHtml, campaignText } from './_lib/newsletter-html';
  * made, and a re-run skips what it has a record of. That is idempotent whatever
  * the subjects say, and it survives two campaigns a month sharing wording.
  */
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const clean = (v: unknown, max = 500) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const parse = <T,>(v: unknown, fallback: T): T => {

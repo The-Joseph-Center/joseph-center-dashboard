@@ -1,5 +1,6 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { BRAND_REFERENCE_FULL } from './_lib/brand-reference';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Drafts a blog post from facts a staff member supplies.
@@ -19,7 +20,6 @@ import { BRAND_REFERENCE_FULL } from './_lib/brand-reference';
  * straight into the body with no conversion.
  */
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const MODEL = 'claude-sonnet-5';
 const MAX_TOKENS = 4096;
 

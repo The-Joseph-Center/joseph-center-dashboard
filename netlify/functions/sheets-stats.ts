@@ -1,5 +1,6 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { sheetTabs, sheetGrid, findMonthTab, flattenMetrics, matchMetric, googleAuthMode } from './_lib/google-sheets';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * This month's numbers, from the shared Google Sheet.
@@ -15,7 +16,6 @@ import { sheetTabs, sheetGrid, findMonthTab, flattenMetrics, matchMetric, google
  * row above it. Anything it cannot match is left empty for them to pick.
  */
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 /** Wide and deep enough for a year of columns and a long list of metrics. */
 const RANGE = 'A1:AZ80';
 

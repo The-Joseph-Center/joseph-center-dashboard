@@ -3,6 +3,7 @@ import { verifyRequest, denial } from './_lib/verify-okta';
 import {
   CAPABILITY_LABELS, RULES, hasCapability, type Capability,
 } from '../../src/lib/capabilities';
+import { JSON_HEADERS } from './_lib/http';
 
 // The Contact & Support form on the dashboard.
 //
@@ -15,7 +16,6 @@ import {
 // are editable, so trusting them would let anyone raise a request as someone
 // else.
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const MAX = { subject: 200, message: 4000, category: 40 };
 
 const resend = new Resend(process.env.RESEND_API_KEY);

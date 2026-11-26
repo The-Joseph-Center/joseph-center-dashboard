@@ -1,5 +1,6 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { BRAND_REFERENCE } from './_lib/brand-reference';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Suggests a title, summary, category and tags for a post that is already
@@ -16,7 +17,6 @@ import { BRAND_REFERENCE } from './_lib/brand-reference';
  * person accepts it.
  */
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const MODEL = 'claude-sonnet-5';
 
 /**

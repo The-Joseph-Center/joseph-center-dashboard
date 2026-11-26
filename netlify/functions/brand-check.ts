@@ -1,6 +1,7 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { BRAND_REFERENCE } from './_lib/brand-reference';
 import { checkTerminology, type Finding, type Severity } from './_lib/brand-rules';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Checks a draft against the brand reference before it goes public.
@@ -19,7 +20,6 @@ import { checkTerminology, type Finding, type Severity } from './_lib/brand-rule
  * The output is advice, never an edit. Nothing here rewrites the post.
  */
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const MODEL = 'claude-sonnet-5';
 const MAX_TOKENS = 4096;
 

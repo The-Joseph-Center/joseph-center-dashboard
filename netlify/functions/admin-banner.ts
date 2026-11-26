@@ -1,6 +1,7 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { SANITY_DATASET } from './_lib/sanity-dataset';
 import { fromPortableText, toPortableText } from './_lib/banner';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * The site-wide notice — closures, changed hours, announcements.
@@ -30,8 +31,6 @@ import { fromPortableText, toPortableText } from './_lib/banner';
  * What is left is a queue the dashboard shows in full, and switching one off is
  * something a person does deliberately.
  */
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const PROJECT = process.env.VITE_SANITY_PROJECT_ID!;
 const DATASET = SANITY_DATASET;

@@ -1,13 +1,12 @@
 import { verifyRequest, denial } from './_lib/verify-okta';
 import { staffIdForLogin, fetchCard } from './_lib/staff-card';
+import { JSON_HEADERS } from './_lib/http';
 
 // Returns the signed-in user's own staff card.
 //
 // The identity comes from the verified token, never from the request body —
 // a caller cannot ask for somebody else's card because they never get to name
 // one.
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export async function handler(event: { headers: Record<string, string> }) {
   const auth = await verifyRequest(event.headers);

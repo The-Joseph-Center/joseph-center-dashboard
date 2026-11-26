@@ -120,7 +120,9 @@ export async function requireAdmin(
 export function denial(result: AuthResult, cors: Record<string, string> = {}) {
   return {
     statusCode: result.status,
-    headers: { ...cors, 'Content-Type': 'application/json' },
+    // no-store for the same reason the success path has it: a cached 401 is a
+    // sign-in that cannot be retried without clearing the cache.
+    headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
     body: JSON.stringify({ error: result.error ?? 'Unauthorized' }),
   };
 }

@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
 import { requireCapability, denial } from './_lib/verify-okta';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Year-end giving: what each donor gave, and what the organization received.
@@ -18,8 +19,6 @@ import { requireCapability, denial } from './_lib/verify-okta';
  * non-gift payment is ever taken through this account, this is the assumption
  * that has to change.
  */
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 /**
  * The Denver window for a calendar year, in unix seconds.

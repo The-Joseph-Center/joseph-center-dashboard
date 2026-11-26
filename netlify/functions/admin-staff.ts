@@ -6,6 +6,7 @@ import {
   type OktaUser, type MuteKind,
 } from './_lib/staff-directory';
 import { SANITY_DATASET } from './_lib/sanity-dataset';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Staff administration — read the roster, edit public details, create a card.
@@ -24,8 +25,6 @@ import { SANITY_DATASET } from './_lib/sanity-dataset';
  * so the account stops being reported as outstanding work — see the note on
  * staff_no_card in _lib/staff-directory.
  */
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const PROJECT = process.env.VITE_SANITY_PROJECT_ID!;
 const DATASET = SANITY_DATASET;

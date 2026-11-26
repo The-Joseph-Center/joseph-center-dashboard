@@ -1,6 +1,7 @@
 import { requireCapability, denial } from './_lib/verify-okta';
 import { toText, fromText, unsupported } from './_lib/portable-text';
 import { SANITY_DATASET } from './_lib/sanity-dataset';
+import { JSON_HEADERS } from './_lib/http';
 
 /**
  * Writing and publishing blog posts.
@@ -14,8 +15,6 @@ import { SANITY_DATASET } from './_lib/sanity-dataset';
  * behaves identically to one drafted in Studio and the two cannot disagree
  * about what "published" means.
  */
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const PROJECT = process.env.VITE_SANITY_PROJECT_ID!;
 const DATASET = SANITY_DATASET;
