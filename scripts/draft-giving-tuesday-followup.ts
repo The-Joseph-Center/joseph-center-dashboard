@@ -88,7 +88,28 @@ function main() {
     `subject ${copy.subject.length} chars  preview ${copy.previewText.length} chars  ` +
     `no button  signed ${spec.signature}`,
   );
-  console.log(`\nWritten to ${outDir}: followup-thanks.html, followup-thanks.txt`);
+  // ── the seed, so the campaign picker lists it ──
+  const sql = (v: string) => `'${v.replace(/'/g, "''")}'`;
+  const workbench = JSON.stringify({ closingNote: CAMPAIGN.closingNote, overrides: [] });
+  writeFileSync(
+    join(outDir, 'followup-seed.sql'),
+    `-- Seeds the Giving Tuesday follow-up. Re-runnable: it overwrites the copy
+-- for this slug and leaves every other campaign alone.
+--
+-- Only the recurring-donor slot carries copy, because this email has one
+-- version for the whole list and that slot is the no-button shape. The other
+-- two stay empty on purpose: there is nothing to send to them.
+INSERT INTO campaign_emails (slug, name, send_date, link, button_label, variants, workbench, updated_by, updated_at)
+VALUES (${sql(SLUG)}, ${sql(CAMPAIGN.name)}, ${sql(CAMPAIGN.sendDate)}, ${sql(CAMPAIGN.link)},
+        ${sql(CAMPAIGN.buttonLabel)}, ${sql(JSON.stringify(CAMPAIGN.variants))}, ${sql(workbench)}, 'seed', unixepoch())
+ON CONFLICT(slug) DO UPDATE SET
+  name=excluded.name, send_date=excluded.send_date, link=excluded.link,
+  button_label=excluded.button_label, variants=excluded.variants,
+  workbench=excluded.workbench, updated_by=excluded.updated_by, updated_at=unixepoch();
+`,
+  );
+
+  console.log(`\nWritten to ${outDir}: followup-thanks.html, followup-thanks.txt, followup-seed.sql`);
 
   // The placeholders are the point of the gate: this email is a report, and a
   // report with a blank in it is not sendable.

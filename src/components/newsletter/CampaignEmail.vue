@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { apiFetch } from '@/lib/api';
 // The merge tag itself, not a copy of it: a greeting written out again here
 // could drift from the one the renderer emits, and this line is the only place
@@ -134,13 +134,34 @@ async function loadIndex() {
   list.value = d.campaigns ?? [];
 }
 
+/**
+  * True while a server response is being applied.
+  *
+  * The autosave watcher below is deep and therefore asynchronous: it flushes
+  * after this function AND after `load()`'s `finally`, so a `loading` check
+  * inside it is always false by the time it runs. That made every page load
+  * mark the campaign dirty and autosave four seconds later, writing the page's
+  * own state back over the row — which silently undid three seeds of the
+  * Giving Tuesday copy before anyone worked out where the writes were going.
+  *
+  * Cleared on the next tick, once that flush has happened.
+  */
+const hydrating = ref(false);
+
 function take(d: Record<string, unknown>) {
+  hydrating.value = true;
   campaign.value = d.campaign as Campaign;
   versions.value = (d.versions ?? []) as Version[];
   issues.value = (d.issues ?? []) as Issue[];
   dismissed.value = (d.dismissed ?? []) as Dismissed[];
   staleOverrides.value = (d.staleOverrides ?? []) as Override[];
   dismissing.value = ''; dismissReason.value = '';
+  void nextTick(() => {
+    hydrating.value = false;
+    // The watcher has run by now and set this; what was just loaded is not
+    // an unsaved edit.
+    dirty.value = false;
+  });
 }
 
 async function load() {
@@ -334,7 +355,7 @@ watch(slug, async (v, old) => {
  * that hurts to lose is the paragraph somebody got right on the third try.
  */
 watch(campaign, () => {
-  if (loading.value || !campaign.value) return;
+  if (hydrating.value || loading.value || !campaign.value) return;
   dirty.value = true;
   clearTimeout(autosave);
   const target = slug.value;
